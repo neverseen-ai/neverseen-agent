@@ -1,0 +1,232 @@
+package detector
+
+import (
+	"reflect"
+	"strings"
+	"testing"
+
+	"github.com/cloakfleet/cloakfleet/pkg/pii"
+)
+
+func TestParseLocales(t *testing.T) {
+	tests := []struct {
+		name    string
+		spec    string
+		want    []string
+		wantErr string // substring the error must carry; "" means it must succeed
+	}{
+		{name: "empty means no country set", spec: "", want: nil},
+		{name: "blank means no country set", spec: "   ", want: nil},
+		{name: "one code", spec: "fr", want: []string{"fr"}},
+		{name: "several codes", spec: "fr,gb,us", want: []string{"fr", "gb", "us"}},
+		{name: "spacing and case are forgiven", spec: " FR , Gb ", want: []string{"fr", "gb"}},
+		{name: "a trailing comma is not an error", spec: "fr,", want: []string{"fr"}},
+		{name: "none selects the locale-independent sets", spec: "none", want: nil},
+		{name: "none alongside a country is redundant, not wrong", spec: "none,fr", want: []string{"fr"}},
+		{
+			// The message has to name the codes that exist, and name them from
+			// the registry: a hand-written list in the message goes stale the
+			// first time a locale is added.
+			name: "an unknown code is refused and the known ones are named",
+			spec: "zz", wantErr: `unknown PII locale "zz"`,
+		},
+		{
+			name: "one bad code in a good list still fails",
+			spec: "fr,zz", wantErr: "unknown PII locale",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseLocales(tt.spec)
+
+			if tt.wantErr != "" {
+				if err == nil {
+					t.Fatalf("ParseLocales(%q) accepted an invalid selection", tt.spec)
+				}
+				if !strings.Contains(err.Error(), tt.wantErr) {
+					t.Errorf("error %q does not mention %q", err, tt.wantErr)
+				}
+				for _, code := range pii.LocaleCodes() {
+					if !strings.Contains(err.Error(), code) {
+						t.Errorf("error %q does not name the registered locale %q", err, code)
+					}
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("ParseLocales(%q): %v", tt.spec, err)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("ParseLocales(%q) = %v, want %v", tt.spec, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFromEnv(t *testing.T) {
+	t.Run("an unset environment scans no country's identifiers", func(t *testing.T) {
+		t.Setenv(EnvLocale, "")
+		t.Setenv(EnvAllowList, "")
+
+		d, err := FromEnv()
+		if err != nil {
+			t.Fatalf("FromEnv: %v", err)
+		}
+		if got := d.Locales(); len(got) != 0 {
+			t.Errorf("locales = %v, want none: a wrong country is worse than no country", got)
+		}
+
+		// The locale-independent sets are still on. This is the invariant that
+		// must survive every configuration: turning off a country cannot turn
+		// off email detection.
+		if got := d.Scan("write to claire@example.fr"); len(got) != 1 || got[0].Category != pii.CatEmail {
+			t.Errorf("scan found %v, want one email", got)
+		}
+	})
+
+	t.Run("a locale is loaded", func(t *testing.T) {
+		t.Setenv(EnvLocale, "gb")
+
+		d, err := FromEnv()
+		if err != nil {
+			t.Fatalf("FromEnv: %v", err)
+		}
+		if got := d.Scan("NHS number 9434765919 on file"); len(got) != 1 || got[0].Category != pii.CatNHSNumber {
+			t.Errorf("scan found %v, want one NHS number", got)
+		}
+	})
+
+	t.Run("an invalid locale fails rather than falling back", func(t *testing.T) {
+		// Falling back to a default would scan the wrong country's data with no
+		// way for the operator to notice.
+		t.Setenv(EnvLocale, "zz")
+
+		if _, err := FromEnv(); err == nil {
+			t.Fatal("FromEnv accepted an unknown locale")
+		}
+	})
+
+	t.Run("the allow list is read", func(t *testing.T) {
+		t.Setenv(EnvLocale, "none")
+		t.Setenv(EnvAllowList, "claire@example.fr")
+
+		d, err := FromEnv()
+		if err != nil {
+			t.Fatalf("FromEnv: %v", err)
+		}
+		if got := d.Scan("write to claire@example.fr"); len(got) != 0 {
+			t.Errorf("scan found %v, want nothing: the value is allow-listed", got)
+		}
+	})
+}
+
+func TestAllowList(t *testing.T) {
+	tests := []struct {
+		name      string
+		allow     string
+		text      string
+		wantFound bool
+	}{
+		{
+			name:  "an exact value is not masked",
+			allow: "claire@example.fr", text: "write to claire@example.fr",
+		},
+		{
+			// The comparison ignores case and spacing, so an operator who
+			// declares an account in one spelling covers the others. Anything
+			// stricter means the operator declares a value, watches it get
+			// masked anyway, and has nothing to go on.
+			name:  "spacing is ignored",
+			allow: "FR1420041010050500013M02606", text: "pay FR14 2004 1010 0505 0001 3M02 606 today",
+		},
+		{
+			name:  "case is ignored",
+			allow: "CLAIRE@EXAMPLE.FR", text: "write to claire@example.fr",
+		},
+		{
+			name:  "a different value is still masked",
+			allow: "paul@example.fr", text: "write to claire@example.fr",
+			wantFound: true,
+		},
+		{
+			name:  "an empty list masks everything",
+			allow: "", text: "write to claire@example.fr",
+			wantFound: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := New(Config{AllowList: parseValueList(tt.allow)})
+
+			got := d.Scan(tt.text)
+			if found := len(got) > 0; found != tt.wantFound {
+				t.Errorf("scan found %v; wanted a match: %v", got, tt.wantFound)
+			}
+		})
+	}
+}
+
+// Scan reports in reading order, so a caller numbering tokens as it walks the
+// result gets [EMAIL_1] for the first address a reader meets rather than the
+// last.
+func TestScanReportsInReadingOrder(t *testing.T) {
+	d := New(Config{})
+
+	got := d.Scan("first a@x.fr then b@y.fr and last c@z.fr")
+	if len(got) != 3 {
+		t.Fatalf("found %d matches, want 3: %v", len(got), got)
+	}
+	for i := 1; i < len(got); i++ {
+		if got[i-1].Start >= got[i].Start {
+			t.Fatalf("matches are not in reading order: %d then %d", got[i-1].Start, got[i].Start)
+		}
+	}
+	if got[0].Value != "a@x.fr" || got[2].Value != "c@z.fr" {
+		t.Errorf("got %q … %q, want the first and last addresses", got[0].Value, got[2].Value)
+	}
+}
+
+// Every match's offsets must bracket exactly its value. Anonymisation splices
+// the replacement in at these offsets, so a span that is off by one either
+// leaves a character of the original in clear or eats one of the text around it.
+func TestMatchOffsetsBracketTheValue(t *testing.T) {
+	const text = "Mail claire@example.fr, NIR 2 69 05 49 588 157 80, carte 4532015112830366, " +
+		"tel 06 12 34 56 78, IBAN FR14 2004 1010 0505 0001 3M02 606 et 12 rue de la Paix, 75002 Paris."
+
+	d := New(Config{Locales: []string{"fr"}})
+
+	matches := d.Scan(text)
+	if len(matches) == 0 {
+		t.Fatal("nothing detected in a body full of identifiers")
+	}
+	for _, m := range matches {
+		if m.Start < 0 || m.End > len(text) || m.Start >= m.End {
+			t.Errorf("%s: offsets %d-%d are not a span of the text", m.Category, m.Start, m.End)
+			continue
+		}
+		if got := text[m.Start:m.End]; got != m.Value {
+			t.Errorf("%s: offsets %d-%d cover %q but the value is %q", m.Category, m.Start, m.End, got, m.Value)
+		}
+	}
+}
+
+// A pattern that over-matches by design is scanned one hit at a time, resuming
+// after the refined end. Scanning them all at once and refining afterwards
+// resumes after the greedy end instead, so a second value immediately after the
+// first is never seen — and goes out in clear.
+func TestRefinedSpansFindTheSecondValue(t *testing.T) {
+	d := New(Config{})
+
+	got := d.Scan("Settle DE89370400440532013000EUR and BE68539007547034EUR today.")
+	if len(got) != 2 {
+		t.Fatalf("found %d IBANs, want 2: %v", len(got), got)
+	}
+	for i, want := range []string{"DE89370400440532013000", "BE68539007547034"} {
+		if got[i].Value != want {
+			t.Errorf("IBAN %d is %q, want %q", i, got[i].Value, want)
+		}
+	}
+}

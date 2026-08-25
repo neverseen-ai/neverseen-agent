@@ -1,0 +1,179 @@
+# United States suite.
+#
+# Only the routing number carries a real checksum here. The social security
+# number is held by the ranges the issuer never allocates, the employer id by
+# the punctuation it is always written with, and the ZIP by requiring a state or
+# the four-digit add-on beside it — a bare five-digit run is not identifying,
+# the same rule the French postcode follows with its commune.
+#
+# The precision cases carry this suite's weight: nine bare digits and five bare
+# digits are what an order number and a quantity look like.
+locale: us
+min_precision: 100
+min_recall: 100
+
+cases:
+  # --- social security number ----------------------------------------------
+
+  - id: us-ssn
+    text: "SSN on file is 123-45-6789 per the onboarding form."
+    expect:
+      - {category: SSN, value: "123-45-6789"}
+
+  # --- employer identification number --------------------------------------
+
+  - id: us-ein
+    text: "The vendor's EIN is 12-3456789 on the W-9."
+    expect:
+      - {category: EIN, value: "12-3456789"}
+
+  # --- routing number -------------------------------------------------------
+
+  - id: us-routing-number
+    text: "Wire to routing 021000021 before close of business."
+    expect:
+      - {category: ROUTING_NUMBER, value: "021000021"}
+
+  - id: us-routing-number-reserve-bank
+    text: "The correspondent bank uses 011000015 for ACH."
+    expect:
+      - {category: ROUTING_NUMBER, value: "011000015"}
+
+  # --- telephone ------------------------------------------------------------
+  #
+  # The three notations a US number is written in. The parenthesised form needs
+  # its own branch in the pattern, because a word boundary cannot anchor before
+  # an opening bracket.
+
+  - id: us-phone-parenthesised
+    text: "Reach the desk at (555) 234-5678 during the day."
+    expect:
+      - {category: PHONE, value: "(555) 234-5678"}
+
+  - id: us-phone-dashed
+    text: "His cell is 555-234-5678 if you need it."
+    expect:
+      - {category: PHONE, value: "555-234-5678"}
+
+  - id: us-phone-international
+    text: "From overseas, dial +1 555 234 5678 instead."
+    expect:
+      - {category: PHONE, value: "+1 555 234 5678"}
+
+  - id: us-phone-bare-ten-digits
+    text: "The export has 5552345678 in the contact column."
+    expect:
+      - {category: PHONE, value: "5552345678"}
+
+  # --- address and ZIP ------------------------------------------------------
+
+  # The span is the street, city, state and ZIP together. A token that restored
+  # only the street would leave the city and the ZIP in clear beside it, which
+  # is the pair that identifies the household.
+  - id: us-address-with-city-state-zip
+    text: "Ship it to 123 Main St, Springfield, IL 62704 by Thursday."
+    expect:
+      - {category: ADDRESS, value: "123 Main St, Springfield, IL 62704"}
+
+  - id: us-address-street-only
+    text: "The old office was 456 Oak Avenue, long since closed."
+    expect:
+      - {category: ADDRESS, value: "456 Oak Avenue"}
+
+  # A ZIP with the state in front of it, which is what tells it from any other
+  # five digits.
+  - id: us-zip-with-state
+    text: "The claim was filed in IL 62704 last month."
+    expect:
+      - {category: POSTAL_CODE, value: "IL 62704"}
+
+  # And the four-digit add-on, which is distinctive on its own.
+  - id: us-zip-plus-four
+    text: "Mail reached 62704-1234 without the street line."
+    expect:
+      - {category: POSTAL_CODE, value: "62704-1234"}
+
+  # --- locale-independent shapes stay on -----------------------------------
+
+  - id: us-email-and-card-stay-on
+    text: "Billed j.doe@example.com on card 4532015112830366."
+    expect:
+      - {category: EMAIL, value: "j.doe@example.com"}
+      - {category: CREDIT_CARD, value: "4532015112830366"}
+
+  # === Precision: none of this may be flagged ===
+
+  # The four ranges the Social Security Administration never issues. Each is a
+  # separate branch of the rule, and they are most of what a bare three-two-four
+  # pattern would otherwise claim — placeholders in documentation and fixtures
+  # are written exactly this way.
+  - id: us-prec-ssn-area-000
+    text: "Placeholder 000-45-6789 in the test fixture."
+    expect: []
+
+  - id: us-prec-ssn-area-666
+    text: "Placeholder 666-45-6789 in the test fixture."
+    expect: []
+
+  - id: us-prec-ssn-area-900-range
+    text: "Placeholder 900-45-6789 in the test fixture."
+    expect: []
+
+  - id: us-prec-ssn-zero-group
+    text: "Placeholder 123-00-6789 in the test fixture."
+    expect: []
+
+  - id: us-prec-ssn-zero-serial
+    text: "Placeholder 123-45-0000 in the test fixture."
+    expect: []
+
+  # Nine digits failing the weighted checksum: an order number, not an account.
+  - id: us-prec-routing-bad-checksum
+    text: "Order 021000022 shipped yesterday."
+    expect: []
+
+  # Nine digits passing nothing at all — the shape a counter takes.
+  - id: us-prec-routing-plain-digits
+    text: "Sequence 123456789 in the export."
+    expect: []
+
+  # The checksum passes here, but 99 is not an assigned Federal Reserve
+  # district. Without that check the weighted sum alone lets roughly one
+  # arbitrary nine-digit run in ten through.
+  - id: us-prec-routing-unassigned-district
+    text: "Internal ref 991000021 on the ledger."
+    expect: []
+
+  # A bare ZIP with nothing beside it. Matching it would mask every quantity and
+  # price in the payload.
+  - id: us-prec-bare-zip
+    text: "The total came to 62704 units this quarter."
+    expect: []
+
+  # Neither an area code nor an exchange code is ever allocated opening on 0 or
+  # 1. They are separate positions in the pattern, so a case for one does not
+  # exercise the other — and together they are what keeps this shape off the
+  # reference numbers and timestamps that fill a support thread.
+  - id: us-prec-phone-invalid-area-code
+    text: "Ticket 155-234-5678 in the tracker."
+    expect: []
+
+  - id: us-prec-phone-invalid-exchange-code
+    text: "Ticket 555-123-4567 in the tracker."
+    expect: []
+
+  - id: us-prec-timestamp
+    text: "Recorded at 1700000000 in epoch seconds."
+    expect: []
+
+  - id: us-prec-street-word-in-prose
+    text: "We walked 5 blocks down Main Street looking for it."
+    expect: []
+
+  - id: us-prec-version-and-port
+    text: "Deployed 1.24.3 on port 8080, latency 250 ms."
+    expect: []
+
+  - id: us-prec-commit-sha
+    text: "commit a94a8fe5ccb19ba61c4c0873d391e987982fbbd3 merged to main"
+    expect: []

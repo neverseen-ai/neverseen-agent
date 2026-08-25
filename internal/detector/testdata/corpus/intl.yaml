@@ -1,0 +1,78 @@
+# Locale-independent suite: the patterns that stay on whatever VEIL_PII_LOCALE
+# says. Run with locale "none" so no country set can claim a span first.
+locale: none
+min_precision: 100
+min_recall: 100
+
+cases:
+  - id: intl-credit-cards
+    text: "Payé avec la carte 4532015112830366, puis remboursé sur 5425233430109903."
+    expect:
+      - {category: CREDIT_CARD, value: "4532015112830366"}
+      - {category: CREDIT_CARD, value: "5425233430109903"}
+
+  - id: intl-iban-de-be
+    text: "Comptes DE89370400440532013000 et BE68539007547034 à rapprocher."
+    expect:
+      - {category: IBAN, value: "DE89370400440532013000"}
+      - {category: IBAN, value: "BE68539007547034"}
+
+  # A currency glued to the account with no space to cut on. The expression has
+  # to tolerate it — an alphanumeric body cannot exclude three more letters —
+  # so the checksum is what finds where the account ends, one character at a
+  # time. Without that refinement the over-long span fails the key, the match is
+  # discarded, and the account goes out in clear.
+  - id: intl-iban-glued-currency
+    text: "Settled DE89370400440532013000EUR on Tuesday."
+    expect:
+      - {category: IBAN, value: "DE89370400440532013000"}
+
+  - id: intl-ipv4-in-log
+    text: "connection refused from 192.168.13.42 after three retries"
+    expect:
+      - {category: IP_ADDRESS, value: "192.168.13.42"}
+
+  # The IBAN is the one national-looking identifier that belongs here: one
+  # expression and one checksum cover every issuing country, so a deployment
+  # scanning no country's data still masks the account.
+  - id: intl-iban-nl-es
+    text: "Also reconcile NL91ABNA0417164300 and ES9121000418450200051332 this week."
+    expect:
+      - {category: IBAN, value: "NL91ABNA0417164300"}
+      - {category: IBAN, value: "ES9121000418450200051332"}
+
+  - id: intl-mongo-id
+    text: "db.users.findOne({_id: ObjectId('507f1f77bcf86cd799439011')})"
+    expect:
+      - {category: MONGO_ID, value: "507f1f77bcf86cd799439011"}
+
+  - id: intl-dob
+    text: "Born 1987-03-14, first contract signed later that year."
+    expect:
+      - {category: DOB, value: "1987-03-14"}
+
+  - id: intl-secrets-mixed
+    text: "export OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGH and GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789"
+    expect:
+      - {category: SECRET_OPENAI_KEY, value: "sk-proj-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGH"}
+      - {category: SECRET_GITHUB_TOKEN, value: "ghp_abcdefghijklmnopqrstuvwxyz0123456789"}
+
+  - id: intl-conn-str-postgres
+    text: "Déploiement avec DATABASE_URL=postgres://admin:s3cr3t@db.example.com:5432/app hier."
+    expect:
+      - {category: SECRET_CONN_STR, value: "postgres://admin:s3cr3t@db.example.com:5432/app"}
+
+  - id: intl-conn-str-redis-empty-user
+    text: "Cache sur redis://:p4ssonly@redis.internal:6379 en prod."
+    expect:
+      - {category: SECRET_CONN_STR, value: "redis://:p4ssonly@redis.internal:6379"}
+
+  - id: intl-conn-str-https-basic-auth
+    text: "L'API partenaire répond sur https://user:p4ss@api.partner.com/v1/orders directement."
+    expect:
+      - {category: SECRET_CONN_STR, value: "https://user:p4ss@api.partner.com/v1/orders"}
+
+  - id: intl-aws-key
+    text: "aws_access_key_id = AKIAIOSFODNN7EXAMPLE"
+    expect:
+      - {category: SECRET_AWS_ACCESS_KEY, value: "AKIAIOSFODNN7EXAMPLE"}

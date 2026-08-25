@@ -1,0 +1,201 @@
+{
+ "_comment": "Per-category floor for `make score`. Counts, not percentages. Regenerate with `make score-update` and explain the delta in the PR body. An fn above zero records a miss we accept today, so a baseline is a floor to ratchet, never a goal.",
+ "checks": {
+  "ADDRESS": {
+   "tp": 6,
+   "fp": 0,
+   "fn": 0
+  },
+  "CREDIT_CARD": {
+   "tp": 6,
+   "fp": 0,
+   "fn": 0
+  },
+  "DOB": {
+   "tp": 8,
+   "fp": 1,
+   "fn": 0
+  },
+  "EIN": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "EMAIL": {
+   "tp": 21,
+   "fp": 0,
+   "fn": 0
+  },
+  "IBAN": {
+   "tp": 11,
+   "fp": 0,
+   "fn": 0
+  },
+  "IP_ADDRESS": {
+   "tp": 6,
+   "fp": 0,
+   "fn": 0
+  },
+  "LICENSE_PLATE": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "MONGO_ID": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "NHS_NUMBER": {
+   "tp": 2,
+   "fp": 0,
+   "fn": 0
+  },
+  "NINO": {
+   "tp": 3,
+   "fp": 0,
+   "fn": 0
+  },
+  "NIR": {
+   "tp": 3,
+   "fp": 0,
+   "fn": 0
+  },
+  "PHONE": {
+   "tp": 15,
+   "fp": 0,
+   "fn": 0
+  },
+  "POSTAL_CODE": {
+   "tp": 10,
+   "fp": 0,
+   "fn": 0
+  },
+  "ROUTING_NUMBER": {
+   "tp": 2,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_ANTHROPIC_KEY": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_AWS_ACCESS_KEY": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_AWS_SECRET_KEY": {
+   "tp": 2,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_CONN_STR": {
+   "tp": 8,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_DOCKER_TOKEN": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_GENERIC": {
+   "tp": 4,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_GITHUB_TOKEN": {
+   "tp": 3,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_GITLAB_TOKEN": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_GOOGLE_KEY": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_HEX_KEY": {
+   "tp": 2,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_HF_TOKEN": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_JWT": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_NPM_TOKEN": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_OPENAI_KEY": {
+   "tp": 3,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_PEM_KEY": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_PYPI_TOKEN": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_REPLICATE_TOKEN": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_SENDGRID_KEY": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_SLACK_TOKEN": {
+   "tp": 2,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_STRIPE_KEY": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_TWILIO_KEY": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SIREN": {
+   "tp": 2,
+   "fp": 0,
+   "fn": 0
+  },
+  "SIRET": {
+   "tp": 2,
+   "fp": 0,
+   "fn": 0
+  },
+  "SSN": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  }
+ },
+ "negatives": 48
+}

@@ -1,0 +1,79 @@
+# Hard suite, modelled on PasteGuard's `hard` category: shapes that are known to
+# be difficult, kept in the corpus whether or not they pass today.
+#
+# A case may carry `gate: false` when it is a gap the branch has not closed:
+# the gap is then measured and named instead of being rediscovered by an
+# incident, and the runner says so the day it starts passing. There is none at
+# the moment — the five that were open (accented local parts, cards written in
+# groups of four, a lowercase IBAN) were closed rather than accepted.
+locale: fr
+min_precision: 100
+min_recall: 100
+
+cases:
+  # --- shapes that were gaps until this branch closed them -------------------
+
+  - id: hard-email-accented-local-part
+    text: "Écrire à josé@example.fr aujourd'hui."
+    expect:
+      - {category: EMAIL, value: "josé@example.fr"}
+
+  - id: hard-email-accented-inside-local-part
+    text: "Écrire à andré.muller@example.fr aujourd'hui."
+    expect:
+      - {category: EMAIL, value: "andré.muller@example.fr"}
+
+  - id: hard-card-space-grouped
+    text: "Payé avec la carte 4532 0151 1283 0366 hier."
+    expect:
+      - {category: CREDIT_CARD, value: "4532 0151 1283 0366"}
+
+  - id: hard-card-dash-grouped
+    text: "Payé avec la carte 4532-0151-1283-0366 hier."
+    expect:
+      - {category: CREDIT_CARD, value: "4532-0151-1283-0366"}
+
+  - id: hard-iban-lowercase
+    text: "Virement sur fr1420041010050500013m02606 ce soir."
+    expect:
+      - {category: IBAN, value: "fr1420041010050500013m02606"}
+
+  # --- hard, and working: these must stay working ---------------------------
+
+  - id: hard-email-multi-subdomain
+    text: "Contact interne : claire@mail.corp.example.fr"
+    expect:
+      - {category: EMAIL, value: "claire@mail.corp.example.fr"}
+
+  - id: hard-email-in-query-string
+    text: "Ouvre https://app.example.com/?email=claire@example.fr&x=1 pour vérifier."
+    expect:
+      - {category: EMAIL, value: "claire@example.fr"}
+
+  - id: hard-emails-comma-separated-no-space
+    text: "Destinataires : a@x.fr,b@y.fr"
+    expect:
+      - {category: EMAIL, value: "a@x.fr"}
+      - {category: EMAIL, value: "b@y.fr"}
+
+  - id: hard-phone-international-with-trunk-zero
+    text: "Standard : +33 (0)1 42 68 53 00"
+    expect:
+      - {category: PHONE, value: "+33 (0)1 42 68 53 00"}
+
+  - id: hard-three-ip-addresses-in-one-line
+    text: "Hôtes 192.168.13.42, 10.0.0.1 et 172.16.0.1 injoignables."
+    expect:
+      - {category: IP_ADDRESS, value: "192.168.13.42"}
+      - {category: IP_ADDRESS, value: "10.0.0.1"}
+      - {category: IP_ADDRESS, value: "172.16.0.1"}
+
+  - id: hard-email-across-crlf-lines
+    text: "Fin de ligne\r\nclaire@example.fr\r\nsuite"
+    expect:
+      - {category: EMAIL, value: "claire@example.fr"}
+
+  - id: hard-email-in-backticks
+    text: "Le champ vaut `claire@example.fr` dans la config."
+    expect:
+      - {category: EMAIL, value: "claire@example.fr"}

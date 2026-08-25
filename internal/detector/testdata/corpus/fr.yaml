@@ -1,0 +1,129 @@
+# French recall suite: each case is prose, and every span listed under `expect`
+# must be found. Identifiers carry real checksums — a fabricated NIR or SIRET
+# would be rejected by the very validation this suite is meant to exercise.
+locale: fr
+min_precision: 100
+min_recall: 100
+
+cases:
+  - id: fr-nir-inline
+    text: "Le dossier de Mme Martin, NIR 2 69 05 49 588 157 80, est complet."
+    expect:
+      - {category: NIR, value: "2 69 05 49 588 157 80"}
+
+  - id: fr-nir-compact
+    text: "Numéro de sécurité sociale : 184037511600176"
+    expect:
+      - {category: NIR, value: "184037511600176"}
+
+  - id: fr-siret-and-siren
+    text: "Établissement 552 100 554 00013 rattaché au siège, SIREN 443061841."
+    expect:
+      - {category: SIRET, value: "552 100 554 00013"}
+      - {category: SIREN, value: "443061841"}
+
+  - id: fr-phone-formats
+    text: "Joignable au 06 12 34 56 78 ou au +33 1 42 68 53 00 en journée."
+    expect:
+      - {category: PHONE, value: "06 12 34 56 78"}
+      - {category: PHONE, value: "+33 1 42 68 53 00"}
+
+  - id: fr-address-with-city
+    text: "Livraison au 12 rue de la Paix, 75002 Paris avant vendredi."
+    expect:
+      - {category: ADDRESS, value: "12 rue de la Paix, 75002 Paris"}
+
+  - id: fr-address-abbreviated-type
+    text: "Le colis part au 12 r. de la Paix, 75002 Paris."
+    expect:
+      - {category: ADDRESS, value: "12 r. de la Paix, 75002 Paris"}
+
+  - id: fr-address-without-number
+    text: "Le dépôt est Route de Lyon, 38000 Grenoble."
+    expect:
+      - {category: ADDRESS, value: "Route de Lyon, 38000 Grenoble"}
+
+  - id: fr-plate
+    text: "Le véhicule immatriculé AB-123-CD est au parking."
+    expect:
+      - {category: LICENSE_PLATE, value: "AB-123-CD"}
+
+  - id: fr-email-in-sentence
+    text: "Merci d'écrire à claire.dubois@example.fr pour la relance."
+    expect:
+      - {category: EMAIL, value: "claire.dubois@example.fr"}
+
+  - id: fr-iban-grouped
+    text: "Le virement part sur FR14 2004 1010 0505 0001 3M02 606 lundi."
+    expect:
+      - {category: IBAN, value: "FR14 2004 1010 0505 0001 3M02 606"}
+
+  - id: fr-iban-before-currency
+    text: "Virement de 1 200 € sur FR14 2004 1010 0505 0001 3M02 606 EUR ce soir."
+    expect:
+      - {category: IBAN, value: "FR14 2004 1010 0505 0001 3M02 606"}
+
+  - id: fr-mixed-record
+    text: "Client Dupont — tel 01.45.67.89.10, mail p.dupont@acme.fr, SIREN 732 829 320."
+    expect:
+      - {category: PHONE, value: "01.45.67.89.10"}
+      - {category: EMAIL, value: "p.dupont@acme.fr"}
+      - {category: SIREN, value: "732 829 320"}
+
+  # Day-first dates, the notation French data actually uses. The ISO form is
+  # covered by the locale-independent suite.
+  - id: fr-dob-slashes
+    text: "Née le 23/02/2004 à Lyon, elle a déposé son dossier hier."
+    expect:
+      - {category: DOB, value: "23/02/2004"}
+
+  - id: fr-dob-dashes
+    text: "Date de naissance : 23-02-2004"
+    expect:
+      - {category: DOB, value: "23-02-2004"}
+
+  - id: fr-dob-dots
+    text: "Né le 23.02.2004, domicilié à Brest."
+    expect:
+      - {category: DOB, value: "23.02.2004"}
+
+  - id: fr-dob-spaces
+    text: "Date de naissance 23 03 2004, dossier transmis."
+    expect:
+      - {category: DOB, value: "23 03 2004"}
+
+  - id: fr-dob-month-name
+    text: "Née le 23 février 2004, elle est majeure."
+    expect:
+      - {category: DOB, value: "23 février 2004"}
+
+  - id: fr-dob-month-name-unaccented
+    text: "Née le 5 aout 1999 selon le formulaire."
+    expect:
+      - {category: DOB, value: "5 aout 1999"}
+
+  - id: fr-dob-ordinal
+    text: "Né le 1er mars 2004 à Quimper."
+    expect:
+      - {category: DOB, value: "1er mars 2004"}
+
+  # Separators have to agree: RE2 has no backreference, so the pattern lists one
+  # alternative per separator rather than a character class. This case fails if
+  # someone simplifies it back to [\s./-].
+  - id: fr-dob-mixed-separators-rejected
+    text: "La référence 23/02-2004 figure au bordereau."
+    expect: []
+
+
+  # The span is the code and the commune together, not the five digits alone:
+  # what identifies a household is the pair, and a token that restored only the
+  # digits would leave the commune in clear next to it.
+  - id: fr-postal-code-alone
+    text: "Le colis part vers 75002 Paris demain matin."
+    expect:
+      - {category: POSTAL_CODE, value: "75002 Paris"}
+
+  - id: fr-postal-code-multiword-commune
+    text: "Guichet 13290 Aix Les Milles, ouvert le samedi."
+    expect:
+      - {category: POSTAL_CODE, value: "13290 Aix Les Milles"}

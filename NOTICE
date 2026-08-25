@@ -1,0 +1,49 @@
+Cloakfleet
+Copyright 2026 Neverseen
+
+This product is licensed under the Functional Source License, Version 1.1,
+with an Apache 2.0 future license. See LICENSE.md.
+
+================================================================================
+Third-party material included in this repository
+================================================================================
+
+Detection corpus and score baseline
+-----------------------------------
+
+The test corpus under `internal/detector/testdata/corpus/` and the per-category
+floor in `internal/detector/testdata/score-baseline.json` are derived from the
+Agent Veil project (https://github.com/vurakit/agentveil), which is licensed
+under the MIT License. They are reused here as an executable specification for
+the detection engine: the engine in this repository is an independent
+implementation, and the corpus is what holds it to the same behaviour.
+
+The MIT License text of that work is reproduced below, as its terms require.
+
+    MIT License
+
+    Copyright (c) 2026 Agent Veil Contributors
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in
+    all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+
+Go module dependencies
+----------------------
+
+See THIRD_PARTY_LICENSES for the licenses of the modules linked into the
+binaries and shipped with the SDKs.

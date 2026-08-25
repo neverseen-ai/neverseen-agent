@@ -1,0 +1,147 @@
+package main
+
+import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestRun(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    []string
+		stdin   string
+		locale  string
+		wantErr bool
+		want    []string // substrings the output must carry
+	}{
+		{
+			name:  "scanning stdin reports what would be masked",
+			args:  []string{"scan"},
+			stdin: "write to claire@example.fr about it",
+			want:  []string{"EMAIL", "claire@example.fr", "1 value(s) would be masked"},
+		},
+		{
+			name:   "the locale decides which country's identifiers are found",
+			args:   []string{"scan"},
+			stdin:  "NHS number 9434765919 is on the letter",
+			locale: "gb",
+			want:   []string{"NHS_NUMBER", "9434765919", "locales: gb"},
+		},
+		{
+			// The same text with no locale set finds nothing, which is what
+			// makes the reported locale line worth printing: an operator seeing
+			// "none" knows why their data came back clean.
+			name:  "clean text says so rather than printing nothing",
+			args:  []string{"scan"},
+			stdin: "NHS number 9434765919 is on the letter",
+			want:  []string{"locales: none", "no sensitive values found"},
+		},
+		{
+			name:  "the report names the pattern that fired",
+			args:  []string{"scan"},
+			stdin: "key sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789 leaked",
+			want:  []string{"SECRET_ANTHROPIC_KEY", "Anthropic API key", "confidence 98"},
+		},
+		{
+			name: "version prints the stamped version",
+			args: []string{"version"},
+			want: []string{version},
+		},
+		{
+			name: "help prints the usage and the registered locales",
+			args: []string{"help"},
+			want: []string{"cloakfleet scan", "CLOAKFLEET_PII_LOCALE", "fr, gb, us"},
+		},
+		{
+			name:    "no command is an error, with the usage to recover from it",
+			args:    nil,
+			wantErr: true,
+			want:    []string{"cloakfleet scan"},
+		},
+		{
+			name:    "an unknown command is an error",
+			args:    []string{"masquer"},
+			wantErr: true,
+		},
+		{
+			name:    "an invalid locale fails rather than scanning the wrong country",
+			args:    []string{"scan"},
+			stdin:   "anything",
+			locale:  "zz",
+			wantErr: true,
+		},
+		{
+			name:    "more than one file is refused rather than silently ignored",
+			args:    []string{"scan", "a.txt", "b.txt"},
+			wantErr: true,
+		},
+		{
+			name:    "a missing file is an error",
+			args:    []string{"scan", "does-not-exist.txt"},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("CLOAKFLEET_PII_LOCALE", tt.locale)
+			t.Setenv("CLOAKFLEET_PII_ALLOWLIST", "")
+
+			var out bytes.Buffer
+			err := run(tt.args, strings.NewReader(tt.stdin), &out)
+
+			if tt.wantErr && err == nil {
+				t.Fatalf("run(%v) succeeded, want an error", tt.args)
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("run(%v): %v", tt.args, err)
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(out.String(), want) {
+					t.Errorf("output does not carry %q:\n%s", want, out.String())
+				}
+			}
+		})
+	}
+}
+
+func TestRunScanReadsAFile(t *testing.T) {
+	t.Setenv("CLOAKFLEET_PII_LOCALE", "fr")
+	t.Setenv("CLOAKFLEET_PII_ALLOWLIST", "")
+
+	path := filepath.Join(t.TempDir(), "note.txt")
+	const body = "Assuré 2 69 05 49 588 157 80, joignable au 06 12 34 56 78."
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	var out bytes.Buffer
+	if err := run([]string{"scan", path}, strings.NewReader(""), &out); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	for _, want := range []string{"NIR", "2 69 05 49 588 157 80", "PHONE", "06 12 34 56 78"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output does not carry %q:\n%s", want, out.String())
+		}
+	}
+}
+
+// The allow list has to reach the command, not just the detector: an operator
+// who declares a value and still sees it reported has no way to tell which of
+// the two is ignoring them.
+func TestRunScanHonoursTheAllowList(t *testing.T) {
+	t.Setenv("CLOAKFLEET_PII_LOCALE", "none")
+	t.Setenv("CLOAKFLEET_PII_ALLOWLIST", "claire@example.fr")
+
+	var out bytes.Buffer
+	if err := run([]string{"scan"}, strings.NewReader("write to claire@example.fr"), &out); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !strings.Contains(out.String(), "no sensitive values found") {
+		t.Errorf("an allow-listed value was still reported:\n%s", out.String())
+	}
+}

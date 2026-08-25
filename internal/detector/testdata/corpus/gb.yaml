@@ -1,0 +1,156 @@
+# United Kingdom suite.
+#
+# Two of the four shapes carry their own evidence — the NHS number has a mod-11
+# check digit, and a full postcode's alternation of letters and digits is unlike
+# anything in prose. The National Insurance number has no checksum at all, so
+# the precision cases at the bottom are what hold it: the letter rules are the
+# only thing between it and any two letters followed by six digits.
+locale: gb
+min_precision: 100
+min_recall: 100
+
+cases:
+  # --- NHS number ----------------------------------------------------------
+
+  - id: gb-nhs-spaced
+    text: "Patient record 943 476 5919 was updated this morning."
+    expect:
+      - {category: NHS_NUMBER, value: "943 476 5919"}
+
+  # The same number run together, which is how it arrives from a database
+  # export rather than from a form.
+  - id: gb-nhs-compact
+    text: "NHS number 9434765919 is on the referral letter."
+    expect:
+      - {category: NHS_NUMBER, value: "9434765919"}
+
+  # --- National Insurance number -------------------------------------------
+
+  - id: gb-nino-spaced
+    text: "Payroll shows AB 12 34 56 C against that employee."
+    expect:
+      - {category: NINO, value: "AB 12 34 56 C"}
+
+  - id: gb-nino-compact
+    text: "The form lists AB123456C as the NI number."
+    expect:
+      - {category: NINO, value: "AB123456C"}
+
+  # The suffix letter is optional in practice: plenty of records carry the
+  # eight-character form, and refusing it would forward it in clear.
+  - id: gb-nino-without-suffix
+    text: "Legacy import had AB123456 with no suffix letter."
+    expect:
+      - {category: NINO, value: "AB123456"}
+
+  # --- postcode -------------------------------------------------------------
+  #
+  # All six layouts a UK postcode takes. The third character is what varies —
+  # absent, a digit, or a letter — and a case for only one of them lets the
+  # others be dropped unnoticed.
+
+  - id: gb-postcode-aa9a-9aa
+    text: "Deliver to SW1A 1AA before Friday."
+    expect:
+      - {category: POSTAL_CODE, value: "SW1A 1AA"}
+
+  - id: gb-postcode-a9-9aa
+    text: "The office is at M1 1AE these days."
+    expect:
+      - {category: POSTAL_CODE, value: "M1 1AE"}
+
+  - id: gb-postcode-a9a-9aa
+    text: "Registered address EC1A 1BB on file."
+    expect:
+      - {category: POSTAL_CODE, value: "EC1A 1BB"}
+
+  - id: gb-postcode-a99-9aa
+    text: "Warehouse B33 8TH takes deliveries until six."
+    expect:
+      - {category: POSTAL_CODE, value: "B33 8TH"}
+
+  - id: gb-postcode-aa99-9aa
+    text: "Depot DN55 1PT is closed on Sunday."
+    expect:
+      - {category: POSTAL_CODE, value: "DN55 1PT"}
+
+  - id: gb-postcode-aa9-9aa
+    text: "Their branch is CR2 6XH now."
+    expect:
+      - {category: POSTAL_CODE, value: "CR2 6XH"}
+
+  # --- telephone ------------------------------------------------------------
+  #
+  # The three groupings the UK actually uses, plus the international form.
+
+  - id: gb-phone-london
+    text: "Call 020 7946 0958 during office hours."
+    expect:
+      - {category: PHONE, value: "020 7946 0958"}
+
+  - id: gb-phone-city
+    text: "Manchester office: 0161 496 0000, ask for accounts."
+    expect:
+      - {category: PHONE, value: "0161 496 0000"}
+
+  - id: gb-phone-mobile
+    text: "Her mobile is 07700 900123 if it is urgent."
+    expect:
+      - {category: PHONE, value: "07700 900123"}
+
+  - id: gb-phone-international
+    text: "From abroad, dial +44 20 7946 0958 instead."
+    expect:
+      - {category: PHONE, value: "+44 20 7946 0958"}
+
+  # --- locale-independent shapes stay on -----------------------------------
+
+  - id: gb-email-and-iban-stay-on
+    text: "Email a.smith@example.co.uk and pay into GB29 NWBK 6016 1331 9268 19."
+    expect:
+      - {category: EMAIL, value: "a.smith@example.co.uk"}
+      - {category: IBAN, value: "GB29 NWBK 6016 1331 9268 19"}
+
+  # === Precision: none of this may be flagged ===
+
+  # Ten digits in the NHS layout whose check digit does not verify. Without the
+  # checksum this pattern claims every 3-3-4 run of digits there is.
+  - id: gb-prec-nhs-bad-check-digit
+    text: "Reference 943 476 5918 on the invoice."
+    expect: []
+
+  # The letters the first and second positions never take, and a prefix that is
+  # never issued. Each is a different branch of the rule, and a case for one
+  # does not exercise the others.
+  - id: gb-prec-nino-excluded-first-letter
+    text: "Batch id DA123456C in the legacy table."
+    expect: []
+
+  - id: gb-prec-nino-excluded-second-letter
+    text: "Batch id AO123456C in the legacy table."
+    expect: []
+
+  - id: gb-prec-nino-unissued-prefix
+    text: "Batch id GB123456C in the legacy table."
+    expect: []
+
+  # The placeholder every HMRC document uses, and it is invalid on purpose: Q is
+  # not a first letter. A pattern without the letter rules masks it, which
+  # tokenizes the documentation an operator pasted in to ask a question about.
+  - id: gb-prec-nino-hmrc-placeholder
+    text: "The guidance uses QQ123456C as its example."
+    expect: []
+
+  - id: gb-prec-version-and-port
+    text: "Deployed 1.24.3 on port 8080, latency 250 ms."
+    expect: []
+
+  - id: gb-prec-uuid
+    text: "trace_id=550e8400-e29b-41d4-a716-446655440000"
+    expect: []
+
+  # A postcode is uppercase where it is written for real. Allowing lower case
+  # would claim ordinary words of the same shape.
+  - id: gb-prec-lowercase-postcode-shape
+    text: "the token sw1a 1aa appears in the fixture"
+    expect: []

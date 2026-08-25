@@ -1,0 +1,78 @@
+# Precision suite: text that must come out untouched. Every case here is a shape
+# a broad pattern is tempted by — a version string, an order id, a port number.
+# An empty `expect` means nothing at all may be flagged.
+locale: fr
+min_precision: 100
+min_recall: 100
+
+cases:
+  - id: prec-iban-lookalike
+    text: "Référence commande PO12ABCD3456EFGH validée hier."
+    expect: []
+
+  - id: prec-card-lookalike
+    text: "Le compteur est passé à 4532015112830367 unités ce mois-ci."
+    expect: []
+
+  - id: prec-nir-lookalike
+    text: "Identifiant interne 269054958815781 dans la table legacy."
+    expect: []
+
+  - id: prec-version-and-port
+    text: "Déployé en 1.24.3 sur le port 8080, latence 250 ms."
+    expect: []
+
+  - id: prec-prices
+    text: "Facture de 1 234,56 € réglée, remise de 15 % appliquée."
+    expect: []
+
+  - id: prec-street-word-in-prose
+    text: "Nous avons roulé sur la route de Lyon pendant trois heures."
+    expect: []
+
+  - id: prec-cours-and-place-as-nouns
+    text: "Au cours de l'année, la place de la mairie a été refaite."
+    expect: []
+
+  - id: prec-plain-url
+    text: "La doc est sur https://docs.example.com/guide/installation et le proxy sur http://localhost:8080."
+    expect: []
+
+  - id: prec-uuid
+    text: "trace_id=550e8400-e29b-41d4-a716-446655440000"
+    expect: []
+
+  - id: prec-sha
+    text: "commit a94a8fe5ccb19ba61c4c0873d391e987982fbbd3 mergé sur master"
+    expect: []
+
+  - id: prec-code-snippet
+    text: "if (count > 100 && retries < 3) { return backoff(2000); }"
+    expect: []
+
+  # The cost of accepting the space-separated date form: three numbers in the
+  # day/month/year ranges read as a date whatever they meant. Recorded rather
+  # than gated, so it is visible and so the suite says something the day it
+  # starts passing.
+  - id: prec-dob-spaced-lookalike
+    text: "La version 1 12 2019 du document est archivée."
+    expect: []
+    gate: false
+    note: |
+      "1 12 2019" is a valid day/month/year triple, and nothing in the text says
+      it is a version rather than a date. Narrowing it would mean requiring a
+      context word (né le, date de naissance), which would then miss the bare
+      dates in a form field — the shape the space-separated form exists for.
+
+
+  # A postal code is the pair, so the capitalised commune is what separates one
+  # from any other five-digit number: an amount is followed by a lowercase unit.
+  - id: prec-postal-lookalike-amount
+    text: "Le montant est de 75002 euros au total."
+    expect: []
+
+  # Departments stop at 98: 99xxx is not a metropolitan or overseas code, and
+  # accepting it would flag catalogue references sitting next to a proper noun.
+  - id: prec-postal-invalid-department
+    text: "Référence interne 99123 Alpha au catalogue."
+    expect: []

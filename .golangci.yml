@@ -1,0 +1,55 @@
+version: "2"
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - bodyclose
+    - errorlint
+    - gocritic
+    - misspell
+    - nilerr
+    - revive
+    - unconvert
+    - unparam
+    - usestdlibvars
+
+  settings:
+    revive:
+      rules:
+        - name: exported
+          arguments:
+            - disableStutteringCheck
+
+    misspell:
+      # British spelling throughout: the product targets the UK and the EU, and
+      # its prose says "catalogue", "licence", "recognised". Set here rather
+      # than corrected in the comments, so the linter agrees with a choice that
+      # was made deliberately.
+      locale: UK
+
+    errcheck:
+      # A failed write to stdout — a closed pipe, mostly — leaves a CLI nothing
+      # useful to do but exit, which it is about to do anyway. Checking each
+      # Fprintln in a report that prints a dozen lines buys nothing and hides
+      # the shape of the report.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+
+  exclusions:
+    rules:
+      # A test may assert on a value the linter would rather see refactored.
+      - path: _test\.go
+        linters:
+          - unparam
+          - gocritic
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

@@ -1,0 +1,153 @@
+# Span-boundary suite, modelled on PasteGuard's `boundaries`.
+#
+# Every case here is a value the catalogue already knows, wrapped in the
+# punctuation real text puts around it: parentheses, quotes, brackets, a
+# sentence-ending period, a trailing comma, a port, a markdown link. The value
+# is what must be masked — no more, no less. A regex that swallows the closing
+# bracket sends the provider a token where a bracket belongs; one that stops a
+# character early leaves a fragment of the value in clear.
+locale: fr
+min_precision: 100
+min_recall: 100
+
+cases:
+  - id: bound-email-parentheses
+    text: "Le référent (claire.dubois@example.fr) a validé."
+    expect:
+      - {category: EMAIL, value: "claire.dubois@example.fr"}
+
+  - id: bound-email-end-of-sentence
+    text: "Merci d'écrire à claire.dubois@example.fr."
+    expect:
+      - {category: EMAIL, value: "claire.dubois@example.fr"}
+
+  - id: bound-email-double-quotes
+    text: 'Le champ vaut "claire.dubois@example.fr" dans le CSV.'
+    expect:
+      - {category: EMAIL, value: "claire.dubois@example.fr"}
+
+  - id: bound-email-plus-tag
+    text: "Alias de suivi : claire+juridique@example.fr, à conserver."
+    expect:
+      - {category: EMAIL, value: "claire+juridique@example.fr"}
+
+  - id: bound-email-angle-brackets
+    text: "From: Claire <claire.dubois@example.fr>"
+    expect:
+      - {category: EMAIL, value: "claire.dubois@example.fr"}
+
+  - id: bound-email-repeated-twice
+    text: "Écrire à claire@example.fr puis relancer claire@example.fr demain."
+    expect:
+      - {category: EMAIL, value: "claire@example.fr"}
+      - {category: EMAIL, value: "claire@example.fr"}
+
+  - id: bound-phone-single-quotes
+    text: "La note dit d'appeler le '06 12 34 56 78' après midi."
+    expect:
+      - {category: PHONE, value: "06 12 34 56 78"}
+
+  - id: bound-phone-square-brackets
+    text: "Contact [01.45.67.89.10] pour le dossier."
+    expect:
+      - {category: PHONE, value: "01.45.67.89.10"}
+
+  - id: bound-phone-end-of-sentence
+    text: "Rappelle-moi au 06 12 34 56 78."
+    expect:
+      - {category: PHONE, value: "06 12 34 56 78"}
+
+  - id: bound-iban-trailing-comma
+    text: "Virement sur FR1420041010050500013M02606, puis confirmation."
+    expect:
+      - {category: IBAN, value: "FR1420041010050500013M02606"}
+
+  - id: bound-iban-parentheses
+    text: "Compte (DE89370400440532013000) à rapprocher."
+    expect:
+      - {category: IBAN, value: "DE89370400440532013000"}
+
+  - id: bound-card-end-of-sentence
+    text: "Payé avec la carte 4532015112830366."
+    expect:
+      - {category: CREDIT_CARD, value: "4532015112830366"}
+
+  - id: bound-ip-with-port
+    text: "connection refused from 192.168.13.42:8080 after three retries"
+    expect:
+      - {category: IP_ADDRESS, value: "192.168.13.42"}
+
+  - id: bound-ip-end-of-sentence
+    text: "La requête vient de 192.168.13.42."
+    expect:
+      - {category: IP_ADDRESS, value: "192.168.13.42"}
+
+  - id: bound-nir-parentheses
+    text: "Assuré (2 69 05 49 588 157 80) enregistré."
+    expect:
+      - {category: NIR, value: "2 69 05 49 588 157 80"}
+
+  - id: bound-siret-trailing-paren
+    text: "Établissement (552 100 554 00013) fermé."
+    expect:
+      - {category: SIRET, value: "552 100 554 00013"}
+
+  - id: bound-secret-in-quotes
+    text: 'export OPENAI_API_KEY="sk-proj-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGH"'
+    expect:
+      - {category: SECRET_OPENAI_KEY, value: "sk-proj-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGH"}
+
+  - id: bound-email-in-json-value
+    text: '{"contact": "claire.dubois@example.fr", "actif": true}'
+    expect:
+      - {category: EMAIL, value: "claire.dubois@example.fr"}
+
+  - id: bound-email-markdown-link
+    text: "Voir [Claire](mailto:claire.dubois@example.fr) pour la suite."
+    expect:
+      - {category: EMAIL, value: "claire.dubois@example.fr"}
+
+  - id: bound-address-trailing-paren
+    text: "Le dépôt (12 rue de la Paix, 75002 Paris) ouvre lundi."
+    expect:
+      - {category: ADDRESS, value: "12 rue de la Paix, 75002 Paris"}
+
+  # The two credential patterns whose value class has no punctuation stop.
+  #
+  # CONN_STR's host part is `[^\s"'`]+` and GENERIC's value part is
+  # `[^\s'"`]{8,}`: both run to the next whitespace, so a comma or a
+  # sentence-ending period ends up inside the match. That matters more here than
+  # for a reversible token — a secret is redacted in place and never restored,
+  # so the punctuation is destroyed rather than merely displaced, and the
+  # sentence comes back to the reader with its separator eaten.
+  #
+  # Both were parked here as known gaps and closed in pkg/pii by ending each
+  # class on a character that is not sentence punctuation (noSentenceTail).
+  - id: bound-conn-str-trailing-comma
+    text: "Restauration depuis mongodb+srv://svc:tr0ub4dor@cluster.example:27017/app, puis vérification."
+    expect:
+      - {category: SECRET_CONN_STR, value: "mongodb+srv://svc:tr0ub4dor@cluster.example:27017/app"}
+
+  - id: bound-generic-secret-trailing-comma
+    text: "Dans le vault : SECRET = troisieme-valeur-longue, à faire tourner."
+    expect:
+      - {category: SECRET_GENERIC, value: "troisieme-valeur-longue"}
+
+  - id: bound-conn-str-end-of-sentence
+    text: "La base est sur postgres://admin:s3cr3t@db.internal:5432/prod."
+    expect:
+      - {category: SECRET_CONN_STR, value: "postgres://admin:s3cr3t@db.internal:5432/prod"}
+
+  - id: bound-conn-str-parentheses
+    text: "La base (postgres://admin:s3cr3t@db.internal:5432/prod) répond encore."
+    expect:
+      - {category: SECRET_CONN_STR, value: "postgres://admin:s3cr3t@db.internal:5432/prod"}
+
+  # The fallback branch of the generic-secret value, and the reason it exists:
+  # eight characters ending on punctuation cannot be trimmed without falling
+  # under the length floor, so the whole run is taken rather than nothing at
+  # all. Delete the second alternative and this case leaks in clear.
+  - id: bound-generic-secret-eight-chars-ending-on-punctuation
+    text: "Le conteneur démarre avec PASSWORD=hunter2) dans sa configuration."
+    expect:
+      - {category: SECRET_GENERIC, value: "hunter2)"}
