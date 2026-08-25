@@ -82,29 +82,30 @@ func (d *Detector) NewPass(known map[string]string) *Pass {
 func (p *Pass) Minted() map[string]string { return p.minted }
 
 // mask returns what a value is replaced by, minting it on first sight.
-func (p *Pass) mask(cat pii.Category, original string) string {
+func (p *Pass) mask(cat pii.Category, locale, original string) string {
 	if masked, ok := p.byValue[original]; ok {
 		return masked
 	}
 
 	index := p.d.nextIndex(cat)
-	masked := p.d.render(cat, index)
+	masked := p.d.render(cat, locale, index)
 
 	p.byValue[original] = masked
 	p.minted[masked] = original
 	return masked
 }
 
-// render is the substitution mode applied to one index.
+// render is the substitution mode applied to one index, in the locale that
+// recognised the value.
 //
 // A category with no generator, or an index past what its generator can produce
 // without repeating itself, falls back to a bracket token. That fallback is the
 // safe direction: a token is never a leak and never a fabrication, it only reads
 // less like prose. Every credential takes it by design — a stand-in that looks
 // like a working API key is a thing somebody will try to use.
-func (d *Detector) render(cat pii.Category, index int64) string {
+func (d *Detector) render(cat pii.Category, locale string, index int64) string {
 	if d.config.Substitution == SubstitutionFake && !pii.IsSecret(cat) {
-		if fake, ok := d.fakes.Value(cat, index); ok {
+		if fake, ok := d.fakes.Value(cat, locale, index); ok {
 			return fake
 		}
 	}
@@ -162,7 +163,7 @@ func (d *Detector) Mask(text string, pass *Pass) (string, int) {
 			continue // defensive: overlap resolution has already made these disjoint
 		}
 		b.WriteString(text[cursor:m.Start])
-		b.WriteString(pass.mask(m.Category, m.Value))
+		b.WriteString(pass.mask(m.Category, m.Locale, m.Value))
 		cursor = m.End
 		replaced++
 	}

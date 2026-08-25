@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -71,6 +72,11 @@ func New(cfg Config, det *detector.Detector, v *vault.Vault) (*Server, error) {
 	}
 
 	for _, p := range providers {
+		if slices.Contains(reservedRoutes, p.Code) {
+			return nil, fmt.Errorf("provider %q takes a path the agent answers itself; "+
+				"reserved: %s", p.Code, strings.Join(reservedRoutes, ", "))
+		}
+
 		base, err := url.Parse(p.BaseURL)
 		if err != nil {
 			return nil, fmt.Errorf("provider %q: %w", p.Code, err)
@@ -105,10 +111,16 @@ func (s *Server) reverseProxy(base *url.URL) *httputil.ReverseProxy {
 	}
 }
 
+// reservedRoutes are the paths the agent answers itself. A provider may not take
+// one of these codes: "/healthz" would reach the agent while "/healthz/v1/…"
+// reached the provider, which is a routing table nobody could reason about.
+var reservedRoutes = []string{"healthz", "test"}
+
 // Handler returns the agent's routes.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.health)
+	mux.HandleFunc("/test", s.handleTest)
 	mux.HandleFunc("/", s.forward)
 	return mux
 }

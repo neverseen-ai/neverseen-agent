@@ -75,6 +75,17 @@ rehydrator keeps back anything that could be the start of a token and prepends i
 to the next piece, so what it emits is always a whole event — occasionally a few
 characters shorter, with those characters moving to the event after it.
 
+**`/test` is a real tool, not a demo.** It renders one text in both substitution
+modes side by side, using the deployment's own detector, and it is how the two
+shape bugs and the locale bug below were found. Routes the agent answers itself
+are reserved (`reservedRoutes`), so a provider cannot take one.
+
+**A stand-in is chosen by the locale that recognised the value**, not by the set
+of enabled locales. Merging the per-locale tables into one map means a shared
+category — telephone, address, postcode — resolves to whichever locale merged
+last: with `fr,gb,us` on, a French number came out as "(555) 555-0100". The
+matched pattern carries its `Locale`, and that is what picks the table.
+
 **The agent holds no API keys.** The caller's credential is forwarded untouched,
 because the tool making the request already has it. Adding key storage would make
 a workstation agent one more place a key lives.

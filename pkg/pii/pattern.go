@@ -19,6 +19,17 @@ type Pattern struct {
 	// actually fired.
 	Label string
 
+	// Locale is the country set this pattern came from, or "" for the ones that
+	// are locale-independent. Stamped by LocalePatterns rather than written into
+	// each pattern, so a new locale gets it without anybody remembering to.
+	//
+	// It exists because a shared category needs to know which country recognised
+	// a value. With France, the UK and the US all enabled, a French telephone
+	// number came out as "(555) 555-0100": three locales contribute a PHONE
+	// generator, and whichever loaded last was winning. Knowing the value was
+	// matched by the French pattern is what picks the French stand-in.
+	Locale string
+
 	// Group is the submatch carrying the value, when the expression has to match
 	// more than it means. RE2 has no lookbehind, so a pattern that must reject a
 	// preceding character has to consume it and point here instead. Zero means

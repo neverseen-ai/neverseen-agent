@@ -30,6 +30,10 @@ linters:
       # than corrected in the comments, so the linter agrees with a choice that
       # was made deliberately.
       locale: UK
+      ignore-rules:
+        # "color" is a CSS property name, not prose, and the test page's
+        # stylesheet is full of it. It cannot be spelled the other way.
+        - color
 
     errcheck:
       # A failed write to stdout — a closed pipe, mostly — leaves a CLI nothing

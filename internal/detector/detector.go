@@ -25,6 +25,12 @@ type Match struct {
 	// report say a Slack *app* token was found rather than just "a Slack token".
 	Label string
 
+	// Locale is the country set that recognised the value, or "" for the sets
+	// that are locale-independent. It is what picks the right stand-in for a
+	// category several countries contribute a shape to: a French telephone
+	// number gets a French one.
+	Locale string
+
 	// Start and End are byte offsets into the scanned text.
 	Start, End int
 
@@ -98,6 +104,24 @@ func (d *Detector) Substitution() Substitution { return d.config.Substitution }
 // depends on the configuration and the detector is what holds it.
 func (d *Detector) Sample() string { return pii.Sample(d.config.Locales) }
 
+// WithSubstitution returns a detector holding the same catalogue and lists,
+// rendering its replacements in the given mode.
+//
+// The mode belongs to the configuration, because a deployment has one answer to
+// "what does a masked value look like here". This exists for the one caller that
+// needs both at once: the side-by-side comparison, which cannot ask the question
+// twice of the same detector.
+//
+// The result carries its own counters, and that is the point rather than a side
+// effect. Sharing the live ones would number the same text [EMAIL_1] on one page
+// load and [EMAIL_7] on the next, so a comparison nobody could read — and it
+// would spend the real indices on a page that stores nothing.
+func (d *Detector) WithSubstitution(mode Substitution) *Detector {
+	cfg := d.config
+	cfg.Substitution = mode
+	return New(cfg)
+}
+
 // Scan returns the sensitive values in text, in reading order, with overlaps
 // resolved.
 //
@@ -129,6 +153,7 @@ func (d *Detector) candidates(text string) []Match {
 				Value:      value,
 				Category:   p.Category,
 				Label:      p.Label,
+				Locale:     p.Locale,
 				Start:      span[0],
 				End:        span[1],
 				Confidence: score,

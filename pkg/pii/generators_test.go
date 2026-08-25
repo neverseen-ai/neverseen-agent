@@ -16,17 +16,18 @@ import (
 func TestStandInsFailTheirOwnChecksum(t *testing.T) {
 	tests := []struct {
 		cat    Category
+		locale string
 		verify func(string) bool
 	}{
-		{CatCreditCard, LuhnCheck},
-		{CatIBAN, IBANCheck},
-		{CatNIR, NIRCheck},
-		{CatSIREN, SIRENCheck},
-		{CatSIRET, SIRETCheck},
-		{CatNHSNumber, NHSNumberCheck},
-		{CatNINO, NINOCheck},
-		{CatSSN, SSNCheck},
-		{CatRoutingNumber, RoutingNumberCheck},
+		{CatCreditCard, "", LuhnCheck},
+		{CatIBAN, "", IBANCheck},
+		{CatNIR, "fr", NIRCheck},
+		{CatSIREN, "fr", SIRENCheck},
+		{CatSIRET, "fr", SIRETCheck},
+		{CatNHSNumber, "gb", NHSNumberCheck},
+		{CatNINO, "gb", NINOCheck},
+		{CatSSN, "us", SSNCheck},
+		{CatRoutingNumber, "us", RoutingNumberCheck},
 	}
 
 	for _, tt := range tests {
@@ -34,7 +35,7 @@ func TestStandInsFailTheirOwnChecksum(t *testing.T) {
 			// Several indices, because a generator can be wrong for one and right
 			// for the next — the check digit it has to avoid moves with the body.
 			for _, index := range []int64{1, 2, 3, 42, 1000} {
-				value, ok := FakeValue(tt.cat, index)
+				value, ok := FakeValue(tt.cat, tt.locale, index)
 				if !ok {
 					t.Fatalf("no stand-in for index %d", index)
 				}
@@ -65,7 +66,7 @@ func TestStandInsUseReservedRanges(t *testing.T) {
 		t.Run(string(tt.cat), func(t *testing.T) {
 			// Asked of the French set, which is where the national stand-ins for
 			// these come from.
-			value, ok := NewFakeSet([]string{"fr"}).Value(tt.cat, 1)
+			value, ok := NewFakeSet([]string{"fr"}).Value(tt.cat, "fr", 1)
 			if !ok {
 				t.Fatalf("no stand-in for %s", tt.cat)
 			}
@@ -80,18 +81,19 @@ func TestStandInsUseReservedRanges(t *testing.T) {
 		us := NewFakeSet([]string{"us"})
 
 		for _, tt := range []struct {
-			set  FakeSet
-			cat  Category
-			want string
+			set    FakeSet
+			locale string
+			cat    Category
+			want   string
 		}{
-			{gb, CatPostalCode, "ZZ99 "},  // the ONS pseudo-postcode for "not known"
-			{gb, CatPhone, "07700 900"},   // the Ofcom drama range
-			{us, CatEIN, "00-"},           // not an assigned IRS campus prefix
-			{us, CatPhone, "555-01"},      // reserved for fiction
-			{us, CatPostalCode, "00000-"}, // not an assigned ZIP
-			{us, CatAddress, "IL 00000"},  // same, inside an address
+			{gb, "gb", CatPostalCode, "ZZ99 "},  // the ONS pseudo-postcode for "not known"
+			{gb, "gb", CatPhone, "07700 900"},   // the Ofcom drama range
+			{us, "us", CatEIN, "00-"},           // not an assigned IRS campus prefix
+			{us, "us", CatPhone, "555-01"},      // reserved for fiction
+			{us, "us", CatPostalCode, "00000-"}, // not an assigned ZIP
+			{us, "us", CatAddress, "IL 00000"},  // same, inside an address
 		} {
-			value, ok := tt.set.Value(tt.cat, 1)
+			value, ok := tt.set.Value(tt.cat, tt.locale, 1)
 			if !ok {
 				t.Fatalf("no stand-in for %s", tt.cat)
 			}
@@ -102,6 +104,103 @@ func TestStandInsUseReservedRanges(t *testing.T) {
 	})
 }
 
+// A stand-in has to be the right length, and this is the half that fails
+// quietly: a wrong length is still unattributable, it just stops reading as the
+// thing it replaced — which is the entire reason for preferring a stand-in over a
+// bracket token. Two of these were wrong until a page rendered them side by side
+// with the originals: an eighteen-digit payment card, and a twenty-three
+// character IBAN.
+//
+// Written out rather than derived. Deriving the expected length from the
+// generator would agree with whatever the generator does.
+func TestStandInsHaveTheRightLength(t *testing.T) {
+	tests := []struct {
+		cat    Category
+		locale string
+		digits int
+		what   string
+	}{
+		{CatCreditCard, "", 16, "a Visa"},
+		{CatNIR, "fr", 15, "a French social security number"},
+		{CatSIREN, "fr", 9, "a SIREN"},
+		{CatSIRET, "fr", 14, "a SIRET"},
+		{CatNHSNumber, "gb", 10, "an NHS number"},
+		{CatSSN, "us", 9, "a US social security number"},
+		{CatEIN, "us", 9, "an employer identification number"},
+		{CatRoutingNumber, "us", 9, "an ABA routing number"},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.cat), func(t *testing.T) {
+			for _, index := range []int64{1, 7, 1234} {
+				value, ok := FakeValue(tt.cat, tt.locale, index)
+				if !ok {
+					t.Fatalf("no stand-in for index %d", index)
+				}
+				if got := countDigits(value); got != tt.digits {
+					t.Errorf("the stand-in %q carries %d digits, want %d — %s has %d",
+						value, got, tt.digits, tt.what, tt.digits)
+				}
+			}
+		})
+	}
+
+	// The IBAN is counted in characters rather than digits: its country code and
+	// check digits are part of the length the standard fixes.
+	t.Run(string(CatIBAN), func(t *testing.T) {
+		value, ok := FakeValue(CatIBAN, "", 1)
+		if !ok {
+			t.Fatal("no IBAN stand-in")
+		}
+		if len(value) != 27 {
+			t.Errorf("the stand-in %q is %d characters, want 27 — the length of a French IBAN",
+				value, len(value))
+		}
+	})
+}
+
+func countDigits(s string) int {
+	n := 0
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			n++
+		}
+	}
+	return n
+}
+
+// everyGenerator enumerates each generator once per locale that owns it, plus
+// the shared ones, so a sweep covers a locale's table rather than only whichever
+// one a merged map happened to keep.
+func everyGenerator() []struct {
+	cat    Category
+	locale string
+	gen    Generator
+} {
+	var out []struct {
+		cat    Category
+		locale string
+		gen    Generator
+	}
+	add := func(cat Category, locale string, gen Generator) {
+		out = append(out, struct {
+			cat    Category
+			locale string
+			gen    Generator
+		}{cat, locale, gen})
+	}
+
+	for cat, gen := range fakeGenerators {
+		add(cat, "", gen)
+	}
+	for _, l := range Locales() {
+		for cat, gen := range l.Fakes {
+			add(cat, l.Code, gen)
+		}
+	}
+	return out
+}
+
 // Indexed, never random: the same index always gives the same value, and two
 // indices never give the same one. Both halves matter — the first is what makes
 // a value keep one identity across a conversation, the second is what keeps two
@@ -109,22 +208,23 @@ func TestStandInsUseReservedRanges(t *testing.T) {
 func TestStandInsAreIndexedAndDistinct(t *testing.T) {
 	set := NewFakeSet(LocaleCodes())
 
-	for cat, gen := range set {
-		t.Run(string(cat), func(t *testing.T) {
+	for _, probe := range everyGenerator() {
+		cat, locale, gen := probe.cat, probe.locale, probe.gen
+		t.Run(string(cat)+"/"+locale, func(t *testing.T) {
 			if gen.Capacity < 1 {
 				t.Fatalf("capacity is %d: the generator can produce nothing", gen.Capacity)
 			}
 
 			// Bounded, because some capacities are in the millions.
-			probe := min(gen.Capacity, 500)
+			bound := min(gen.Capacity, 500)
 
-			seen := make(map[string]int64, probe)
-			for i := int64(1); i <= probe; i++ {
-				value, ok := set.Value(cat, i)
+			seen := make(map[string]int64, bound)
+			for i := int64(1); i <= bound; i++ {
+				value, ok := set.Value(cat, locale, i)
 				if !ok {
 					t.Fatalf("index %d is within capacity %d but produced nothing", i, gen.Capacity)
 				}
-				if again, _ := set.Value(cat, i); again != value {
+				if again, _ := set.Value(cat, locale, i); again != value {
 					t.Fatalf("index %d produced %q then %q: the generator is not a function of its index",
 						i, value, again)
 				}
@@ -144,17 +244,17 @@ func TestStandInsAreIndexedAndDistinct(t *testing.T) {
 func TestStandInsRefuseToWrapPastCapacity(t *testing.T) {
 	set := NewFakeSet(LocaleCodes())
 
-	gen, ok := set[CatIPAddr]
+	gen, ok := set.shared[CatIPAddr]
 	if !ok {
 		t.Fatal("no IP stand-in to test the bound with")
 	}
-	if _, ok := set.Value(CatIPAddr, gen.Capacity); !ok {
+	if _, ok := set.Value(CatIPAddr, "", gen.Capacity); !ok {
 		t.Errorf("the last index within capacity %d produced nothing", gen.Capacity)
 	}
-	if value, ok := set.Value(CatIPAddr, gen.Capacity+1); ok {
+	if value, ok := set.Value(CatIPAddr, "", gen.Capacity+1); ok {
 		t.Errorf("index %d is past capacity %d but produced %q", gen.Capacity+1, gen.Capacity, value)
 	}
-	if _, ok := set.Value(CatIPAddr, 0); ok {
+	if _, ok := set.Value(CatIPAddr, "", 0); ok {
 		t.Error("index 0 produced a value; indices start at 1")
 	}
 }
@@ -167,7 +267,7 @@ func TestCredentialsHaveNoStandIn(t *testing.T) {
 
 	for _, cat := range Categories() {
 		if IsSecret(cat) {
-			if _, ok := set[cat]; ok {
+			if ok := set.Has(cat, ""); ok {
 				t.Errorf("%s has a generator: a stand-in that looks like a working credential "+
 					"is worse than a token", cat)
 			}
@@ -179,9 +279,14 @@ func TestCredentialsHaveNoStandIn(t *testing.T) {
 // category. Without that, a British telephone number stood in for a French one —
 // the machine artefact fake mode exists to avoid.
 func TestLocaleStandInsOverrideTheSharedOnes(t *testing.T) {
-	fr, _ := NewFakeSet([]string{"fr"}).Value(CatPhone, 1)
-	gb, _ := NewFakeSet([]string{"gb"}).Value(CatPhone, 1)
-	us, _ := NewFakeSet([]string{"us"}).Value(CatPhone, 1)
+	// All three enabled at once, which is the configuration that used to break:
+	// three locales contribute a PHONE generator, and merging them into one table
+	// meant whichever loaded last won for all of them.
+	all := NewFakeSet(LocaleCodes())
+
+	fr, _ := all.Value(CatPhone, "fr", 1)
+	gb, _ := all.Value(CatPhone, "gb", 1)
+	us, _ := all.Value(CatPhone, "us", 1)
 
 	if fr == gb || gb == us || fr == us {
 		t.Errorf("two locales produce the same telephone stand-in: fr=%q gb=%q us=%q", fr, gb, us)
@@ -194,5 +299,45 @@ func TestLocaleStandInsOverrideTheSharedOnes(t *testing.T) {
 	}
 	if !strings.HasPrefix(us, "(555)") {
 		t.Errorf("the US stand-in %q does not read as a US number", us)
+	}
+
+	// The other two shared categories, which failed the same way. A page showed
+	// a French address replaced by "1 Example Street, Anytown, IL 00000".
+	for _, tt := range []struct {
+		cat            Category
+		locale, prefix string
+	}{
+		{CatAddress, "fr", "1 rue"},
+		{CatAddress, "us", "1 Example Street"},
+		{CatPostalCode, "fr", "99000"},
+		{CatPostalCode, "gb", "ZZ99"},
+		{CatPostalCode, "us", "00000-"},
+	} {
+		value, ok := all.Value(tt.cat, tt.locale, 1)
+		if !ok {
+			t.Errorf("no %s stand-in for locale %q", tt.cat, tt.locale)
+			continue
+		}
+		if !strings.HasPrefix(value, tt.prefix) {
+			t.Errorf("the %s stand-in for %q is %q, which does not read as that country's",
+				tt.cat, tt.locale, value)
+		}
+	}
+}
+
+// A category with no national table falls back to the shared generator, whatever
+// locale recognised it: a date is a date.
+func TestSharedStandInsAreUsedWhenALocaleHasNone(t *testing.T) {
+	all := NewFakeSet(LocaleCodes())
+
+	for _, locale := range append([]string{""}, LocaleCodes()...) {
+		value, ok := all.Value(CatDOB, locale, 1)
+		if !ok {
+			t.Errorf("no date stand-in for locale %q", locale)
+			continue
+		}
+		if !strings.Contains(value, "1900") {
+			t.Errorf("the date stand-in for %q is %q, not the shared one", locale, value)
+		}
 	}
 }

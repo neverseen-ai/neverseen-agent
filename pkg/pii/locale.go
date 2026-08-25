@@ -118,8 +118,15 @@ func LocalePatterns(codes []string) []Pattern {
 
 	var out []Pattern
 	for _, l := range Locales() {
-		if wanted[l.Code] {
-			out = append(out, l.Patterns()...)
+		if !wanted[l.Code] {
+			continue
+		}
+		// Stamped here, once, so a locale cannot contribute patterns that do not
+		// know where they came from — which is what decides whose stand-in a
+		// shared category gets.
+		for _, p := range l.Patterns() {
+			p.Locale = l.Code
+			out = append(out, p)
 		}
 	}
 	return out

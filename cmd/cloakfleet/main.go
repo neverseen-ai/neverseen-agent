@@ -47,6 +47,9 @@ Point a client at the agent by naming the provider in the path:
   ANTHROPIC_BASE_URL=%s/anthropic
   OPENAI_BASE_URL=%s/openai
 
+While it runs, %s/test shows what would be masked — your own
+text, both representations side by side, in this agent's configuration.
+
 Configuration:
   %-28s which country pattern sets to load: %s,
                                none, or a comma-separated list. Unset means none.
@@ -97,7 +100,7 @@ func run(args []string, stdin io.Reader, stdout io.Writer) error {
 func printUsage(w io.Writer) {
 	listen := "http://" + proxy.DefaultListen
 	fmt.Fprintf(w, usage,
-		listen, listen,
+		listen, listen, listen,
 		detector.EnvLocale, strings.Join(pii.LocaleCodes(), ", "),
 		detector.EnvAllowList,
 		detector.EnvSubstitution,

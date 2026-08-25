@@ -32,7 +32,22 @@ Everything that reaches the model is masked, and everything that comes back is
 restored — including through a streaming response, where a token the model
 echoed is regularly split across two events.
 
-Or just look at what would be masked, without sending anything anywhere:
+### The test page
+
+While the agent runs, `http://127.0.0.1:8787/test` shows one text three ways: as
+written, masked with tokens, and masked with stand-ins — in this agent's own
+locales and allow list.
+
+It answers the two questions a log line cannot. Which substitution mode to run:
+a model reasons better about prose than about brackets, but a stand-in in an
+answer is a value nobody can check. And, more usefully day to day, whether the
+catalogue reads *your* data: paste a real record with the values changed, and see
+what would leave the machine and what would not. The page also unmasks its own
+token column and tells you whether the text round-trips exactly.
+
+Nothing on it is sent anywhere, stored, or written to the session vault.
+
+Or scan a file from the shell, without starting anything:
 
 ```console
 $ echo "Call 020 7946 0958, NHS number 9434765919" | CLOAKFLEET_PII_LOCALE=gb cloakfleet scan

@@ -41,19 +41,24 @@ type Generator struct {
 }
 
 // FakeSet is the generators available to a deployment: the locale-independent
-// ones, plus those of the locales it selected.
-type FakeSet map[Category]Generator
+// ones, and each selected locale's own kept separately.
+//
+// Separately, and that is the whole point. Merging them into one table means a
+// shared category — a telephone number, an address, a postcode — resolves to
+// whichever locale was merged last, so with France, the UK and the US all
+// enabled a French number came out as "(555) 555-0100". Which stand-in is right
+// depends on which country's pattern recognised the value, not on the order the
+// tables were built in.
+type FakeSet struct {
+	shared   map[Category]Generator
+	byLocale map[string]map[Category]Generator
+}
 
 // NewFakeSet resolves the generators for a set of locales.
-//
-// A locale's own generators win over a locale-independent one of the same
-// category, which is what the per-locale tables are for: a telephone number has
-// a national shape, and a British number standing in for a French one is exactly
-// the machine artefact fake mode exists to avoid.
 func NewFakeSet(locales []string) FakeSet {
-	set := make(FakeSet, len(fakeGenerators))
-	for cat, gen := range fakeGenerators {
-		set[cat] = gen
+	set := FakeSet{
+		shared:   fakeGenerators,
+		byLocale: make(map[string]map[Category]Generator, len(locales)),
 	}
 
 	wanted := make(map[string]bool, len(locales))
@@ -61,33 +66,47 @@ func NewFakeSet(locales []string) FakeSet {
 		wanted[code] = true
 	}
 	for _, l := range Locales() {
-		if !wanted[l.Code] {
-			continue
-		}
-		for cat, gen := range l.Fakes {
-			set[cat] = gen
+		if wanted[l.Code] && len(l.Fakes) > 0 {
+			set.byLocale[l.Code] = l.Fakes
 		}
 	}
 	return set
 }
 
-// Value returns the stand-in for the index-th value of a category, and whether
-// there is one. False means the caller must fall back to a bracket token: either
-// no generator exists for the category, or the index has run past what one can
-// produce without repeating itself.
-func (s FakeSet) Value(cat Category, index int64) (string, bool) {
-	gen, ok := s[cat]
+// Value returns the stand-in for the index-th value of a category, recognised by
+// a given locale — "" for the locale-independent sets.
+//
+// The locale's own generator wins, then the shared one. False means the caller
+// must fall back to a bracket token: either nothing generates this category, or
+// the index has run past what its generator can produce without repeating
+// itself.
+func (s FakeSet) Value(cat Category, locale string, index int64) (string, bool) {
+	gen, ok := s.byLocale[locale][cat]
+	if !ok {
+		gen, ok = s.shared[cat]
+	}
 	if !ok || index < 1 || index > gen.Capacity {
 		return "", false
 	}
 	return gen.Make(index), true
 }
 
-// FakeValue is Value over every registered locale at once. It is what the tests
-// ask, so a locale's generators are exercised whatever the deployment selects; a
-// running agent asks the FakeSet its own locales resolve to.
-func FakeValue(cat Category, index int64) (string, bool) {
-	return NewFakeSet(LocaleCodes()).Value(cat, index)
+// Has reports whether a category recognised by a locale has a stand-in at all,
+// for the page that explains why some values keep a bracket token even in fake
+// mode.
+func (s FakeSet) Has(cat Category, locale string) bool {
+	if _, ok := s.byLocale[locale][cat]; ok {
+		return true
+	}
+	_, ok := s.shared[cat]
+	return ok
+}
+
+// FakeValue is Value with every registered locale available. It is what the
+// tests ask, so a locale's generators are exercised whatever a deployment
+// selects; a running agent asks the FakeSet its own locales resolve to.
+func FakeValue(cat Category, locale string, index int64) (string, bool) {
+	return NewFakeSet(LocaleCodes()).Value(cat, locale, index)
 }
 
 // fakeGenerators are the stand-ins for shapes that mean the same everywhere.
@@ -107,15 +126,20 @@ var fakeGenerators = map[Category]Generator{
 
 	// A Visa-shaped number whose Luhn digit is deliberately wrong, so it cannot
 	// be a card that was ever issued.
-	CatCreditCard: {Capacity: 99999999, Make: func(i int64) string {
-		body := fmt.Sprintf("400000000%08d", i) // fifteen digits
+	//
+	// Sixteen digits, because that is what a Visa has. Getting the length wrong
+	// does not make the stand-in unsafe, it makes it stop reading as a card —
+	// which is the whole reason for preferring one over a bracket token.
+	CatCreditCard: {Capacity: 999999999, Make: func(i int64) string {
+		body := fmt.Sprintf("400000%09d", i) // fifteen digits, before the check digit
 		return body + invalidCheckDigit(luhnCheckDigit(body))
 	}},
 
-	// IBAN check digits run from 02 to 98, so "00" is a value the standard
-	// cannot produce.
+	// IBAN check digits run from 02 to 98, so "00" is a value the standard cannot
+	// produce. Twenty-seven characters, the length of a French IBAN, for the same
+	// reason the card is sixteen digits.
 	CatIBAN: {Capacity: 99999999, Make: func(i int64) string {
-		return fmt.Sprintf("FR00%019d", i)
+		return fmt.Sprintf("FR00%023d", i)
 	}},
 
 	// A date in a fixed fictional decade. Any date belongs to somebody, so what
