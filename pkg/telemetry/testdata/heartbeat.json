@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "agent_id": "agt_7f3c9a21",
+  "sent_at": "2026-08-25T14:30:00Z",
+  "window": {
+    "start": "2026-08-25T14:25:00Z",
+    "end": "2026-08-25T14:30:00Z"
+  },
+  "state": {
+    "version": "1.4.2",
+    "platform": "darwin/arm64",
+    "started_at": "2026-08-22T14:30:00Z",
+    "locales": [
+      "fr",
+      "gb"
+    ],
+    "substitution": "token",
+    "providers": [
+      "anthropic",
+      "openai"
+    ]
+  },
+  "counters": {
+    "requests": 128,
+    "masked": {
+      "EMAIL": 41,
+      "NIR": 3,
+      "SECRET_OPENAI_KEY": 1
+    },
+    "models": {
+      "claude-sonnet-4": {
+        "input": 1204,
+        "output": 22871,
+        "cache_write": 18430,
+        "cache_read": 184302
+      },
+      "gpt-4o": {
+        "input": 9140,
+        "output": 1205
+      }
+    },
+    "dropped": 2
+  }
+}

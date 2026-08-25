@@ -26,6 +26,7 @@ import (
 
 	"github.com/cloakfleet/cloakfleet/internal/detector"
 	"github.com/cloakfleet/cloakfleet/internal/proxy"
+	"github.com/cloakfleet/cloakfleet/internal/telemetry"
 	"github.com/cloakfleet/cloakfleet/pkg/pii"
 )
 
@@ -58,6 +59,12 @@ Configuration:
   %-28s address to listen on (default %s).
   %-28s upstream overrides, as code=url pairs.
   %-28s 32-byte hex key for the session mapping.
+
+Supervision is optional, and the agent is complete without it:
+  %-28s a supervision backend. Unset means none.
+  %-28s the enrolment token it gave you, presented once.
+  %-28s where the issued identity is kept
+                               (default %s).
 
 Every variable is documented in .env.example.
 `
@@ -106,7 +113,10 @@ func printUsage(w io.Writer) {
 		detector.EnvSubstitution,
 		proxy.EnvListen, proxy.DefaultListen,
 		proxy.EnvProviders,
-		proxy.EnvEncryptionKey)
+		proxy.EnvEncryptionKey,
+		proxy.EnvBackendURL,
+		proxy.EnvEnrolmentToken,
+		proxy.EnvIdentityFile, proxy.DefaultIdentityFile)
 }
 
 // runProxy serves until it is signalled, then stops taking new requests and lets
@@ -118,23 +128,39 @@ func printUsage(w io.Writer) {
 func runProxy(stdout io.Writer) error {
 	logger := slog.New(slog.NewTextHandler(stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
-	srv, addr, err := proxy.FromEnv(logger)
+	// Stamped before anything is assembled, because the agent reports it about
+	// itself and a supervision dashboard showing "dev" for every workstation is
+	// a fleet nobody can audit.
+	proxy.Version = version
+
+	agent, err := proxy.FromEnv(logger)
 	if err != nil {
 		return err
 	}
 
 	server := &http.Server{
-		Addr:              addr,
-		Handler:           srv.Handler(),
+		Addr:              agent.Addr,
+		Handler:           agent.Server.Handler(),
 		ReadHeaderTimeout: 30 * time.Second,
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// Supervision runs on its own goroutine and can fail all it likes. A backend
+	// that is down, slow or misconfigured must never stop the masking — or the
+	// security control would be taken out by the tool that watches it.
+	if agent.Reporter != nil {
+		logger.Info("supervision enabled, reporting every " + telemetry.DefaultInterval.String())
+		go agent.Reporter.Run(ctx)
+	}
+
 	errs := make(chan error, 1)
 	go func() {
-		logger.Info("listening", "address", addr, "providers", strings.Join(srv.Providers(), ","))
+		logger.Info("listening",
+			"address", agent.Addr,
+			"providers", strings.Join(agent.Server.Providers(), ","),
+			"supervised", agent.Reporter != nil)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errs <- err
 		}

@@ -22,8 +22,10 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/cloakfleet/cloakfleet/internal/detector"
+	"github.com/cloakfleet/cloakfleet/internal/telemetry"
 	"github.com/cloakfleet/cloakfleet/internal/vault"
 )
 
@@ -36,16 +38,26 @@ type Config struct {
 	// Logger receives one line per exchange, carrying counts and never content.
 	// Nil discards them.
 	Logger *slog.Logger
+
+	// Recorder accumulates what a supervised agent reports. Nil means one is
+	// created anyway: counting costs a mutex and the request path then has one
+	// shape rather than two, with no branch that only runs where nobody looked.
+	Recorder *telemetry.Recorder
 }
 
 // Server is the agent's HTTP front.
 type Server struct {
-	det   *detector.Detector
-	vault *vault.Vault
-	log   *slog.Logger
+	det      *detector.Detector
+	vault    *vault.Vault
+	log      *slog.Logger
+	recorder *telemetry.Recorder
 
 	providers []Provider
 	routes    map[string]*httputil.ReverseProxy
+
+	// startedAt is when this process began serving, so a supervision backend can
+	// show uptime and spot an agent restarting in a loop.
+	startedAt time.Time
 }
 
 // New builds the server.
@@ -62,13 +74,19 @@ func New(cfg Config, det *detector.Detector, v *vault.Vault) (*Server, error) {
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
+	recorder := cfg.Recorder
+	if recorder == nil {
+		recorder = telemetry.NewRecorder(time.Now())
+	}
 
 	s := &Server{
 		det:       det,
 		vault:     v,
 		log:       logger,
+		recorder:  recorder,
 		providers: providers,
 		routes:    make(map[string]*httputil.ReverseProxy, len(providers)),
+		startedAt: time.Now(),
 	}
 
 	for _, p := range providers {
@@ -156,6 +174,8 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.recorder.Request()
+
 	r.URL.Path = rest
 	r.Host = ""
 	route.ServeHTTP(w, r.WithContext(withSession(r.Context(), session)))
@@ -206,6 +226,8 @@ func (s *Server) maskRequest(session string, r *http.Request) error {
 	r.Header.Del("Content-Encoding") // readBody has decompressed it
 
 	if replaced > 0 {
+		s.recorder.Masked(pass.Counts())
+
 		// Counts, never content: the log is the one place a masked value could
 		// come back into the clear by accident.
 		s.log.Info("request masked", "session", session, "values", replaced, "minted", len(pass.Minted()))
@@ -248,7 +270,7 @@ func (s *Server) unmask(resp *http.Response) error {
 	}
 
 	if isEventStream(resp.Header.Get("Content-Type")) {
-		resp.Body = newStreamRehydrator(resp.Body, known)
+		resp.Body = newStreamRehydrator(resp.Body, known, s.recorder.Usage)
 		return nil
 	}
 
@@ -265,8 +287,17 @@ func (s *Server) unmask(resp *http.Response) error {
 	expand := func(text string) string { return detector.Unmask(text, known) }
 
 	out := ""
-	if encoded, ok := mapJSONStrings(body, expand); ok {
-		out = string(encoded)
+	if doc, err := decodeJSONBody(body); err == nil {
+		// The same decode answers both questions, so the body is parsed once:
+		// what the tokens cost, and what has to be put back into it.
+		if model, usage := usageFrom(doc); model != "" {
+			s.recorder.Usage(model, usage)
+		}
+		if encoded, err := encodeJSONBody(mapStrings(doc, expand)); err == nil {
+			out = string(encoded)
+		} else {
+			out = expand(string(body))
+		}
 	} else {
 		out = expand(string(body))
 	}

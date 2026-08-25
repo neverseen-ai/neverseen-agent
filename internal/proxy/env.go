@@ -5,10 +5,15 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
+	"time"
 
 	"github.com/cloakfleet/cloakfleet/internal/detector"
+	"github.com/cloakfleet/cloakfleet/internal/telemetry"
 	"github.com/cloakfleet/cloakfleet/internal/vault"
+	contract "github.com/cloakfleet/cloakfleet/pkg/telemetry"
 )
 
 // The proxy's own environment, read here and nowhere else. The detector reads
@@ -23,7 +28,23 @@ const (
 	// EnvEncryptionKey is the 32-byte key, hex-encoded, that the session mapping
 	// is sealed with. Unset means one is generated for the life of the process.
 	EnvEncryptionKey = "CLOAKFLEET_ENCRYPTION_KEY"
+
+	// EnvBackendURL points at a supervision backend. Unset means no supervision
+	// at all — no reporter is built, nothing is sent, and the agent is otherwise
+	// identical. That is the free half of the product, and it is a whole feature
+	// rather than a disabled one.
+	EnvBackendURL = "CLOAKFLEET_BACKEND_URL"
+
+	// EnvEnrolmentToken is presented once, to trade for an identity of this
+	// agent's own.
+	EnvEnrolmentToken = "CLOAKFLEET_ENROLMENT_TOKEN"
+
+	// EnvIdentityFile is where that issued identity is kept.
+	EnvIdentityFile = "CLOAKFLEET_IDENTITY_FILE"
 )
+
+// DefaultIdentityFile is where an agent keeps the identity a backend issued it.
+const DefaultIdentityFile = "~/.cloakfleet/agent.json"
 
 // DefaultListen binds the loopback interface only.
 //
@@ -33,41 +54,127 @@ const (
 // reachable interface it becomes a way to read another user's session.
 const DefaultListen = "127.0.0.1:8787"
 
+// Agent is everything the proxy command runs.
+type Agent struct {
+	Server *Server
+	Addr   string
+
+	// Reporter is nil when no backend is configured, which is the ordinary case
+	// and not a degraded one.
+	Reporter *telemetry.Reporter
+}
+
 // FromEnv assembles everything the agent needs to serve: the detector, the
-// session vault, and the server over them.
+// session vault, the server over them, and a reporter when one is configured.
 //
 // One function, so the command that calls it reads no environment of its own and
 // cannot drift from what this configures.
-func FromEnv(logger *slog.Logger) (srv *Server, addr string, err error) {
+func FromEnv(logger *slog.Logger) (*Agent, error) {
 	det, err := detector.FromEnv()
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
 	key, err := encryptionKeyFromEnv()
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	v, err := vault.New(vault.NewMemory(), key, vault.DefaultTTL)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
 	providers, err := ParseProviders(os.Getenv(EnvProviders))
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
-	srv, err = New(Config{Providers: providers, Logger: logger}, det, v)
+	recorder := telemetry.NewRecorder(time.Now())
+	srv, err := New(Config{Providers: providers, Logger: logger, Recorder: recorder}, det, v)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
-	addr = strings.TrimSpace(os.Getenv(EnvListen))
+	addr := strings.TrimSpace(os.Getenv(EnvListen))
 	if addr == "" {
 		addr = DefaultListen
 	}
-	return srv, addr, nil
+
+	agent := &Agent{Server: srv, Addr: addr}
+	if agent.Reporter, err = reporterFromEnv(logger, recorder, srv); err != nil {
+		return nil, err
+	}
+	return agent, nil
+}
+
+// reporterFromEnv builds the reporter, or reports nil when no backend is
+// configured.
+//
+// Nil rather than a reporter that does nothing: an agent with no backend then has
+// no reporting code path at all, so "it works standalone" is a fact about what
+// runs rather than about what was switched off.
+func reporterFromEnv(logger *slog.Logger, recorder *telemetry.Recorder, srv *Server) (*telemetry.Reporter, error) {
+	backend := strings.TrimSpace(os.Getenv(EnvBackendURL))
+	if backend == "" {
+		return nil, nil
+	}
+
+	identity, err := expandHome(envOr(EnvIdentityFile, DefaultIdentityFile))
+	if err != nil {
+		return nil, err
+	}
+
+	return telemetry.NewReporter(telemetry.Config{
+		BaseURL:        strings.TrimRight(backend, "/"),
+		EnrolmentToken: strings.TrimSpace(os.Getenv(EnvEnrolmentToken)),
+		IdentityFile:   identity,
+		Recorder:       recorder,
+		State:          srv.State,
+		Logger:         logger,
+	})
+}
+
+// State is what this agent reports about itself.
+//
+// Read from the running server rather than from the configuration it was built
+// with, because the question a security officer is asking is not "what was it
+// told to do" but "what is it doing" — and an agent running with no locale
+// selected masks almost nothing while looking perfectly healthy.
+func (s *Server) State() contract.State {
+	return contract.State{
+		Version:      Version,
+		Platform:     runtime.GOOS + "/" + runtime.GOARCH,
+		StartedAt:    s.startedAt,
+		Locales:      s.det.Locales(),
+		Substitution: s.det.Substitution().String(),
+		Providers:    providerCodes(s.providers),
+	}
+}
+
+// Version is the agent build, stamped by the command at start-up.
+//
+// A package variable because the version lives in main, where the linker flag
+// puts it, and the reporter needs it here. Set once before serving.
+var Version = "dev"
+
+func envOr(name, fallback string) string {
+	if v := strings.TrimSpace(os.Getenv(name)); v != "" {
+		return v
+	}
+	return fallback
+}
+
+// expandHome resolves a leading "~/" so the documented default is one an operator
+// can read and type.
+func expandHome(path string) (string, error) {
+	if !strings.HasPrefix(path, "~/") {
+		return path, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve the home directory in %q: %w", path, err)
+	}
+	return filepath.Join(home, path[2:]), nil
 }
 
 // encryptionKeyFromEnv reads the sealing key, or reports nil so one is generated.

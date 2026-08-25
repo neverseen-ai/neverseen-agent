@@ -62,6 +62,14 @@ type Pass struct {
 	// minted is what this pass added, masked → original: what the caller still
 	// has to store.
 	minted map[string]string
+
+	// counts is how many values were replaced per category, repeats included.
+	//
+	// Repeats included on purpose: a value masked three times in one body is
+	// three values that did not leave the machine, and that is the number a
+	// security officer is looking at. It is counted here rather than derived
+	// from minted, which only ever holds first sightings.
+	counts map[pii.Category]int
 }
 
 // NewPass starts a pass seeded with what a session already holds.
@@ -71,6 +79,7 @@ func (d *Detector) NewPass(known map[string]string) *Pass {
 		known:   known,
 		byValue: make(map[string]string, len(known)),
 		minted:  make(map[string]string),
+		counts:  make(map[pii.Category]int),
 	}
 	for masked, original := range known {
 		p.byValue[original] = masked
@@ -80,6 +89,9 @@ func (d *Detector) NewPass(known map[string]string) *Pass {
 
 // Minted returns what this pass added to the mapping.
 func (p *Pass) Minted() map[string]string { return p.minted }
+
+// Counts returns how many values this pass replaced, per category.
+func (p *Pass) Counts() map[pii.Category]int { return p.counts }
 
 // mask returns what a value is replaced by, minting it on first sight.
 func (p *Pass) mask(cat pii.Category, locale, original string) string {
@@ -164,6 +176,7 @@ func (d *Detector) Mask(text string, pass *Pass) (string, int) {
 		}
 		b.WriteString(text[cursor:m.Start])
 		b.WriteString(pass.mask(m.Category, m.Locale, m.Value))
+		pass.counts[m.Category]++
 		cursor = m.End
 		replaced++
 	}

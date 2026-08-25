@@ -8,6 +8,7 @@ import (
 
 	"github.com/cloakfleet/cloakfleet/internal/detector"
 	"github.com/cloakfleet/cloakfleet/pkg/pii"
+	"github.com/cloakfleet/cloakfleet/pkg/telemetry"
 )
 
 // Rehydrating a stream is not rehydrating a document one line at a time.
@@ -31,6 +32,18 @@ type streamRehydrator struct {
 	closer io.Closer
 	known  map[string]string
 
+	// onUsage is called once, when the stream ends, with whatever the events
+	// accounted for.
+	//
+	// Once at the end rather than per event, because a stream reports its cost in
+	// pieces: Anthropic names the model in the first event and the output count
+	// in the last, so anything reported earlier would be a fraction of the truth
+	// filed under an empty model name.
+	onUsage     func(string, telemetry.TokenUsage)
+	usageModel  string
+	usageTotals telemetry.TokenUsage
+	usageSent   bool
+
 	out  bytes.Buffer
 	done bool
 
@@ -43,11 +56,13 @@ type streamRehydrator struct {
 	template []byte
 }
 
-func newStreamRehydrator(body io.ReadCloser, known map[string]string) io.ReadCloser {
+func newStreamRehydrator(body io.ReadCloser, known map[string]string,
+	onUsage func(string, telemetry.TokenUsage)) io.ReadCloser {
 	return &streamRehydrator{
-		src:    bufio.NewReader(body),
-		closer: body,
-		known:  known,
+		src:     bufio.NewReader(body),
+		closer:  body,
+		known:   known,
+		onUsage: onUsage,
 	}
 }
 
@@ -64,6 +79,7 @@ func (r *streamRehydrator) Read(p []byte) (int, error) {
 		if err != nil {
 			r.done = true
 			r.flush()
+			r.reportUsage()
 			if err != io.EOF {
 				// Whatever the buffer holds is still worth delivering: it is the
 				// caller's own data, and dropping it to report a read error the
@@ -77,7 +93,25 @@ func (r *streamRehydrator) Read(p []byte) (int, error) {
 	return r.out.Read(p)
 }
 
-func (r *streamRehydrator) Close() error { return r.closer.Close() }
+// Close reports the usage if the stream never reached its end.
+//
+// A caller that hangs up mid-answer still spent what the provider had already
+// counted, and dropping it would make an abandoned request look free.
+func (r *streamRehydrator) Close() error {
+	r.reportUsage()
+	return r.closer.Close()
+}
+
+// reportUsage hands the accumulated counts over, at most once.
+func (r *streamRehydrator) reportUsage() {
+	if r.usageSent || r.onUsage == nil {
+		return
+	}
+	r.usageSent = true
+	if r.usageModel != "" {
+		r.onUsage(r.usageModel, r.usageTotals)
+	}
+}
 
 // rewrite expands the tokens in one line of the stream.
 func (r *streamRehydrator) rewrite(line string) string {
@@ -94,6 +128,18 @@ func (r *streamRehydrator) rewrite(line string) string {
 		// no structure to work with, so expand whole tokens in the raw text and
 		// hold nothing back.
 		return strings.Replace(line, payload, detector.Unmask(payload, r.known), 1)
+	}
+
+	// The same decoded event answers what the exchange cost. Accumulated rather
+	// than reported here: the model and the counts arrive in different events.
+	if model, usage := usageFrom(event); model != "" || usage != (telemetry.TokenUsage{}) {
+		if r.usageModel == "" {
+			r.usageModel = model
+		}
+		r.usageTotals.Input += usage.Input
+		r.usageTotals.Output += usage.Output
+		r.usageTotals.CacheWrite += usage.CacheWrite
+		r.usageTotals.CacheRead += usage.CacheRead
 	}
 
 	// Every string in the event, decoded, so an original carrying a quote or a

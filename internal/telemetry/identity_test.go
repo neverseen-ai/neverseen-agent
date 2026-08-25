@@ -1,0 +1,99 @@
+package telemetry
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestIdentityRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nested", "agent.json")
+	want := Identity{AgentID: "agt_1", Key: "00112233"}
+
+	if err := SaveIdentity(path, want); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	got, found, err := LoadIdentity(path)
+	if err != nil || !found {
+		t.Fatalf("load: %v, found=%v", err, found)
+	}
+	if got != want {
+		t.Errorf("loaded %+v, want %+v", got, want)
+	}
+}
+
+// A missing file is the normal state of an agent that has not enrolled yet, not
+// an error. Treating it as one would have the reporter give up on the very first
+// tick of a fresh install.
+func TestLoadMissingIdentityIsNotAnError(t *testing.T) {
+	_, found, err := LoadIdentity(filepath.Join(t.TempDir(), "absent.json"))
+	if err != nil {
+		t.Errorf("a missing identity file reported an error: %v", err)
+	}
+	if found {
+		t.Error("a missing identity file was reported as found")
+	}
+}
+
+// A half-written file is worse than none: the agent would sign with an empty key
+// and every heartbeat would be rejected with nothing saying why.
+func TestIncompleteIdentityIsRefused(t *testing.T) {
+	for name, content := range map[string]string{
+		"no key":      `{"agent_id":"agt_1"}`,
+		"no agent id": `{"key":"00112233"}`,
+		"empty":       `{}`,
+		"not json":    `agt_1`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "agent.json")
+			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err := LoadIdentity(path); err == nil {
+				t.Errorf("an unusable identity file was accepted: %s", content)
+			}
+		})
+	}
+}
+
+// The file holds a signing key, so its directory must not be readable by other
+// users of a shared machine either.
+func TestIdentityDirectoryIsPrivate(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "cloakfleet")
+	if err := SaveIdentity(filepath.Join(dir, "agent.json"), Identity{AgentID: "a", Key: "b"}); err != nil {
+		t.Fatal(err)
+	}
+
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o700 {
+		t.Errorf("the identity directory is %o, want 700", perm)
+	}
+}
+
+func TestVerifySignature(t *testing.T) {
+	key := []byte("0123456789abcdef0123456789abcdef")
+	body := []byte(`{"schema":1}`)
+
+	// Signed by the reporter's own code path, so the two cannot disagree about
+	// what is being signed — which would be every heartbeat rejected with no
+	// explanation on either side.
+	rep := &Reporter{}
+	signature := rep.signatureFor(key, body)
+
+	if !VerifySignature(key, body, signature) {
+		t.Error("a signature this package produced did not verify")
+	}
+	if VerifySignature(key, []byte(`{"schema":2}`), signature) {
+		t.Error("a signature verified against a different body")
+	}
+	if VerifySignature([]byte("ffffffffffffffffffffffffffffffff"), body, signature) {
+		t.Error("a signature verified under a different key")
+	}
+	if VerifySignature(key, body, "not hex") {
+		t.Error("a signature that is not hex verified")
+	}
+}

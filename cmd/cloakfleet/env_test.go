@@ -37,6 +37,9 @@ func TestDocumentedEnvironmentMatchesTheCode(t *testing.T) {
 		proxy.EnvListen,
 		proxy.EnvProviders,
 		proxy.EnvEncryptionKey,
+		proxy.EnvBackendURL,
+		proxy.EnvEnrolmentToken,
+		proxy.EnvIdentityFile,
 	}
 
 	for _, name := range read {
@@ -68,6 +71,7 @@ func TestUsageNamesEverySetting(t *testing.T) {
 	for _, name := range []string{
 		detector.EnvLocale, detector.EnvAllowList, detector.EnvSubstitution,
 		proxy.EnvListen, proxy.EnvProviders, proxy.EnvEncryptionKey,
+		proxy.EnvBackendURL, proxy.EnvEnrolmentToken, proxy.EnvIdentityFile,
 	} {
 		if !strings.Contains(usage, name) {
 			t.Errorf("the usage does not name %s", name)
