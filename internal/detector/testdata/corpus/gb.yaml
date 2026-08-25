@@ -103,6 +103,14 @@ cases:
     expect:
       - {category: PHONE, value: "+44 20 7946 0958"}
 
+  # Run together, as it arrives from a database column rather than a form. The
+  # compact branch requires the full ten or eleven digits, which is what stops
+  # it claiming any shorter run that opens on a zero.
+  - id: gb-phone-compact
+    text: "The contact column holds 02079460958 for that account."
+    expect:
+      - {category: PHONE, value: "02079460958"}
+
   # --- locale-independent shapes stay on -----------------------------------
 
   - id: gb-email-and-iban-stay-on
@@ -139,6 +147,13 @@ cases:
   # tokenizes the documentation an operator pasted in to ask a question about.
   - id: gb-prec-nino-hmrc-placeholder
     text: "The guidance uses QQ123456C as its example."
+    expect: []
+
+  # Nine digits opening on a zero, run together. It is not a UK telephone
+  # number — those are ten or eleven — and claiming it made a US routing number
+  # come out labelled as a London landline when both locales were enabled.
+  - id: gb-prec-nine-digits-starting-with-zero
+    text: "Internal ref 021000021 on the ledger."
     expect: []
 
   - id: gb-prec-version-and-port

@@ -55,8 +55,22 @@ var (
 	// Digits are required immediately after the leading pair, which is what
 	// keeps this off a date ("01-02-2024") and off an amount written in groups
 	// ("01 234 567") — both of which put a separator exactly there.
-	gbPhoneRe = regexp.MustCompile(`\+44[ .-]?(?:\(0\)[ .-]?)?[1-9]\d{1,3}[ .-]?\d{3,4}[ .-]?\d{3,4}\b` +
-		`|\b0[1-9]\d{1,3}[ .-]?\d{3,4}[ .-]?\d{3,4}\b`)
+	//
+	// The trunk-zero form is two branches, and splitting them is the point. A
+	// single loose branch with every separator optional claimed any run of nine
+	// to eleven digits opening on a zero: with the US set also enabled, the
+	// routing number 021000021 came out labelled as a London telephone number,
+	// because both patterns score 90 and the earlier locale broke the tie. So a
+	// spaced number must actually carry its first separator, and a number run
+	// together must be the full ten or eleven digits.
+	//
+	// TODO: a handful of 016977-area numbers are nine digits in total and are
+	// missed by the compact branch. They need their own alternative, or the
+	// deployment's allow list turned inside out.
+	gbPhoneRe = regexp.MustCompile(
+		`\+44[ .-]?(?:\(0\)[ .-]?)?[1-9]\d{1,3}[ .-]?\d{3,4}[ .-]?\d{3,4}\b` + // international
+			`|\b0[1-9]\d{1,3}[ .-]\d{3,4}[ .-]?\d{3,4}\b` + // grouped, first separator required
+			`|\b0[1-9]\d{8,9}\b`) // run together: ten or eleven digits in all
 )
 
 // UnitedKingdomPatterns returns the UK set, checksummed and context-bearing

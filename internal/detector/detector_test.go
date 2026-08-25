@@ -213,6 +213,65 @@ func TestMatchOffsetsBracketTheValue(t *testing.T) {
 	}
 }
 
+// Mixing locales is what a company operating in several countries does, and it
+// is the configuration no corpus suite can cover: each suite declares one
+// locale, so a collision between two only appears with both enabled.
+//
+// Every case here is a value one country issues that another country's pattern
+// is tempted by. The value must still be found, and found under the right name —
+// a mislabelled match is masked either way, but it tells the operator the wrong
+// thing about what their data holds.
+func TestMixedLocalesKeepTheRightCategory(t *testing.T) {
+	d := New(Config{Locales: []string{"fr", "gb", "us"}})
+
+	tests := []struct {
+		name string
+		text string
+		want pii.Category
+	}{
+		{
+			// Nine digits opening on a zero. The UK telephone pattern claimed
+			// this when its compact branch had no length floor, and since both
+			// score 90 the earlier locale won the tie: a US bank routing number
+			// was reported as a London landline.
+			name: "a US routing number is not a UK telephone number",
+			text: "Wire to routing 021000021 today.",
+			want: pii.CatRoutingNumber,
+		},
+		{
+			// Nine digits again, this time passing Luhn rather than the ABA
+			// weights. France loads first, which is what settles it.
+			name: "a French SIREN stays a SIREN",
+			text: "Fournisseur SIREN 443061841 au contrat.",
+			want: pii.CatSIREN,
+		},
+		{
+			// Ten digits in a 3-3-4 group is both an NHS number and a US
+			// telephone layout. The mod-11 check digit is what decides.
+			name: "an NHS number is not a US telephone number",
+			text: "Patient 943 476 5919 was seen today.",
+			want: pii.CatNHSNumber,
+		},
+		{
+			name: "a French NIR is untouched by the other sets",
+			text: "Assuré 184037511600176 enregistré.",
+			want: pii.CatNIR,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := d.Scan(tt.text)
+			if len(got) != 1 {
+				t.Fatalf("found %d matches, want exactly 1: %v", len(got), categoriesOf(got))
+			}
+			if got[0].Category != tt.want {
+				t.Errorf("%q was reported as %s, want %s", got[0].Value, got[0].Category, tt.want)
+			}
+		})
+	}
+}
+
 // A pattern that over-matches by design is scanned one hit at a time, resuming
 // after the refined end. Scanning them all at once and refining afterwards
 // resumes after the greedy end instead, so a second value immediately after the
