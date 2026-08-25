@@ -15,9 +15,9 @@ it ships. See [LICENSE.md](LICENSE.md).
 
 ## Status
 
-The round trip works, end to end, against a real provider. Fleet telemetry and
-packaged installation are the next phases — the plan is tracked outside this
-repository.
+The agent is complete: it masks, it restores, it installs as a service, and it
+reports to a supervision backend when there is one. The backend itself is a
+separate, private repository.
 
 Run the agent and point a client at it by naming the provider in the path:
 
@@ -80,6 +80,54 @@ NHS_NUMBER               9434765919
 Only bracket tokens are ever expanded. That filter is what stops a masked
 credential from being turned back into a live secret, and it is why `fake` mode
 is deliberately one-way.
+
+## Install
+
+```bash
+./install.sh              # build, install, run as a service (launchd or systemd)
+./install.sh --shell      # …and add the shell line, if you want it
+./install.sh --status     # is it running, and what is it applying
+./install.sh --restart    # after editing ~/.cloakfleet/.env
+./install.sh --uninstall  # stop it, remove the service, undo the shell line
+```
+
+The shell line is `eval "$(cloakfleet env)"`, and the reason it is written that
+way is the failure it avoids. Agent Veil's installer exported
+`ANTHROPIC_BASE_URL` into the profile unconditionally, so the day somebody
+stopped the proxy without running the uninstaller, every LLM tool on the machine
+broke with a connection error from a line they had not touched. `cloakfleet env`
+asks the agent whether it is running and prints **nothing** when it is not, so a
+stopped agent means unmasked traffic rather than a broken workstation.
+
+That is a deliberate trade — availability over enforcement — and it is the right
+way round for a tool developers depend on. Supervision is what makes it safe: a
+stopped agent shows up in the dashboard as silent, rather than as nothing at all.
+
+## Supervision
+
+Optional, and the agent is a complete product without it. Set
+`CLOAKFLEET_BACKEND_URL` and an enrolment token and it reports every five
+minutes: how many requests it proxied, how many values it masked in which
+categories, how many tokens went to which model, and what configuration it is
+actually applying.
+
+**Never any content.** Not a prompt, not a response, not a detected value, not a
+file name, not a URL. That is structural rather than promised: the contract lives
+in [`pkg/telemetry`](pkg/telemetry/) — public, so anybody can read it — and a
+test walks its own type and fails on any string field that is not on an explicit
+list, each entry carrying its reason.
+
+Token counts are four numbers per model, not two, because a coding agent
+re-sends its whole context every turn and almost all of its input is a cache
+read — an order of magnitude cheaper than a fresh token and far more numerous.
+Folding those together would overstate the bill; leaving them out would
+understate it. The agent reports raw counts and the backend prices them, because
+prices change and an agent that computed money would need redeploying to every
+workstation each time one did.
+
+Enrolment works the way Wazuh's does: the operator's token is presented once and
+traded for a per-agent key, so one workstation can be revoked without touching
+the others.
 
 ## Build
 

@@ -67,3 +67,37 @@ jobs:
       - uses: golangci/golangci-lint-action@v6
         with:
           version: latest
+
+  # The two things a release depends on that the Go suite cannot see: whether the
+  # release configuration still builds, and whether the installer is valid shell.
+  # Both are only ever exercised at release time otherwise, which is the worst
+  # moment to find out.
+  distribution:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # goreleaser reads tags to work out a version
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Check the release configuration
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: latest
+          args: check
+
+      - name: Build a snapshot release
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: latest
+          args: build --snapshot --clean
+
+      - name: Check the installer is portable shell
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          sh -n install.sh
+          shellcheck --shell=sh install.sh

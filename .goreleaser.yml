@@ -1,0 +1,62 @@
+version: 2
+
+# One binary, four platforms, no packaging cleverness. The install script below
+# fetches an archive and puts the binary somewhere; anything more elaborate is a
+# second way to install that would drift from the first.
+
+project_name: cloakfleet
+
+before:
+  hooks:
+    - go mod tidy
+    # The release must not be able to carry a detector that fell below its floor.
+    # A build that skipped this would ship silently worse masking.
+    - go test ./...
+
+builds:
+  - id: cloakfleet
+    main: ./cmd/cloakfleet
+    binary: cloakfleet
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+    ldflags:
+      # The version the agent reports about itself. It is a var rather than a
+      # const precisely so this works — declared const, the flag is silently
+      # inert and every release reports the same string.
+      - -s -w -X main.version={{ .Version }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE.md
+      - NOTICE
+      - .env.example
+      - install.sh
+
+checksums:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^test:"
+      - "^chore:"
+
+release:
+  # Source available, not open source: the release notes say so, because somebody
+  # will find the binary before they find the licence.
+  footer: |
+    Cloakfleet is source available under the Functional Source License
+    (FSL-1.1-ALv2): free for any use, including inside a company, but not to
+    offer as a competing product or service. Each release becomes Apache 2.0 two
+    years after it ships.

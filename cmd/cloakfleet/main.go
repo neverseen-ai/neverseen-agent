@@ -41,12 +41,18 @@ const usage = `cloakfleet — mask sensitive values before they reach a model.
 Usage:
   cloakfleet proxy         run the agent: mask what goes out, restore what comes back
   cloakfleet scan [file]   report the sensitive values in a file, or in stdin
+  cloakfleet env [--force] print the shell exports that point a tool at the agent
   cloakfleet version       print the version
 
 Point a client at the agent by naming the provider in the path:
 
   ANTHROPIC_BASE_URL=%s/anthropic
   OPENAI_BASE_URL=%s/openai
+
+Or let your shell do it, safely — this prints nothing while the agent is stopped,
+so your tools keep working instead of failing on a line you did not write:
+
+  eval "$(cloakfleet env)"
 
 While it runs, %s/test shows what would be masked — your own
 text, both representations side by side, in this agent's configuration.
@@ -89,6 +95,8 @@ func run(args []string, stdin io.Reader, stdout io.Writer) error {
 		return runProxy(stdout)
 	case "scan":
 		return runScan(args[1:], stdin, stdout)
+	case "env":
+		return runEnv(args[1:], stdout)
 	case "version":
 		fmt.Fprintln(stdout, version)
 		return nil
@@ -177,6 +185,19 @@ func runProxy(stdout io.Writer) error {
 		defer cancel()
 		return server.Shutdown(shutdownCtx)
 	}
+}
+
+// runEnv prints the shell exports, or deliberately nothing.
+func runEnv(args []string, stdout io.Writer) error {
+	fs := flag.NewFlagSet("env", flag.ContinueOnError)
+	fs.SetOutput(stdout)
+	force := fs.Bool("force", false,
+		"print the exports even when the agent is not answering")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	return proxy.ShellEnv(context.Background(), stdout, proxy.ListenAddress(), *force)
 }
 
 func runScan(args []string, stdin io.Reader, stdout io.Writer) error {

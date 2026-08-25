@@ -97,6 +97,44 @@ it; the credential rank exists because several ordinary categories score above a
 connection string, so `postgres://admin:pw@db` resolved to an *email* match over
 the password — reversible, and expanded back into a live secret on the way out.
 
+### Telemetry
+
+**`pkg/telemetry` is public and the backend imports it — never the reverse.** The
+agent has to compile, run and be useful with no backend in existence.
+
+**Nothing in a heartbeat is content**, and `TestHeartbeatCarriesNoContent` walks
+the type to keep it that way. A new string field fails until it is on the allow
+list with a reason. Do not add one to make a dashboard nicer.
+
+**Nothing in `internal/telemetry` may reach the request path.** The reporter runs
+on its own goroutine, returns no errors to anybody, and an agent with no backend
+has no reporter at all rather than one that quietly does nothing. A supervision
+backend that cannot be reached must never stop the masking, or the security
+control is taken down by the tool that watches it.
+
+**A failed heartbeat keeps its window** and merges it into the next, up to six
+hours, then abandons it and *counts the loss*. A silently dropped window looks
+exactly like a quiet one, and the gap is what an auditor needs to see.
+
+**Reading token usage is where the vendors disagree about more than spelling.**
+Anthropic reports cache tokens *beside* the input; OpenAI reports the whole input
+with the cached part broken out underneath as a *subset*. Reading both would bill
+the same tokens twice, so the OpenAI breakdown is deliberately not read.
+
+### Distribution
+
+**The installer never exports a base URL into a shell profile.** It adds
+`eval "$(cloakfleet env)"`, and that command prints nothing when the agent is not
+answering — so stopping the agent leaves the tools working and unmasked instead
+of broken. Agent Veil exported unconditionally and took every LLM tool on the
+machine down with the proxy. Availability over enforcement, on purpose.
+
+**It touches no login file unless asked** (`--shell`), and `--uninstall` undoes
+exactly what it added. It leaves `~/.cloakfleet/` alone, because that holds the
+operator's config and the identity a backend knows the machine by — deleting the
+identity silently would have the next install enrol as a second agent and count
+twice against what they pay for.
+
 ## Conventions
 
 - Conventional Commits (`feat:`, `fix:`, `docs:`, `test:`, `refactor:`).
