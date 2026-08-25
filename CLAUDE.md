@@ -106,6 +106,35 @@ agent has to compile, run and be useful with no backend in existence.
 the type to keep it that way. A new string field fails until it is on the allow
 list with a reason. Do not add one to make a dashboard nicer.
 
+**`State.Addresses` is the one field in the contract that is personal data**, and
+it is the exception that shows what the rule means. Everything else is a count, a
+category name or a build string; an IP address identifies a machine and through it
+a person. It is there because the fleet view's whole purpose collapses without it
+— "agt_4742be… is silent" sends somebody to a database, "the laptop at 10.4.2.87
+is silent" sends them to a desk. It is still not *content*: no prompt, response or
+detected value can travel in it, which is the invariant the test actually defends.
+Its entry in `allowedStrings` says so, and the README says so to the operator, so
+a customer's DPO reads it in the documentation rather than finding it in a
+database.
+
+Local addresses, deliberately, not the public one: on a corporate network the
+private address distinguishes one workstation from another while the egress
+address is shared by the whole site. The backend records the address it *observes*
+the connection from separately, which is also why this field being absent or wrong
+costs nothing that matters. `localAddresses` (`internal/proxy/addresses.go`) drops
+loopback and link-local, sorts within each family and caps the count — a list that
+reshuffled between heartbeats would read as a machine whose addresses kept
+changing, which on the dashboard is indistinguishable from a laptop moving
+networks.
+
+**Adding a field to the contract means updating the golden in the same commit.**
+`testdata/heartbeat.json` is regenerated with `go test ./pkg/telemetry/
+-update-golden`, and it must *exercise* the new field: `Addresses` is `omitempty`,
+so an example that left it out would be a field neither repository ever tested on
+the wire — which is exactly the drift the shared golden exists to catch. Use
+documentation ranges (RFC 5737, RFC 3849) so nothing in the example is a real
+machine.
+
 **Nothing in `internal/telemetry` may reach the request path.** The reporter runs
 on its own goroutine, returns no errors to anybody, and an agent with no backend
 has no reporter at all rather than one that quietly does nothing. A supervision

@@ -28,6 +28,7 @@ var allowedStrings = map[string]string{
 	"state.substitution": "which of two modes is running: token or fake",
 	"state.locales[]":    "country codes from the agent's own registry",
 	"state.providers[]":  "upstream codes from the agent's own list",
+	"state.addresses[]":  "the machine's own IP addresses — personal data, and the one field here that is; see the field's comment",
 	"counters.masked{}":  "category names from the agent's own catalogue, never a value",
 	"counters.models{}":  "the model id the provider reported, which is a product name",
 }
@@ -138,6 +139,12 @@ func TestHeartbeatWireFormat(t *testing.T) {
 			Locales:      []string{"fr", "gb"},
 			Substitution: "token",
 			Providers:    []string{"anthropic", "openai"},
+			// Present in the example on purpose. The field is omitempty, so an
+			// example that left it out would be a field neither repository ever
+			// tested on the wire — which is exactly the drift this golden exists to
+			// catch. One v4 and one v6, both from documentation ranges (RFC 5737,
+			// RFC 3849), so nothing here is a real machine anywhere.
+			Addresses: []string{"192.0.2.47", "2001:db8::47"},
 		},
 		Counters: Counters{
 			Requests: 128,

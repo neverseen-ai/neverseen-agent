@@ -148,6 +148,11 @@ func (s *Server) State() contract.State {
 		Locales:      s.det.Locales(),
 		Substitution: s.det.Substitution().String(),
 		Providers:    providerCodes(s.providers),
+
+		// Read at each heartbeat rather than cached at start-up: a laptop moves
+		// between networks and a cached address would name where the machine was
+		// when it booted.
+		Addresses: localAddresses(),
 	}
 }
 

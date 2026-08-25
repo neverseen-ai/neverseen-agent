@@ -117,6 +117,20 @@ in [`pkg/telemetry`](pkg/telemetry/) — public, so anybody can read it — and 
 test walks its own type and fails on any string field that is not on an explicit
 list, each entry carrying its reason.
 
+**One thing it does report about the machine: its own IP addresses.** Stated
+plainly here because an IP address is personal data, and because the rest of this
+section would otherwise read as a stronger claim than it is. It is not content —
+nothing about the traffic travels in it — but it identifies a machine, and through
+a machine a person. It is there because a fleet view without it does not work:
+"agt_4742be… has stopped reporting" sends somebody to a database, "the laptop at
+10.4.2.87 has stopped reporting" sends them to a desk.
+
+The addresses reported are the machine's own local ones, not its public address:
+on a corporate network the private address is what tells one workstation from
+another. Loopback and link-local are dropped, and the list is capped. If you run
+the backend, note that it also records the address it *sees* each connection come
+from, which is a separate fact about the network rather than about the machine.
+
 Token counts are four numbers per model, not two, because a coding agent
 re-sends its whole context every turn and almost all of its input is a cache
 read — an order of magnitude cheaper than a fresh token and far more numerous.

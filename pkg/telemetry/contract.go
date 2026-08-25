@@ -90,6 +90,27 @@ type State struct {
 
 	// Providers are the upstream codes this agent will forward to.
 	Providers []string `json:"providers"`
+
+	// Addresses are the machine's own non-loopback IP addresses.
+	//
+	// Reported so a security officer can tell which machine an agent is, which is
+	// the question behind every row of the fleet view: "agt_4742be… is silent" is
+	// not actionable, "the laptop at 10.4.2.87 belonging to Marie is silent" is.
+	//
+	// This is the one field in this contract that is personal data. It is here
+	// deliberately and it is the exception that proves the rule: everything else
+	// is a count, a category name or a build string. An address is not content —
+	// no prompt, no response and no detected value can travel in it — but it does
+	// identify a machine and, through it, a person. It is declared in the
+	// allow-list with that reasoning, and named in the README, so a customer's DPO
+	// reads it in the documentation rather than discovering it in a database.
+	//
+	// Local addresses, not the public one: on a corporate network the private
+	// address is what distinguishes one workstation from another, while the egress
+	// address is shared by the whole site. The backend records the address it
+	// observes the connection coming from separately — which also means this field
+	// being wrong or absent costs nothing that matters.
+	Addresses []string `json:"addresses,omitempty"`
 }
 
 // Counters are the tallies for one window.
