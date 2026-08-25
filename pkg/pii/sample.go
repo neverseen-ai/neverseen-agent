@@ -43,7 +43,18 @@ Téléphone : 06 12 34 56 78, 01.45.67.89.10, +33 1 42 68 53 00, +33 (0)1 42 68 
 Adresse : 12 rue de la Paix, 75002 Paris
 Adresse abrégée : 12 r. de la Paix, 75002 Paris
 Adresse sans numéro : Route de Lyon, 38000 Grenoble
-Code postal seul : 13290 Aix Les Milles
+Numéro complété : 12 bis rue de la Paix, 14 ter avenue de la Paix, 16 quater place de la Paix
+
+=== Types de voie ===
+Les vingt-deux orthographes acceptées, en entier : 1 avenue de l'Exemple, 2 allée de l'Exemple, 3 boulevard de l'Exemple, 4 chemin de l'Exemple, 5 cours de l'Exemple, 6 impasse de l'Exemple, 7 place de l'Exemple, 8 quai de l'Exemple, 9 route de l'Exemple, 10 rue de l'Exemple, 11 square de l'Exemple
+Les mêmes en abrégé : 12 av. de l'Exemple, 13 all. de l'Exemple, 14 bd de l'Exemple, 15 bd. de l'Exemple, 16 ch. de l'Exemple, 17 crs de l'Exemple, 18 imp. de l'Exemple, 19 pl. de l'Exemple, 20 rte de l'Exemple, 21 r. de l'Exemple, 22 sq. de l'Exemple
+
+=== Codes postaux ===
+Commune en un mot : 69001 Lyon
+Commune composée : 13100 Aix-en-Provence
+Commune en plusieurs mots : 13290 Aix Les Milles
+Capitale accentuée : 91150 Étampes
+Bornes des départements, 01 et 98 : 01000 Bourg, 98000 Monaco
 Plaque : AB-123-CD
 
 === Dates de naissance (jour d'abord) ===
@@ -63,6 +74,8 @@ Address with town and postcode: 10 Downing Street, London SW1A 2AA
 Address with a letter on the number: 221B Baker Street, London NW1 6XE
 Address with no town: 42 Wellington Crescent
 Abbreviated street type: 8 High St, Manchester M1 2AB
+Street types, written in full: 1 Example Street, 2 Example Road, 3 Example Avenue, 4 Example Lane, 5 Example Close, 6 Example Drive, 7 Example Place, 8 Example Court, 9 Example Crescent, 10 Example Gardens
+And the rest: 11 Example Terrace, 12 Example Square, 13 Example Mews, 14 Example Grove, 15 Example Parade, 16 Example Way, 17 Example St, 18 Example Rd, 19 Example Ave
 `
 
 const unitedStatesSample = `=== United States ===
@@ -72,7 +85,10 @@ Routing number: 021000021, also 011000015
 Telephone: (555) 234-5678, 555-234-5678, 5552345678, +1 555 234 5678
 Address: 123 Main St, Springfield, IL 62704
 Address without a city: 456 Oak Avenue
-ZIP: IL 62704, and 62704-1234
+Street types, written in full: 1 Example Street, 2 Example Avenue, 3 Example Boulevard, 4 Example Road, 5 Example Drive, 6 Example Lane, 7 Example Court, 8 Example Place, 9 Example Terrace, 10 Example Parkway, 11 Example Circle, 12 Example Highway, 13 Example Way
+The same, abbreviated: 14 Example St, 15 Example Ave, 16 Example Blvd, 17 Example Rd, 18 Example Dr, 19 Example Ln, 20 Example Ct, 21 Example Pl, 22 Example Ter, 23 Example Pkwy, 24 Example Cir, 25 Example Hwy
+ZIP with a state: IL 62704, CA 90210, NY 10001, TX 75001, DC 20500
+ZIP plus four: 62704-1234
 
 === Dates (month first) ===
 THE SAME DATE in its three notations: 03/14/1987, 03-14-1987, 03.14.1987

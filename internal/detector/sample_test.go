@@ -253,6 +253,145 @@ func TestSampleShowsEveryMonthName(t *testing.T) {
 	}
 }
 
+// Every street-type spelling each locale accepts, one assertion each.
+//
+// Same argument as the month names, and a larger surface: the three patterns
+// carry sixty-six spellings between them, and the sample used to show six. A
+// typo in any of the other sixty loses that street type silently and for good —
+// every "impasse" address in a French deployment going out in clear while every
+// "rue" address is masked, with nothing failing.
+//
+// The lists are written out rather than read from the pattern constants. Reading
+// them from the constant is the trap: a typo would appear in both the expression
+// and the expectation, and the test would agree with the bug.
+func TestSampleShowsEveryStreetType(t *testing.T) {
+	tests := []struct {
+		locale    string
+		addresses []string
+	}{
+		{
+			locale: "fr",
+			addresses: []string{
+				"1 avenue de l'Exemple", "2 allée de l'Exemple", "3 boulevard de l'Exemple",
+				"4 chemin de l'Exemple", "5 cours de l'Exemple", "6 impasse de l'Exemple",
+				"7 place de l'Exemple", "8 quai de l'Exemple", "9 route de l'Exemple",
+				"10 rue de l'Exemple", "11 square de l'Exemple",
+				// The abbreviations, which is what an address field actually holds.
+				"12 av. de l'Exemple", "13 all. de l'Exemple", "14 bd de l'Exemple",
+				"15 bd. de l'Exemple", "16 ch. de l'Exemple", "17 crs de l'Exemple",
+				"18 imp. de l'Exemple", "19 pl. de l'Exemple", "20 rte de l'Exemple",
+				"21 r. de l'Exemple", "22 sq. de l'Exemple",
+				// And the completed house number.
+				"12 bis rue de la Paix", "14 ter avenue de la Paix", "16 quater place de la Paix",
+			},
+		},
+		{
+			locale: "gb",
+			addresses: []string{
+				"1 Example Street", "2 Example Road", "3 Example Avenue", "4 Example Lane",
+				"5 Example Close", "6 Example Drive", "7 Example Place", "8 Example Court",
+				"9 Example Crescent", "10 Example Gardens", "11 Example Terrace",
+				"12 Example Square", "13 Example Mews", "14 Example Grove",
+				"15 Example Parade", "16 Example Way", "17 Example St", "18 Example Rd",
+				"19 Example Ave",
+			},
+		},
+		{
+			locale: "us",
+			addresses: []string{
+				"1 Example Street", "2 Example Avenue", "3 Example Boulevard", "4 Example Road",
+				"5 Example Drive", "6 Example Lane", "7 Example Court", "8 Example Place",
+				"9 Example Terrace", "10 Example Parkway", "11 Example Circle",
+				"12 Example Highway", "13 Example Way",
+				"14 Example St", "15 Example Ave", "16 Example Blvd", "17 Example Rd",
+				"18 Example Dr", "19 Example Ln", "20 Example Ct", "21 Example Pl",
+				"22 Example Ter", "23 Example Pkwy", "24 Example Cir", "25 Example Hwy",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.locale, func(t *testing.T) {
+			d := detectorFor(t, tt.locale)
+			sample := d.Sample()
+
+			found := map[string]pii.Category{}
+			for _, m := range d.Scan(sample) {
+				found[m.Value] = m.Category
+			}
+
+			for _, address := range tt.addresses {
+				if !strings.Contains(sample, address) {
+					t.Errorf("the sample does not show %q, so it demonstrates nothing about that street type", address)
+					continue
+				}
+				if cat := found[address]; cat != pii.CatAddress {
+					t.Errorf("%q is read as %q, want %s", address, cat, pii.CatAddress)
+				}
+			}
+		})
+	}
+}
+
+// The postcode notations, which vary more than a postcode looks like it should.
+func TestSampleShowsEveryPostcodeNotation(t *testing.T) {
+	tests := []struct {
+		locale string
+		codes  []string
+	}{
+		{
+			locale: "fr",
+			codes: []string{
+				"69001 Lyon",            // one word
+				"13100 Aix-en-Provence", // hyphenated
+				"13290 Aix Les Milles",  // several words
+				"91150 Étampes",         // an accented capital, which the anchor has to admit
+				"01000 Bourg",           // the lowest department
+				"98000 Monaco",          // and the highest
+			},
+		},
+		{
+			locale: "gb",
+			codes: []string{
+				// All six layouts. The third character is what varies — absent, a
+				// digit, or a letter — and a table with one of them lets the
+				// others be dropped.
+				"SW1A 1AA", "M1 1AE", "EC1A 1BB", "B33 8TH", "DN55 1PT", "CR2 6XH",
+			},
+		},
+		{
+			locale: "us",
+			codes: []string{
+				// A ZIP is only identifying with something anchoring it, so each
+				// row carries its anchor: a state, or the four-digit add-on.
+				"IL 62704", "CA 90210", "NY 10001", "TX 75001", "DC 20500", "62704-1234",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.locale, func(t *testing.T) {
+			d := detectorFor(t, tt.locale)
+			sample := d.Sample()
+
+			found := map[string]pii.Category{}
+			for _, m := range d.Scan(sample) {
+				found[m.Value] = m.Category
+			}
+
+			for _, code := range tt.codes {
+				if !strings.Contains(sample, code) {
+					t.Errorf("the sample does not show %q", code)
+					continue
+				}
+				if cat := found[code]; cat != pii.CatPostalCode {
+					t.Errorf("%q is read as %q, want %s", code, cat, pii.CatPostalCode)
+				}
+			}
+		})
+	}
+}
+
 // The credentials are locale-independent, so they get one table rather than one
 // per locale. The vendor prefix is what each row is about.
 func TestSampleShowsEveryCredential(t *testing.T) {
