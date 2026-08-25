@@ -158,9 +158,20 @@ func runProxy(stdout io.Writer) error {
 	// Supervision runs on its own goroutine and can fail all it likes. A backend
 	// that is down, slow or misconfigured must never stop the masking — or the
 	// security control would be taken out by the tool that watches it.
+	//
+	// The channel is what makes its last report actually happen. Without waiting
+	// on it, the process exits as soon as the server has shut down and the final
+	// heartbeat is cut off mid-flight — the window is lost, and the dashboard's
+	// last few minutes before a restart are simply missing.
+	reported := make(chan struct{})
 	if agent.Reporter != nil {
 		logger.Info("supervision enabled, reporting every " + telemetry.DefaultInterval.String())
-		go agent.Reporter.Run(ctx)
+		go func() {
+			defer close(reported)
+			agent.Reporter.Run(ctx)
+		}()
+	} else {
+		close(reported)
 	}
 
 	errs := make(chan error, 1)
@@ -183,7 +194,15 @@ func runProxy(stdout io.Writer) error {
 
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		return server.Shutdown(shutdownCtx)
+		err := server.Shutdown(shutdownCtx)
+
+		// Bounded, because a hung backend must not stop the agent from stopping.
+		select {
+		case <-reported:
+		case <-time.After(20 * time.Second):
+			logger.Warn("the last heartbeat did not finish; its window will be retried on restart")
+		}
+		return err
 	}
 }
 

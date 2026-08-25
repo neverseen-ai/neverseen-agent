@@ -168,14 +168,12 @@ func TestHeartbeatWireFormat(t *testing.T) {
 		t.Logf("rewrote %s", goldenPath)
 	}
 
-	want, err := os.ReadFile(goldenPath)
-	if err != nil {
-		t.Fatalf("read %s: %v (run with -update-golden to create it)", goldenPath, err)
-	}
-	if string(encoded) != string(want) {
+	// Compared against the embedded copy rather than by re-reading the file, so
+	// that what the backend imports and what this test checks cannot differ.
+	if string(encoded) != ExampleHeartbeatJSON {
 		t.Errorf("the wire format changed.\n got:\n%s\nwant:\n%s\n\n"+
 			"If the change is intended, run with -update-golden and say in the commit what a "+
-			"backend on the old format will do with the new one.", encoded, want)
+			"backend on the old format will do with the new one.", encoded, ExampleHeartbeatJSON)
 	}
 
 	// And it has to survive the round trip, or the backend reads something the

@@ -3,8 +3,6 @@ package telemetry
 import (
 	"bytes"
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -134,6 +132,13 @@ func (r *Reporter) Run(ctx context.Context) {
 	ticker := time.NewTicker(r.interval)
 	defer ticker.Stop()
 
+	// Once immediately, before the first tick. It enrols, so a freshly installed
+	// agent appears in the fleet view within seconds instead of after five
+	// minutes — and an install that cannot reach the backend says so at once
+	// rather than looking fine until somebody checks. The window it files is
+	// empty, which is itself the useful fact that the path works.
+	r.reportOnce(ctx)
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -242,21 +247,11 @@ func (r *Reporter) send(ctx context.Context, id Identity, hb telemetry.Heartbeat
 	}
 
 	_, err = r.post(ctx, heartbeatPath, body, map[string]string{
-		telemetry.HeaderAgent:     id.AgentID,
-		telemetry.HeaderSignature: r.signatureFor(key, body),
+		telemetry.HeaderAgent: id.AgentID,
+		// Signed by the contract's own function, which the backend verifies with.
+		telemetry.HeaderSignature: telemetry.Sign(key, body),
 	})
 	return err
-}
-
-// signatureFor is the one place a heartbeat is signed.
-//
-// One place, and VerifySignature beside it, because two implementations of one
-// HMAC are two chances to disagree about what is covered — and that failure looks
-// like every heartbeat being rejected with no explanation on either side.
-func (r *Reporter) signatureFor(key, body []byte) string {
-	mac := hmac.New(sha256.New, key)
-	mac.Write(body)
-	return hex.EncodeToString(mac.Sum(nil))
 }
 
 func (r *Reporter) post(ctx context.Context, path string, body []byte, headers map[string]string) ([]byte, error) {
@@ -285,21 +280,4 @@ func (r *Reporter) post(ctx context.Context, path string, body []byte, headers m
 		return nil, fmt.Errorf("the backend answered %d to %s", resp.StatusCode, path)
 	}
 	return answer, nil
-}
-
-// VerifySignature reports whether body was signed with key.
-//
-// It lives here, in the agent's repository, so the backend verifies with exactly
-// the code the agent signs with. Two implementations of one HMAC is two chances
-// to disagree about what is being signed, and the failure would be every
-// heartbeat rejected with no explanation on either side.
-func VerifySignature(key []byte, body []byte, signature string) bool {
-	want, err := hex.DecodeString(signature)
-	if err != nil {
-		return false
-	}
-
-	mac := hmac.New(sha256.New, key)
-	mac.Write(body)
-	return hmac.Equal(mac.Sum(nil), want)
 }

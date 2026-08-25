@@ -79,7 +79,7 @@ func newBackend(t *testing.T) *backend {
 		b.mu.Lock()
 		b.heartbeats = append(b.heartbeats, hb)
 		b.signatures = append(b.signatures,
-			VerifySignature(b.key, body, r.Header.Get(telemetry.HeaderSignature)))
+			telemetry.VerifySignature(b.key, body, r.Header.Get(telemetry.HeaderSignature)))
 		b.mu.Unlock()
 	})
 
@@ -309,9 +309,14 @@ func TestAnUnreachableBackendIsSurvivable(t *testing.T) {
 	}
 }
 
-// Run stops when its context does, and reports one last time on the way out so a
-// clean shutdown does not throw away the window it was in the middle of.
-func TestRunReportsOnShutdown(t *testing.T) {
+// Run reports as soon as it starts and once more on the way out.
+//
+// The first is what makes a freshly installed agent appear in the fleet view
+// within seconds instead of at the first five-minute tick — and what makes an
+// install that cannot reach the backend say so immediately instead of looking
+// fine until somebody checks. The second is what stops a clean shutdown throwing
+// away the window it was in the middle of.
+func TestRunReportsAtStartAndOnShutdown(t *testing.T) {
 	b := newBackend(t)
 	r := NewRecorder(epoch)
 	rep, _ := newTestReporter(t, b, r)
@@ -325,6 +330,14 @@ func TestRunReportsOnShutdown(t *testing.T) {
 		rep.Run(ctx)
 	}()
 
+	// Waited for, not raced. Cancelling straight away is how this test used to
+	// read, and it passed for the wrong reason: Run had not been scheduled yet, so
+	// its first report ran on an already-cancelled context and failed before it
+	// sent anything. The shutdown report then arrived alone and the assertion of
+	// "exactly one heartbeat" held — on scheduling luck, not behaviour.
+	waitForHeartbeats(t, b, 1)
+
+	r.Request()
 	cancel()
 	select {
 	case <-done:
@@ -332,13 +345,36 @@ func TestRunReportsOnShutdown(t *testing.T) {
 		t.Fatal("Run did not return when its context was cancelled")
 	}
 
+	got, _, enrolments := b.received()
+	if len(got) != 2 {
+		t.Fatalf("the backend saw %d heartbeats, want one at start and one on shutdown", len(got))
+	}
+	if enrolments != 1 {
+		t.Errorf("enrolled %d times, want 1: the report at start must not re-enrol", enrolments)
+	}
+
+	// One request in each window, never the same one twice. A window that carried
+	// its predecessor's counters would double every number on the dashboard, and
+	// the report at start is exactly the kind of extra send that would do it.
+	if got[0].Counters.Requests != 1 || got[1].Counters.Requests != 1 {
+		t.Errorf("the two heartbeats carry %d and %d requests, want 1 and 1",
+			got[0].Counters.Requests, got[1].Counters.Requests)
+	}
+}
+
+// waitForHeartbeats blocks until the backend has seen n of them.
+func waitForHeartbeats(t *testing.T, b *backend, n int) {
+	t.Helper()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if got, _, _ := b.received(); len(got) >= n {
+			return
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
 	got, _, _ := b.received()
-	if len(got) != 1 {
-		t.Fatalf("the backend saw %d heartbeats, want the one sent on shutdown", len(got))
-	}
-	if got[0].Counters.Requests != 1 {
-		t.Errorf("the shutdown heartbeat carries %d requests, want 1", got[0].Counters.Requests)
-	}
+	t.Fatalf("waited for %d heartbeats, the backend saw %d", n, len(got))
 }
 
 func TestReporterRequiresItsInputs(t *testing.T) {

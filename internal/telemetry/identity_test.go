@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/cloakfleet/cloakfleet/pkg/telemetry"
 )
 
 func TestIdentityRoundTrip(t *testing.T) {
@@ -78,22 +80,20 @@ func TestVerifySignature(t *testing.T) {
 	key := []byte("0123456789abcdef0123456789abcdef")
 	body := []byte(`{"schema":1}`)
 
-	// Signed by the reporter's own code path, so the two cannot disagree about
-	// what is being signed — which would be every heartbeat rejected with no
-	// explanation on either side.
-	rep := &Reporter{}
-	signature := rep.signatureFor(key, body)
+	// Signed and verified through the contract, which is where both sides get it
+	// from — two implementations of one HMAC are two chances to disagree.
+	signature := telemetry.Sign(key, body)
 
-	if !VerifySignature(key, body, signature) {
-		t.Error("a signature this package produced did not verify")
+	if !telemetry.VerifySignature(key, body, signature) {
+		t.Error("a signature the contract produced did not verify")
 	}
-	if VerifySignature(key, []byte(`{"schema":2}`), signature) {
+	if telemetry.VerifySignature(key, []byte(`{"schema":2}`), signature) {
 		t.Error("a signature verified against a different body")
 	}
-	if VerifySignature([]byte("ffffffffffffffffffffffffffffffff"), body, signature) {
+	if telemetry.VerifySignature([]byte("ffffffffffffffffffffffffffffffff"), body, signature) {
 		t.Error("a signature verified under a different key")
 	}
-	if VerifySignature(key, body, "not hex") {
+	if telemetry.VerifySignature(key, body, "not hex") {
 		t.Error("a signature that is not hex verified")
 	}
 }

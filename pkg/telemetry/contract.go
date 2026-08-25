@@ -19,7 +19,12 @@
 // that list, in a diff a reader can see.
 package telemetry
 
-import "time"
+import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"time"
+)
 
 // SchemaVersion is the version of this contract.
 //
@@ -179,3 +184,36 @@ const (
 	// filing reports as another.
 	HeaderSignature = "X-Cloakfleet-Signature"
 )
+
+// Signing lives here, in the contract, rather than on either side of it.
+//
+// It has to: the agent signs and the backend verifies, and two implementations of
+// one HMAC are two chances to disagree about what is covered. That failure has no
+// good symptom — every heartbeat is rejected, with each side convinced it is
+// doing the right thing.
+//
+// It is also why this is in the public package rather than in the agent's
+// internals. Go's internal rule would put it out of the backend's reach, and the
+// workaround anybody would reach for is a copy.
+
+// Sign returns the hex HMAC-SHA256 of a heartbeat body under an agent's key.
+func Sign(key, body []byte) string {
+	mac := hmac.New(sha256.New, key)
+	mac.Write(body)
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// VerifySignature reports whether body was signed with key.
+//
+// Compared in constant time, so a caller cannot learn a signature one byte at a
+// time from how long the answer takes.
+func VerifySignature(key, body []byte, signature string) bool {
+	want, err := hex.DecodeString(signature)
+	if err != nil {
+		return false
+	}
+
+	mac := hmac.New(sha256.New, key)
+	mac.Write(body)
+	return hmac.Equal(mac.Sum(nil), want)
+}
