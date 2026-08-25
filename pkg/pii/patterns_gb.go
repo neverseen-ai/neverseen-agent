@@ -16,10 +16,59 @@ import (
 // it needs a context hint, which is the same work the bank-account shapes need;
 // they are worth doing together.
 //
-// TODO: no UK street address. Its identifying part is the postcode, which is
-// matched, and its street types are the same words the US set already lists —
-// so this is a matter of assembling gbStreetType from usStreetType with the
-// postcode as the tail, not of new research.
+// Fragments of the street address, named because the assembled expression is
+// unreadable as one line.
+const (
+	// Street types, longest spelling first because Go's alternation is
+	// leftmost-first: "Street" has to be offered before "St".
+	//
+	// Deliberately not the longest possible list. "Green", "View", "Rise",
+	// "Hill", "Row" and "Walk" are all street types here and all ordinary words,
+	// and in the position this pattern reads them — a number, a capitalised word,
+	// then the type — they would claim phrases like "3 New Green". A missed
+	// address is a gap; a masked sentence is a broken prompt, and the deployment
+	// allow list cannot help with a shape rather than a value.
+	//
+	// "Dr" is left out for the same reason, since it is also a title, while
+	// "Drive" is kept. "St" stays: "High St" is too common to lose, and its other
+	// reading is harmless — in "12 St Albans Road" the saint is consumed as part
+	// of the street name and the type is still "Road".
+	gbStreetType = `Street|St|Road|Rd|Avenue|Ave|Lane|Close|Drive|Place|Court|` +
+		`Crescent|Gardens|Terrace|Square|Mews|Grove|Parade|Way`
+
+	// The postcode, shared with the pattern that matches one on its own so the
+	// two cannot disagree about what a postcode looks like.
+	gbPostcodeBody = `[A-Z]{1,2}\d[A-Z\d]?[ ]?\d[A-Z]{2}`
+
+	// A town, and the reason its words are three characters or more.
+	//
+	// At two, the greedy repetition ate the letters off the front of the postcode
+	// that follows: "10 Downing Street, London SW1A 2AA" matched only as far as
+	// "London SW", leaving "1A 2AA" outside the span. RE2 has no lookahead to say
+	// "not a postcode", and no UK town is two letters long.
+	gbTown = `[A-Z][A-Za-z'’\-]{2,}`
+)
+
+var (
+	// A street address: a number, one to four capitalised words, and a street
+	// type — optionally continuing through the town and the postcode.
+	//
+	// The tail is what makes this worth having at all. The postcode alone nearly
+	// identifies a UK address and is matched on its own, so an address pattern
+	// that stopped at the street would leave the town in clear beside a masked
+	// postcode. Taking all three means the span the reader sees replaced is the
+	// thing that identifies the household.
+	//
+	// The house number may carry a letter, because "221B" is an address.
+	gbAddressRe = regexp.MustCompile(
+		`\b\d{1,5}[A-Z]?[ ]+(?:[A-Z][A-Za-z'’.\-]*[ ]+){1,4}(?:` + gbStreetType + `)\b\.?` +
+			`(?:[ ]*,[ ]*` + gbTown + `(?:[ ]` + gbTown + `){0,2})?` +
+			`(?:[ ]+` + gbPostcodeBody + `)?`)
+)
+
+// TODO: no sort code. Its "12-34-56" shape is indistinguishable from a date, so
+// it needs a context hint — the same work the bank-account shapes need, and worth
+// doing together.
 
 var (
 	// Ten digits, written in a 3-3-4 group or run together, with a mod-11 check
@@ -50,7 +99,7 @@ var (
 	// far more likely to be an identifier or a fragment of prose. A full
 	// postcode narrows to about fifteen addresses, which is why it is treated as
 	// identifying on its own where a bare five-digit code is not.
-	gbPostcodeRe = regexp.MustCompile(`\b[A-Z]{1,2}\d[A-Z\d]?[ ]?\d[A-Z]{2}\b`)
+	gbPostcodeRe = regexp.MustCompile(`\b` + gbPostcodeBody + `\b`)
 
 	// A trunk 0 or +44, then the number in any of the groupings the UK uses:
 	// 2+8 for London, 4+6 for most cities, 5+6 for mobiles.
@@ -106,6 +155,12 @@ var unitedKingdomFakes = map[Category]Generator{
 	CatPhone: {Capacity: 1000, Make: func(i int64) string {
 		return fmt.Sprintf("07700 900%03d", i-1)
 	}},
+
+	// The pseudo-postcode again, so the stand-in address cannot be a place
+	// either.
+	CatAddress: {Capacity: 9999, Make: func(i int64) string {
+		return fmt.Sprintf("%d Example Street, Anytown ZZ99 3CZ", i)
+	}},
 }
 
 // invalidNHSCheckDigit renders a digit that is deliberately not the one body
@@ -133,6 +188,9 @@ func invalidNHSCheckDigit(body string) string {
 func UnitedKingdomPatterns() []Pattern {
 	return []Pattern{
 		{Regex: gbNHSRe, Category: CatNHSNumber, Label: "NHS number"},
+		// Before the postcode, so that when both claim the same stretch the
+		// longer, more specific span is the one already in front.
+		{Regex: gbAddressRe, Category: CatAddress, Label: "UK street address"},
 		{Regex: gbPostcodeRe, Category: CatPostalCode, Label: "UK postcode"},
 		{Regex: gbPhoneRe, Category: CatPhone, Label: "UK telephone number"},
 		{Regex: gbNINORe, Category: CatNINO, Label: "National Insurance number"},

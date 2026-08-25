@@ -93,6 +93,33 @@ cases:
     expect:
       - {category: POSTAL_CODE, value: "62704-1234"}
 
+  # --- dates ----------------------------------------------------------------
+  #
+  # Month first, which is this locale's reading and nobody else's. It belongs here
+  # rather than in the locale-independent set for the same reason day-first
+  # belongs to France: "03/14/1987" and "14/03/1987" are one date read two ways,
+  # and only the locale says which.
+
+  - id: us-date-slashes
+    text: "Date of birth 03/14/1987 on the application."
+    expect:
+      - {category: DOB, value: "03/14/1987"}
+
+  - id: us-date-dashes
+    text: "Signed 03-14-1987 per the record."
+    expect:
+      - {category: DOB, value: "03-14-1987"}
+
+  - id: us-date-dots
+    text: "Filed 03.14.1987 with the county."
+    expect:
+      - {category: DOB, value: "03.14.1987"}
+
+  - id: us-date-without-leading-zero
+    text: "Born 3/14/1987, per the form."
+    expect:
+      - {category: DOB, value: "3/14/1987"}
+
   # --- locale-independent shapes stay on -----------------------------------
 
   - id: us-email-and-card-stay-on
@@ -160,6 +187,26 @@ cases:
 
   - id: us-prec-phone-invalid-exchange-code
     text: "Ticket 555-123-4567 in the tracker."
+    expect: []
+
+  # The separators have to agree. RE2 has no backreference to say so, which is
+  # why the expression lists one alternative per separator rather than a
+  # character class — delete a branch and this case starts matching.
+  - id: us-prec-date-mixed-separators
+    text: "The reference 03/14-1987 appears on the docket."
+    expect: []
+
+  # A day-first date, which this locale does not read. Recorded so the split
+  # between the two locales is visible: with only "us" on, a European date goes
+  # out in clear, and the answer is to enable the locale that reads it rather than
+  # to widen this pattern into ambiguity.
+  - id: us-prec-day-first-date
+    text: "The European record says 14/03/1987 instead."
+    expect: []
+
+  # Thirteen is not a month.
+  - id: us-prec-invalid-month
+    text: "Sequence 13/14/1987 in the export."
     expect: []
 
   - id: us-prec-timestamp

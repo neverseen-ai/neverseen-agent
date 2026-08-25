@@ -1,15 +1,25 @@
-.PHONY: help build test test-cover lint fmt tidy score score-update bench-accuracy e2e-claude clean
+.PHONY: help build run test test-cover lint fmt tidy score score-update bench-accuracy e2e-claude clean
 
 BIN     := bin/cloakfleet
 PKG     := ./cmd/cloakfleet
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -X main.version=$(VERSION)
 
+# Mirrors proxy.DefaultListen, for the URL to open. The agent logs the address it
+# actually took, so a drift here shows up next to the wrong URL.
+LISTEN  ?= 127.0.0.1:8787
+
 help: ## Show this help
 	@grep -hE '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "};{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
 build: ## Build the agent binary into bin/
 	go build -ldflags '$(LDFLAGS)' -o $(BIN) $(PKG)
+
+run: build ## Run the agent and open its test page — loads .env if there is one
+	@set -a; [ -f .env ] && . ./.env; set +a; \
+	  addr=$${CLOAKFLEET_LISTEN:-$(LISTEN)}; \
+	  ( sleep 1; open "http://$$addr/test" ) & \
+	  exec $(BIN) proxy
 
 test: ## Run the whole suite with the race detector
 	go test -race ./...

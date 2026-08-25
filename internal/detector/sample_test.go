@@ -78,6 +78,7 @@ func TestSampleShowsEveryNotation(t *testing.T) {
 				"192.168.13.42", pii.CatIPAddr,
 				"507f1f77bcf86cd799439011", pii.CatMongoID,
 				"1987-03-14", pii.CatDOB,
+				"1987/03/14", pii.CatDOB,
 			),
 		},
 		{
@@ -97,12 +98,29 @@ func TestSampleShowsEveryNotation(t *testing.T) {
 				"Route de Lyon, 38000 Grenoble", pii.CatAddress,
 				"13290 Aix Les Milles", pii.CatPostalCode,
 				"AB-123-CD", pii.CatLicPlate,
-				"23/02/2004", pii.CatDOB,
-				"23-02-2004", pii.CatDOB,
-				"23.02.2004", pii.CatDOB,
-				"23 03 2004", pii.CatDOB,
+				// The eleven ways the same day-first date is written. Every one
+				// of them is a separate branch or a separate optional group in
+				// the expression, and a table with only the tidy forms in it
+				// lets the others be dropped unnoticed.
 				"23 février 2004", pii.CatDOB,
-				"1er mars 2004", pii.CatDOB,
+				"23 Février 2004", pii.CatDOB,
+				"23 fevrier 2004", pii.CatDOB,
+				"23/02/2004", pii.CatDOB,
+				"23/2/2004", pii.CatDOB,
+				"23-02-2004", pii.CatDOB,
+				"23-2-2004", pii.CatDOB,
+				"23.02.2004", pii.CatDOB,
+				"23.2.2004", pii.CatDOB,
+				"23 02 2004", pii.CatDOB,
+				"23 2 2004", pii.CatDOB,
+				// And the leading zero, optional on both sides.
+				"9 mars 2004", pii.CatDOB,
+				"09 mars 2004", pii.CatDOB,
+				"9/3/2004", pii.CatDOB,
+				"09/3/2004", pii.CatDOB,
+				"9/03/2004", pii.CatDOB,
+				// The ordinal, which only the first of the month takes.
+				"1er mars 2019", pii.CatDOB,
 			),
 		},
 		{
@@ -124,6 +142,13 @@ func TestSampleShowsEveryNotation(t *testing.T) {
 				"07700 900123", pii.CatPhone,
 				"02079460958", pii.CatPhone,
 				"+44 20 7946 0958", pii.CatPhone,
+				// The address takes the town and the postcode with it: a token
+				// that restored only the street would leave the pair that
+				// identifies the household in clear beside it.
+				"10 Downing Street, London SW1A 2AA", pii.CatAddress,
+				"221B Baker Street, London NW1 6XE", pii.CatAddress,
+				"42 Wellington Crescent", pii.CatAddress,
+				"8 High St, Manchester M1 2AB", pii.CatAddress,
 			),
 		},
 		{
@@ -141,6 +166,13 @@ func TestSampleShowsEveryNotation(t *testing.T) {
 				"456 Oak Avenue", pii.CatAddress,
 				"IL 62704", pii.CatPostalCode,
 				"62704-1234", pii.CatPostalCode,
+				// Month first, which is this locale's reading of a date and
+				// nobody else's.
+				"03/14/1987", pii.CatDOB,
+				"03-14-1987", pii.CatDOB,
+				"03.14.1987", pii.CatDOB,
+				"3/14/1987", pii.CatDOB,
+				"12/25/2024", pii.CatDOB,
 			),
 		},
 	}
@@ -173,6 +205,51 @@ func TestSampleShowsEveryNotation(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// The twelve month names, one assertion each.
+//
+// Not rows in the notation table, because twelve near-identical lines would bury
+// it — but they need their own check all the same: they are twelve alternatives
+// in one expression, and a typo in any of them is a whole month of dates going
+// out in clear with every other month still working.
+func TestSampleShowsEveryMonthName(t *testing.T) {
+	d := detectorFor(t, "fr")
+	sample := d.Sample()
+
+	found := map[string]pii.Category{}
+	for _, m := range d.Scan(sample) {
+		found[m.Value] = m.Category
+	}
+
+	// Accented where the month carries one, since that is how it is written.
+	months := []string{
+		"9 janvier 2004", "17 février 1998", "1er mars 2019", "4 avril 1977",
+		"12 mai 1985", "30 juin 1962", "8 juillet 2001", "22 août 1993",
+		"3 septembre 1970", "15 octobre 1988", "26 novembre 1955", "31 décembre 1978",
+	}
+	for _, month := range months {
+		if !strings.Contains(sample, month) {
+			t.Errorf("the sample does not show %q", month)
+			continue
+		}
+		if cat := found[month]; cat != pii.CatDOB {
+			t.Errorf("%q is read as %q, want %s", month, cat, pii.CatDOB)
+		}
+	}
+
+	// And the unaccented spellings, which a keyboard without a compose key
+	// produces and a form field therefore receives.
+	for _, month := range []string{"5 aout 1999", "7 decembre 1980", "3 fevrier 1971"} {
+		if !strings.Contains(sample, month) {
+			t.Errorf("the sample does not show %q", month)
+			continue
+		}
+		if cat := found[month]; cat != pii.CatDOB {
+			t.Errorf("%q is read as %q, want %s — an unaccented month is still a month",
+				month, cat, pii.CatDOB)
+		}
 	}
 }
 
@@ -209,9 +286,13 @@ func TestSampleShowsEveryCredential(t *testing.T) {
 		"r8_abcdefghijklmnopqrstuvwx", pii.CatReplicateToken,
 		"-----BEGIN OPENSSH PRIVATE KEY-----", pii.CatPEMKey,
 		"eyJabcdefghijkl.eyJabcdefghijklmn.abcdefghijklmnopqrst", pii.CatJWT,
-		"postgres://admin:s3cr3t@db.example.com:5432/app", pii.CatConnStr,
-		"amqp://guest:gu3st@broker.internal:5672/", pii.CatConnStr,
-		"redis://:p4ssonly@redis.internal:6379", pii.CatConnStr,
+		// The scheme is consumed but left out of the span, so the line reads
+		// "postgres://[CONN_STR_1]" — the scheme is not a secret, and it is most
+		// of what makes the line answerable.
+		"admin:s3cr3t@db.example.com:5432/app", pii.CatConnStr,
+		"guest:gu3st@broker.internal:5672/", pii.CatConnStr,
+		":p4ssonly@redis.internal:6379", pii.CatConnStr,
+		"user:p4ss@api.partner.com/v1/orders", pii.CatConnStr,
 		"hunter2-correct-horse", pii.CatGenericSecret,
 		"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", pii.CatHexSecret,
 	)

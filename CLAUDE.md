@@ -134,6 +134,26 @@ under Luhn and a US routing number under the ABA weights.
 
 Next locales, in order of market size: Germany, Spain, Italy, the Netherlands.
 
+### The sample is a reference, and must stay one
+
+`pkg/pii/sample.go` holds one sample per locale plus the locale-independent and
+credential sections. Each has to carry every category its set detects **and every
+notation each pattern accepts** — all eleven French day-first date forms, both ISO
+separators, an identifier compact and spaced, an address with and without its
+town. It is what an operator reads to check their own data shape is covered, so a
+gap in it reads as a gap in the engine.
+
+Any change to the catalogue — a new category, a newly accepted notation, a
+widened or narrowed pattern — means updating the sample in the same commit. Three
+tests hold it, for every locale in the registry: one sweeps the live catalogue so
+a new category with no line fails; one is an explicit table of every accepted form
+with the category it must be read as; one covers the twelve month names, which are
+twelve alternatives in one expression where a typo silently loses a month.
+
+The tables are deliberately not derived from the detector. A derived expectation
+agrees with whatever the detector does, including a form it silently stopped
+reading.
+
 ### Patterns
 
 - **A checksum lets a shape be loose; without one, the shape is all there is.**

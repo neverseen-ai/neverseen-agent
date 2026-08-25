@@ -29,7 +29,10 @@ IBAN : FR1420041010050500013M02606, groupé FR14 2004 1010 0505 0001 3M02 606
 IBAN étrangers : DE89370400440532013000, BE68539007547034, NL91ABNA0417164300
 Serveur : 192.168.13.42, et 10.0.0.1 en secours
 Identifiant document : 507f1f77bcf86cd799439011
-Date ISO : 1987-03-14
+
+=== Dates au format ISO ===
+LA MÊME DATE dans ses deux écritures ISO : 1987-03-14, 1987/03/14
+Autres dates ISO : 1998-11-30, 2019/03/01, 1977-04-04, 2001-07-08
 `
 
 const franceSample = `=== Identité française ===
@@ -42,7 +45,13 @@ Adresse abrégée : 12 r. de la Paix, 75002 Paris
 Adresse sans numéro : Route de Lyon, 38000 Grenoble
 Code postal seul : 13290 Aix Les Milles
 Plaque : AB-123-CD
-Naissance : 23/02/2004, 23-02-2004, 23.02.2004, 23 03 2004, 23 février 2004, 1er mars 2004
+
+=== Dates de naissance (jour d'abord) ===
+LA MÊME DATE dans ses onze notations : 23 février 2004, 23 Février 2004, 23 fevrier 2004, 23/02/2004, 23/2/2004, 23-02-2004, 23-2-2004, 23.02.2004, 23.2.2004, 23 02 2004, 23 2 2004
+LA MÊME DATE avec et sans zéro initial : 9 mars 2004, 09 mars 2004, 9/3/2004, 09/03/2004, 9/03/2004, 09/3/2004, 9-3-2004, 9.3.2004, 9 3 2004
+Les douze noms de mois : 9 janvier 2004, 17 février 1998, 1er mars 2019, 4 avril 1977, 12 mai 1985, 30 juin 1962, 8 juillet 2001, 22 août 1993, 3 septembre 1970, 15 octobre 1988, 26 novembre 1955, 31 décembre 1978
+Mois sans accent : 5 aout 1999, 7 decembre 1980, 3 fevrier 1971
+Jours 30-31 et mois 10-12 : 30-10-1961, 31.12.1988, 25/11/1999, 31/12/2000
 `
 
 const unitedKingdomSample = `=== United Kingdom ===
@@ -50,6 +59,10 @@ NHS number: 943 476 5919, also written 9434765919
 National Insurance: AB 12 34 56 C, compact AB123456C, without suffix AB123456
 Postcode: SW1A 1AA, M1 1AE, EC1A 1BB, B33 8TH, DN55 1PT, CR2 6XH
 Telephone: 020 7946 0958, 0161 496 0000, 07700 900123, 02079460958, +44 20 7946 0958
+Address with town and postcode: 10 Downing Street, London SW1A 2AA
+Address with a letter on the number: 221B Baker Street, London NW1 6XE
+Address with no town: 42 Wellington Crescent
+Abbreviated street type: 8 High St, Manchester M1 2AB
 `
 
 const unitedStatesSample = `=== United States ===
@@ -60,6 +73,11 @@ Telephone: (555) 234-5678, 555-234-5678, 5552345678, +1 555 234 5678
 Address: 123 Main St, Springfield, IL 62704
 Address without a city: 456 Oak Avenue
 ZIP: IL 62704, and 62704-1234
+
+=== Dates (month first) ===
+THE SAME DATE in its three notations: 03/14/1987, 03-14-1987, 03.14.1987
+With and without a leading zero: 3/14/1987, 03/14/1987
+Other dates: 12/25/2024, 07/04/1976, 1/1/2000
 `
 
 // Fabricated to match, never a revoked real key. The vendor prefix is the part
@@ -82,6 +100,7 @@ JWT : eyJabcdefghijkl.eyJabcdefghijklmn.abcdefghijklmnopqrst
 Base : postgres://admin:s3cr3t@db.example.com:5432/app
 Broker : amqp://guest:gu3st@broker.internal:5672/
 Cache : redis://:p4ssonly@redis.internal:6379
+API partenaire : https://user:p4ss@api.partner.com/v1/orders
 Mot de passe : PASSWORD=hunter2-correct-horse
 Clé hexadécimale : KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 `

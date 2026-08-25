@@ -30,6 +30,13 @@ const (
 	usState = `A[KLRZ]|C[AOT]|D[CE]|FL|GA|HI|I[ADLN]|K[SY]|LA|M[ADEINOST]|` +
 		`N[CDEHJMVY]|OH|OK|OR|PA|RI|S[CD]|T[NX]|UT|V[AT]|W[AIVY]|` +
 		`AS|GU|MP|PR|VI`
+
+	// Date fragments. The leading zero is optional on both the month and the day,
+	// because a form field writes "3/14/1987" as readily as "03/14/1987", and the
+	// year is anchored to 19xx/20xx so three loose numbers cannot read as a date.
+	usMonth = `(?:0?[1-9]|1[0-2])`
+	usDay   = `(?:0?[1-9]|[12]\d|3[01])`
+	usYear  = `(?:19|20)\d{2}`
 )
 
 var (
@@ -61,6 +68,22 @@ var (
 	// matching it would mask every quantity and price in the payload — the same
 	// rule the French postcode follows with its commune.
 	usZIPRe = regexp.MustCompile(`\b(?:(?:` + usState + `)[ ]+\d{5}(?:-\d{4})?|\d{5}-\d{4})\b`)
+
+	// Month-first dates, which is how the US writes them and nobody else does.
+	//
+	// It belongs to this locale for the same reason day-first belongs to France:
+	// "03/14/1987" and "14/03/1987" are the same date read two ways, and only the
+	// locale says which. With both sets enabled an unambiguous date is claimed by
+	// whichever pattern can read it, and a genuinely ambiguous one — "05/06/2024"
+	// — is claimed by both, resolves to one span, and is masked either way.
+	//
+	// One alternative per separator, because the separators have to agree and RE2
+	// has no backreference: "03/14-1987" is not a date.
+	usDateRe = regexp.MustCompile(`\b(?:` +
+		usMonth + `/` + usDay + `/` + usYear + `|` +
+		usMonth + `-` + usDay + `-` + usYear + `|` +
+		usMonth + `\.` + usDay + `\.` + usYear +
+		`)\b`)
 
 	// A street address: a number, one to four capitalised words, and a street
 	// type — optionally continuing through the city, state and ZIP.
@@ -119,6 +142,7 @@ func UnitedStatesPatterns() []Pattern {
 		{Regex: usSSNRe, Category: CatSSN, Label: "US Social Security number"},
 		{Regex: usEINRe, Category: CatEIN, Label: "US employer identification number"},
 		{Regex: usPhoneRe, Category: CatPhone, Label: "US telephone number"},
+		{Regex: usDateRe, Category: CatDOB, Label: "Date (month first)"},
 		{Regex: usAddressRe, Category: CatAddress, Label: "US street address"},
 		{Regex: usZIPRe, Category: CatPostalCode, Label: "US ZIP code"},
 		{Regex: usRoutingRe, Category: CatRoutingNumber, Label: "ABA routing number"},

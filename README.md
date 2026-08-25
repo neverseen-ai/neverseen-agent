@@ -162,14 +162,18 @@ Written down rather than discovered later:
   are next. Adding one is an entry in the locale registry plus a pattern file, a
   corpus suite and a regenerated floor — three tests fail on the commit that
   forgets any of them.
-- **No UK street address, and no UK sort code.** A sort code's `12-34-56` shape
-  is a date, so it needs a context word first.
+- **No UK sort code.** Its `12-34-56` shape is a date, so it needs a context word
+  in front of it — the same work the bank-account shapes need.
 - **No US driver's licence.** Fifty formats, no shared shape, no checksum.
 - **The National Insurance number and the employer id carry no checksum.** Their
   letter rules and punctuation are all the evidence there is, so an internal
   reference of the same shape can be masked. The allow list is the escape hatch.
 - **A date written as three spaced numbers is ambiguous** and "1 12 2019" is
   masked as one. Recorded in the corpus as an accepted miss rather than hidden.
+- **A date is read by the locale that reads dates that way.** France reads
+  day-first, the US month-first, and "05/06/2024" is genuinely both. With only
+  one of the two enabled, the other country's dates go out in clear — the answer
+  is to enable that locale, not to widen a pattern into ambiguity.
 - **Mixing locales costs precision** where two countries issue identifiers of
   the same length. Nine bare digits are a French SIREN under one checksum and a
   US routing number under another; the earlier locale in the registry names it.

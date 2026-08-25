@@ -60,10 +60,16 @@ var (
 	ipv4Octet = `(?:25[0-5]|2[0-4]\d|[01]?\d\d?)`
 	ipv4Re    = regexp.MustCompile(`\b` + ipv4Octet + `\.` + ipv4Octet + `\.` + ipv4Octet + `\.` + ipv4Octet + `\b`)
 
-	// The unambiguous date orders: ISO, and the month-first form the ISO one
-	// cannot be confused with. Day-first is ambiguous outside the country that
-	// reads it that way, so it lives in that locale's set.
-	dateRe = regexp.MustCompile(`\b(?:19|20)\d{2}[-/](?:0[1-9]|1[0-2])[-/](?:0[1-9]|[12]\d|3[01])\b`)
+	// The one date order that is unambiguous everywhere: year first. Day-first and
+	// month-first are the same string read two ways, so each lives in the locale
+	// that reads it that way.
+	//
+	// One alternative per separator, because the separators have to agree and RE2
+	// has no backreference: "2004-02/23" is not a date.
+	dateRe = regexp.MustCompile(`\b(?:` +
+		`(?:19|20)\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])` +
+		`|(?:19|20)\d{2}/(?:0[1-9]|1[0-2])/(?:0[1-9]|[12]\d|3[01])` +
+		`)\b`)
 )
 
 // InternationalPatterns returns the identifiers that are not tied to a locale.

@@ -2,7 +2,7 @@
  "_comment": "Per-category floor for `make score`. Counts, not percentages. Regenerate with `make score-update` and explain the delta in the PR body. An fn above zero records a miss we accept today, so a baseline is a floor to ratchet, never a goal.",
  "checks": {
   "ADDRESS": {
-   "tp": 6,
+   "tp": 10,
    "fp": 0,
    "fn": 0
   },
@@ -12,7 +12,7 @@
    "fn": 0
   },
   "DOB": {
-   "tp": 8,
+   "tp": 12,
    "fp": 1,
    "fn": 0
   },
@@ -197,5 +197,5 @@
    "fn": 0
   }
  },
- "negatives": 49
+ "negatives": 55
 }

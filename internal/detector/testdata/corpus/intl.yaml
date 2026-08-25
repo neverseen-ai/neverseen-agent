@@ -60,17 +60,17 @@ cases:
   - id: intl-conn-str-postgres
     text: "Déploiement avec DATABASE_URL=postgres://admin:s3cr3t@db.example.com:5432/app hier."
     expect:
-      - {category: SECRET_CONN_STR, value: "postgres://admin:s3cr3t@db.example.com:5432/app"}
+      - {category: SECRET_CONN_STR, value: "admin:s3cr3t@db.example.com:5432/app"}
 
   - id: intl-conn-str-redis-empty-user
     text: "Cache sur redis://:p4ssonly@redis.internal:6379 en prod."
     expect:
-      - {category: SECRET_CONN_STR, value: "redis://:p4ssonly@redis.internal:6379"}
+      - {category: SECRET_CONN_STR, value: ":p4ssonly@redis.internal:6379"}
 
   - id: intl-conn-str-https-basic-auth
     text: "L'API partenaire répond sur https://user:p4ss@api.partner.com/v1/orders directement."
     expect:
-      - {category: SECRET_CONN_STR, value: "https://user:p4ss@api.partner.com/v1/orders"}
+      - {category: SECRET_CONN_STR, value: "user:p4ss@api.partner.com/v1/orders"}
 
   - id: intl-aws-key
     text: "aws_access_key_id = AKIAIOSFODNN7EXAMPLE"

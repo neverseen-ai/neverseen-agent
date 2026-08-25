@@ -34,6 +34,13 @@ linters:
         # "color" is a CSS property name, not prose, and the test page's
         # stylesheet is full of it. It cannot be spelled the other way.
         - color
+        # French month names written without their accents, which is what a
+        # keyboard with no compose key produces and a form field therefore
+        # receives. The sample shows them on purpose, and an English
+        # spellchecker reads them as misspelt English months.
+        - aout
+        - fevrier
+        - decembre
 
     errcheck:
       # A failed write to stdout — a closed pipe, mostly — leaves a CLI nothing

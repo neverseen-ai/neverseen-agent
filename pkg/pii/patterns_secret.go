@@ -92,14 +92,22 @@ var (
 	// trimmed afterwards, because the span a pattern reports is what gets
 	// replaced, and a trim would have to be repeated everywhere the span is read.
 	//
+	// The scheme is consumed but left out of the span, which is what Group is
+	// for. So "postgres://admin:pw@db/app" is replaced as
+	// "postgres://[CONN_STR_1]" rather than as a bare token: the scheme is not a
+	// secret, and it is most of what makes the line answerable — a model asked to
+	// fix a connection string needs to know it is Postgres and not Redis. It also
+	// matches how every other named credential here reads, since the name in
+	// front of a value is already outside the span.
+	//
 	// TODO: a password containing a quote or a backtick breaks the match
 	// entirely, and the credential then falls through to the email pattern plus
 	// clear text. Rare — quotes in pasted passwords are usually encoded — and
 	// widening the class to quotes would swallow quoted prose. Revisit with a
 	// two-pass match if the corpus ever carries one.
 	connStrRe = regexp.MustCompile(`(?i)\b[a-z][a-z0-9+.\-]{1,29}://` +
-		`[^` + quoteChars + `/@:]*:[^` + quoteChars + `@/]+@` +
-		`[^` + quoteChars + `]*[^` + quoteChars + noSentenceTail + `]`)
+		`([^` + quoteChars + `/@:]*:[^` + quoteChars + `@/]+@` +
+		`[^` + quoteChars + `]*[^` + quoteChars + noSentenceTail + `])`)
 
 	// --- context-hinted generics -------------------------------------------
 
@@ -152,7 +160,7 @@ func SecretPatterns() []Pattern {
 		// structural
 		{Regex: pemRe, Category: CatPEMKey, Label: "PEM private key block"},
 		{Regex: jwtRe, Category: CatJWT, Label: "JSON Web Token"},
-		{Regex: connStrRe, Category: CatConnStr, Label: "URL carrying credentials"},
+		{Regex: connStrRe, Group: 1, Category: CatConnStr, Label: "URL carrying credentials"},
 
 		// context-hinted generics, last
 		{Regex: genericSecretRe, Group: 1, Category: CatGenericSecret, Label: "Named secret or password"},

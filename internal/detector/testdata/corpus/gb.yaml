@@ -111,6 +111,34 @@ cases:
     expect:
       - {category: PHONE, value: "02079460958"}
 
+  # --- street address -------------------------------------------------------
+  #
+  # The span is the street, town and postcode together. A postcode alone narrows
+  # to about fifteen addresses and is matched on its own, so an address pattern
+  # stopping at the street would leave the pair that identifies the household in
+  # clear beside a masked postcode.
+
+  - id: gb-address-with-town-and-postcode
+    text: "Send it to 10 Downing Street, London SW1A 2AA before Friday."
+    expect:
+      - {category: ADDRESS, value: "10 Downing Street, London SW1A 2AA"}
+
+  # A letter on the house number, which is an address and not a typo.
+  - id: gb-address-letter-on-the-number
+    text: "The old office was 221B Baker Street, London NW1 6XE."
+    expect:
+      - {category: ADDRESS, value: "221B Baker Street, London NW1 6XE"}
+
+  - id: gb-address-street-only
+    text: "They moved to 42 Wellington Crescent last year."
+    expect:
+      - {category: ADDRESS, value: "42 Wellington Crescent"}
+
+  - id: gb-address-abbreviated-street-type
+    text: "Deliveries go to 8 High St, Manchester M1 2AB."
+    expect:
+      - {category: ADDRESS, value: "8 High St, Manchester M1 2AB"}
+
   # --- locale-independent shapes stay on -----------------------------------
 
   - id: gb-email-and-iban-stay-on
@@ -154,6 +182,26 @@ cases:
   # come out labelled as a London landline when both locales were enabled.
   - id: gb-prec-nine-digits-starting-with-zero
     text: "Internal ref 021000021 on the ledger."
+    expect: []
+
+  # A street word in prose, with no number and no capitalised name in front of
+  # it. The number-then-capitalised-word requirement is what separates an address
+  # from a sentence mentioning a street.
+  - id: gb-prec-street-word-in-prose
+    text: "We walked 5 blocks down the high street looking for it."
+    expect: []
+
+  # The street types deliberately left out of the list, because they are ordinary
+  # words and would claim phrases in this exact position. Dropping them means
+  # missing some addresses; keeping them would mask sentences, which is worse
+  # because no allow list can name a shape.
+  - id: gb-prec-ambiguous-street-type
+    text: "The report lists 3 New Green and 2 Long View as sites."
+    expect: []
+
+  # A number and a capitalised word with no street type after them.
+  - id: gb-prec-quantity-and-product
+    text: "Order 12 Blue Widgets shipped on Tuesday."
     expect: []
 
   - id: gb-prec-version-and-port

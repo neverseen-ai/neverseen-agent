@@ -126,7 +126,7 @@ cases:
   - id: bound-conn-str-trailing-comma
     text: "Restauration depuis mongodb+srv://svc:tr0ub4dor@cluster.example:27017/app, puis vérification."
     expect:
-      - {category: SECRET_CONN_STR, value: "mongodb+srv://svc:tr0ub4dor@cluster.example:27017/app"}
+      - {category: SECRET_CONN_STR, value: "svc:tr0ub4dor@cluster.example:27017/app"}
 
   - id: bound-generic-secret-trailing-comma
     text: "Dans le vault : SECRET = troisieme-valeur-longue, à faire tourner."
@@ -136,12 +136,12 @@ cases:
   - id: bound-conn-str-end-of-sentence
     text: "La base est sur postgres://admin:s3cr3t@db.internal:5432/prod."
     expect:
-      - {category: SECRET_CONN_STR, value: "postgres://admin:s3cr3t@db.internal:5432/prod"}
+      - {category: SECRET_CONN_STR, value: "admin:s3cr3t@db.internal:5432/prod"}
 
   - id: bound-conn-str-parentheses
     text: "La base (postgres://admin:s3cr3t@db.internal:5432/prod) répond encore."
     expect:
-      - {category: SECRET_CONN_STR, value: "postgres://admin:s3cr3t@db.internal:5432/prod"}
+      - {category: SECRET_CONN_STR, value: "admin:s3cr3t@db.internal:5432/prod"}
 
   # The fallback branch of the generic-secret value, and the reason it exists:
   # eight characters ending on punctuation cannot be trimmed without falling
