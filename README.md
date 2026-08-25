@@ -15,9 +15,24 @@ it ships. See [LICENSE.md](LICENSE.md).
 
 ## Status
 
-Under construction. What works today is the detection engine and a `scan`
-command over it. The proxy, the vault and the fleet telemetry are the next
-phases — the plan is tracked outside this repository.
+The round trip works, end to end, against a real provider. Fleet telemetry and
+packaged installation are the next phases — the plan is tracked outside this
+repository.
+
+Run the agent and point a client at it by naming the provider in the path:
+
+```console
+$ CLOAKFLEET_PII_LOCALE=fr,gb,us cloakfleet proxy
+level=INFO msg=listening address=127.0.0.1:8787 providers=anthropic,deepinfra,gemini,...
+
+$ ANTHROPIC_BASE_URL=http://127.0.0.1:8787/anthropic claude -p "…"
+```
+
+Everything that reaches the model is masked, and everything that comes back is
+restored — including through a streaming response, where a token the model
+echoed is regularly split across two events.
+
+Or just look at what would be masked, without sending anything anywhere:
 
 ```console
 $ echo "Call 020 7946 0958, NHS number 9434765919" | CLOAKFLEET_PII_LOCALE=gb cloakfleet scan
@@ -33,6 +48,24 @@ NHS_NUMBER               9434765919
   PHONE                    1
 ```
 
+## How the round trip works
+
+1. A client sends a request to `/<provider>/…`. Whatever credential it sent is
+   forwarded untouched — the agent holds no API keys, because the tool making the
+   request already has one.
+2. The body is decoded as JSON and every **string value** is masked. Not the raw
+   bytes: a JSON string carries escapes, and a pattern reading the bytes sees the
+   characters those escapes are made of.
+3. What was replaced is recorded in a session vault, encrypted, for thirty
+   minutes. One value keeps one token for as long as the conversation lives, so
+   the model is told about one person rather than three.
+4. The response is expanded back on the way out — buffered or streamed, through
+   the same expansion.
+
+Only bracket tokens are ever expanded. That filter is what stops a masked
+credential from being turned back into a live secret, and it is why `fake` mode
+is deliberately one-way.
+
 ## Build
 
 Go 1.26 or later, no other dependencies for the build.
@@ -43,7 +76,15 @@ make test             # the whole suite, with the race detector
 make lint             # golangci-lint
 make score            # gate detection accuracy against the committed floor
 make bench-accuracy   # the per-category accuracy report
+make e2e-claude       # the end-to-end test: real CLI, real provider (spends quota)
 ```
+
+`make e2e-claude` is the one that proves the product rather than its parts. It
+runs the Claude CLI against Anthropic through the agent, with a tap in between
+recording every byte that went upstream, and asserts both halves of the claim:
+that no value the caller wrote reached the provider, and that the caller got it
+back anyway. It needs the CLI signed in and it spends the operator's quota, which
+is why it is opt-in.
 
 ## Configuration
 

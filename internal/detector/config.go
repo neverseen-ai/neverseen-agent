@@ -21,6 +21,8 @@ const (
 	EnvLocale = "CLOAKFLEET_PII_LOCALE"
 	// EnvAllowList lists values never to mask, separated by commas.
 	EnvAllowList = "CLOAKFLEET_PII_ALLOWLIST"
+	// EnvSubstitution selects what a masked value looks like: "token" or "fake".
+	EnvSubstitution = "CLOAKFLEET_PII_SUBSTITUTION"
 )
 
 // minConfidence is the score a match must reach to be reported.
@@ -47,6 +49,11 @@ type Config struct {
 	// offices. Compared ignoring case and spacing, so declaring an IBAN in its
 	// compact form also covers the grouped spelling of the same account.
 	AllowList map[string]bool
+
+	// Substitution selects what a masked value looks like. The zero value is
+	// SubstitutionToken, so a Config built by hand keeps the reversible
+	// behaviour without having to say so.
+	Substitution Substitution
 }
 
 // DefaultConfig returns the configuration of a deployment that has said
@@ -98,6 +105,10 @@ func FromEnv() (*Detector, error) {
 	}
 	cfg.Locales = locales
 	cfg.AllowList = parseValueList(os.Getenv(EnvAllowList))
+
+	if cfg.Substitution, err = ParseSubstitution(os.Getenv(EnvSubstitution)); err != nil {
+		return nil, err
+	}
 
 	return New(cfg), nil
 }

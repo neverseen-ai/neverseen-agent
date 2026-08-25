@@ -1,6 +1,9 @@
 package pii
 
-import "regexp"
+import (
+	"fmt"
+	"regexp"
+)
 
 // The United States set.
 //
@@ -71,6 +74,42 @@ var (
 	usAddressRe = regexp.MustCompile(`\b\d{1,6}[ ]+(?:[A-Z][A-Za-z'.\-]*[ ]+){1,4}(?:` + usStreetType + `)\b\.?` +
 		`(?:[ ]*,[ ]*[A-Z][A-Za-z]+(?:[ ][A-Z][A-Za-z]+){0,2}[ ]*,[ ]*(?:` + usState + `)[ ]+\d{5}(?:-\d{4})?)?`)
 )
+
+// unitedStatesFakes are the US stand-ins. Each lives in a range its issuer
+// never allocates — a social security area of 000, a Federal Reserve district
+// that does not exist, an unassigned ZIP, and the 555-01xx block the FCC
+// reserves for fiction — so none of them can be anybody's real value, and this
+// catalogue's own checks reject them rather than masking them twice.
+var unitedStatesFakes = map[Category]Generator{
+	// Area 000 is never issued.
+	CatSSN: {Capacity: 999999, Make: func(i int64) string {
+		return fmt.Sprintf("000-%02d-%04d", i/10000%100, i%10000)
+	}},
+
+	// 00 is not one of the campus prefixes the IRS assigns.
+	CatEIN: {Capacity: 9999999, Make: func(i int64) string {
+		return fmt.Sprintf("00-%07d", i)
+	}},
+
+	// District 99 does not exist, which RoutingNumberCheck rejects outright.
+	CatRoutingNumber: {Capacity: 9999999, Make: func(i int64) string {
+		return fmt.Sprintf("99%07d", i)
+	}},
+
+	// 555-0100 through 555-0199 are reserved for fiction.
+	CatPhone: {Capacity: 100, Make: func(i int64) string {
+		return fmt.Sprintf("(555) 555-01%02d", i-1)
+	}},
+
+	// 00000 is not an assigned ZIP.
+	CatPostalCode: {Capacity: 9999, Make: func(i int64) string {
+		return fmt.Sprintf("00000-%04d", i)
+	}},
+
+	CatAddress: {Capacity: 9999, Make: func(i int64) string {
+		return fmt.Sprintf("%d Example Street, Anytown, IL 00000", i)
+	}},
+}
 
 // UnitedStatesPatterns returns the US set. The address comes before the ZIP so
 // that when both claim the same stretch the longer, more specific span is the

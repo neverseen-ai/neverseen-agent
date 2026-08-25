@@ -5,3 +5,8 @@ coverage.html
 .env
 .env.local
 .DS_Store
+
+# What the end-to-end test leaves behind for a human to open. Evidence of a run,
+# not part of the tree — and it is a real model's answer to a real prompt, so it
+# is not something to commit by reflex.
+e2e-artefacts/

@@ -1,4 +1,4 @@
-.PHONY: help build test test-cover lint fmt tidy score score-update bench-accuracy clean
+.PHONY: help build test test-cover lint fmt tidy score score-update bench-accuracy e2e-claude clean
 
 BIN     := bin/cloakfleet
 PKG     := ./cmd/cloakfleet
@@ -35,6 +35,9 @@ score-update: ## Rewrite that floor from the current run — explain the delta i
 
 bench-accuracy: ## Per-category accuracy report over the corpus
 	go test ./internal/detector/ -run TestAccuracyCorpus -v
+
+e2e-claude: ## End-to-end: the Claude CLI through the agent to the real provider (spends quota)
+	CLOAKFLEET_E2E_CLAUDE=1 go test ./internal/proxy/ -run TestE2EClaudeCode -v -timeout 10m
 
 clean: ## Remove build artefacts
 	rm -rf bin dist coverage.out coverage.html

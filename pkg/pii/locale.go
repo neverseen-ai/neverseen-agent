@@ -38,6 +38,21 @@ type Locale struct {
 
 	// Patterns is the ordered set this locale contributes.
 	Patterns func() []Pattern
+
+	// Sample is text exercising every category this locale detects, in every
+	// notation its patterns accept. It is the reference an operator reads to
+	// check their own data shape is covered, so a gap in it reads as a gap in
+	// the engine.
+	Sample string
+
+	// Fakes are the stand-ins fake mode substitutes for the categories whose
+	// shape is national.
+	//
+	// Per locale, because a global table meant a British telephone number stood
+	// in for a French one — which is exactly the machine artefact fake mode
+	// exists to avoid. A category absent here falls back to the
+	// locale-independent generators, and then to a bracket token.
+	Fakes map[Category]Generator
 }
 
 // localeRegistry is the whole set. Order in the slice is not meaningful;
@@ -48,9 +63,18 @@ type Locale struct {
 // suite and a regenerated score floor — the registry is what keeps that from
 // touching anything else.
 var localeRegistry = []Locale{
-	{Code: "fr", Priority: 10, Patterns: FrancePatterns},
-	{Code: "gb", Priority: 20, Patterns: UnitedKingdomPatterns},
-	{Code: "us", Priority: 30, Patterns: UnitedStatesPatterns},
+	{
+		Code: "fr", Priority: 10,
+		Patterns: FrancePatterns, Sample: franceSample, Fakes: franceFakes,
+	},
+	{
+		Code: "gb", Priority: 20,
+		Patterns: UnitedKingdomPatterns, Sample: unitedKingdomSample, Fakes: unitedKingdomFakes,
+	},
+	{
+		Code: "us", Priority: 30,
+		Patterns: UnitedStatesPatterns, Sample: unitedStatesSample, Fakes: unitedStatesFakes,
+	},
 }
 
 // Locales returns every registered locale, lowest Priority first — the order

@@ -3,7 +3,6 @@ package detector
 import (
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 
@@ -63,34 +62,6 @@ func TestEveryLocaleIsDocumented(t *testing.T) {
 	}
 }
 
-// Every environment variable the detector reads must be named in the documented
-// configuration, and nothing may be documented that no code reads. The second
-// half is the one that rots: the project this replaces documented five
-// variables that nothing had ever read.
-func TestDocumentedEnvironmentMatchesTheCode(t *testing.T) {
-	const path = "../../.env.example"
-
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read %s: %v", path, err)
-	}
-	doc := string(raw)
-
-	read := []string{EnvLocale, EnvAllowList}
-	for _, name := range read {
-		if !strings.Contains(doc, name) {
-			t.Errorf("%s is read by the detector but is not documented in %s", name, path)
-		}
-	}
-
-	for line := range strings.Lines(doc) {
-		line = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "#"))
-		name, _, found := strings.Cut(line, "=")
-		if !found || !strings.HasPrefix(name, "CLOAKFLEET_") {
-			continue
-		}
-		if !slices.Contains(read, name) {
-			t.Errorf("%s is documented in %s but no code reads it", name, path)
-		}
-	}
-}
+// The other half of that pact — every documented variable being one some code
+// reads — needs to see the whole binary's settings at once, so it lives with the
+// command rather than here.

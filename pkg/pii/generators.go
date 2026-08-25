@@ -1,0 +1,155 @@
+package pii
+
+import "fmt"
+
+// Fake mode replaces a value with a stand-in of the same shape instead of a
+// bracket token, so the prompt reaches the model as prose rather than as a form
+// with holes punched in it. A model reasons better about "write to
+// contact7@example.org" than about "write to [EMAIL_1]".
+//
+// Two rules make it safe.
+//
+// **Indexed, never random.** A generator is a pure function of an index, and the
+// index comes from the same per-category counter that numbers tokens. So the
+// mapping is still one-to-one and still reversible, and the same value gets the
+// same stand-in for as long as the session lives. Randomness would break both.
+//
+// **Unattributable by construction.** A stand-in must never be able to be
+// somebody's real value. Where a shape carries a checksum, the stand-in is built
+// to fail it — a card whose Luhn digit is deliberately wrong cannot be anyone's
+// card. Where a shape has a range its issuer never allocates, the stand-in lives
+// there: an unissued National Insurance prefix, a social security area of 000, a
+// Federal Reserve district that does not exist, the numbers Ofcom and the FCC
+// reserve for fiction, the domains and IP blocks the RFCs reserve for
+// documentation. A "plausible" stand-in that could belong to a real person would
+// turn masking into fabrication.
+//
+// Credentials get no generators at all. A stand-in that looks like a working API
+// key is a thing somebody will try to use, and a category with no generator
+// falls back to a bracket token — safe, never a leak, and obviously not data.
+
+// Generator makes the stand-in for one category, and declares how many distinct
+// values it can produce.
+//
+// Capacity is the span the index is permuted over. Past it the index would wrap
+// and two different originals would share a stand-in, which is the one failure
+// the indexed design exists to prevent — so FakeValue reports nothing instead,
+// and the caller falls back to a bracket token.
+type Generator struct {
+	Make     func(index int64) string
+	Capacity int64
+}
+
+// FakeSet is the generators available to a deployment: the locale-independent
+// ones, plus those of the locales it selected.
+type FakeSet map[Category]Generator
+
+// NewFakeSet resolves the generators for a set of locales.
+//
+// A locale's own generators win over a locale-independent one of the same
+// category, which is what the per-locale tables are for: a telephone number has
+// a national shape, and a British number standing in for a French one is exactly
+// the machine artefact fake mode exists to avoid.
+func NewFakeSet(locales []string) FakeSet {
+	set := make(FakeSet, len(fakeGenerators))
+	for cat, gen := range fakeGenerators {
+		set[cat] = gen
+	}
+
+	wanted := make(map[string]bool, len(locales))
+	for _, code := range locales {
+		wanted[code] = true
+	}
+	for _, l := range Locales() {
+		if !wanted[l.Code] {
+			continue
+		}
+		for cat, gen := range l.Fakes {
+			set[cat] = gen
+		}
+	}
+	return set
+}
+
+// Value returns the stand-in for the index-th value of a category, and whether
+// there is one. False means the caller must fall back to a bracket token: either
+// no generator exists for the category, or the index has run past what one can
+// produce without repeating itself.
+func (s FakeSet) Value(cat Category, index int64) (string, bool) {
+	gen, ok := s[cat]
+	if !ok || index < 1 || index > gen.Capacity {
+		return "", false
+	}
+	return gen.Make(index), true
+}
+
+// FakeValue is Value over every registered locale at once. It is what the tests
+// ask, so a locale's generators are exercised whatever the deployment selects; a
+// running agent asks the FakeSet its own locales resolve to.
+func FakeValue(cat Category, index int64) (string, bool) {
+	return NewFakeSet(LocaleCodes()).Value(cat, index)
+}
+
+// fakeGenerators are the stand-ins for shapes that mean the same everywhere.
+var fakeGenerators = map[Category]Generator{
+	// example.org is reserved by RFC 2606 and can never be registered, so no
+	// address built on it can reach anybody.
+	CatEmail: {Capacity: 999999, Make: func(i int64) string {
+		return fmt.Sprintf("contact%d@example.org", i)
+	}},
+
+	// The three documentation blocks of RFC 5737, which are never routed.
+	CatIPAddr: {Capacity: 3 * 256, Make: func(i int64) string {
+		blocks := [...]string{"192.0.2", "198.51.100", "203.0.113"}
+		i--
+		return fmt.Sprintf("%s.%d", blocks[i/256], i%256)
+	}},
+
+	// A Visa-shaped number whose Luhn digit is deliberately wrong, so it cannot
+	// be a card that was ever issued.
+	CatCreditCard: {Capacity: 99999999, Make: func(i int64) string {
+		body := fmt.Sprintf("400000000%08d", i) // fifteen digits
+		return body + invalidCheckDigit(luhnCheckDigit(body))
+	}},
+
+	// IBAN check digits run from 02 to 98, so "00" is a value the standard
+	// cannot produce.
+	CatIBAN: {Capacity: 99999999, Make: func(i int64) string {
+		return fmt.Sprintf("FR00%019d", i)
+	}},
+
+	// A date in a fixed fictional decade. Any date belongs to somebody, so what
+	// makes this safe is that it is not the one the caller wrote.
+	CatDOB: {Capacity: 28 * 12, Make: func(i int64) string {
+		i--
+		return fmt.Sprintf("%02d/%02d/1900", i%28+1, i/28+1)
+	}},
+
+	// Twenty-four hex characters opening on a run of zeroes, which a real
+	// ObjectId — whose first four bytes are a timestamp — never does.
+	CatMongoID: {Capacity: 99999999, Make: func(i int64) string {
+		return fmt.Sprintf("000000000000000%09x", i)
+	}},
+}
+
+// luhnCheckDigit returns the digit that would make body pass the Luhn checksum.
+func luhnCheckDigit(body string) int {
+	sum, alt := 0, true // the check digit is not yet appended, so body's last is doubled
+	for i := len(body) - 1; i >= 0; i-- {
+		d := int(body[i] - '0')
+		if alt {
+			if d *= 2; d > 9 {
+				d -= 9
+			}
+		}
+		sum += d
+		alt = !alt
+	}
+	return (10 - sum%10) % 10
+}
+
+// invalidCheckDigit renders any digit other than the correct one, so the value
+// it completes is guaranteed to fail its checksum.
+func invalidCheckDigit(correct int) string {
+	return fmt.Sprint((correct + 1) % 10)
+}

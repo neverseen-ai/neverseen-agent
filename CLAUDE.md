@@ -24,6 +24,7 @@ make fmt              # gofmt -w . && go mod tidy
 make score            # gate per-category accuracy against score-baseline.json
 make score-update     # rewrite that floor from the current run — explain the delta
 make bench-accuracy   # the per-category accuracy report
+make e2e-claude       # real CLI, real provider, through the agent (spends quota)
 
 go test ./internal/detector/ -run TestAccuracyCorpus -v   # one suite, verbose
 ```
@@ -48,6 +49,35 @@ about the engine.
 then the locale-independent identifiers, then the credentials → every regex hit
 that clears its checksum and the reporting threshold → overlap resolution keeps
 one match per stretch of text → matches in reading order.
+
+**The request pipeline**: resolve the provider from the first path segment →
+mask the body → save what was minted to the session vault → forward → expand the
+response. Fail closed: a body the agent cannot read is a 415, never a
+pass-through.
+
+**A body is a JSON document, and is masked value by value — never as raw bytes.**
+This is not a preference. A JSON string carries escapes, and a pattern reading
+the bytes sees the characters those escapes are made of: in a real Claude Code
+request containing `…pourquoi.\n\n@RTK.md`, the email pattern read `n@RTK.md` as
+an address, took the `n` out of the `\n`, and left a lone backslash before a
+bracket. Every request failed with "invalid escaped character". The same applies
+in reverse — an original carrying a quote or a newline cannot be spliced into raw
+JSON. See `internal/proxy/jsonbody.go`.
+
+**Only bracket tokens are ever expanded** (`pii.IsToken`). Never loosen that
+filter to match a value rather than a token: it is what stops a masked credential
+from being expanded into a live secret on its way to a caller, and it is why
+`fake` mode is one-way at the proxy.
+
+**Streaming holds back a tail.** Generated text arrives in pieces of a few
+characters, so a token the model echoed is regularly split across two events. The
+rehydrator keeps back anything that could be the start of a token and prepends it
+to the next piece, so what it emits is always a whole event — occasionally a few
+characters shorter, with those characters moving to the event after it.
+
+**The agent holds no API keys.** The caller's credential is forwarded untouched,
+because the tool making the request already has it. Adding key storage would make
+a workstation agent one more place a key lives.
 
 **Overlap arbitration, in order**: a credential always wins, then confidence,
 then the longer span, then the leftmost. Each rule is there because its absence

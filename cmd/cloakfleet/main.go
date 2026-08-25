@@ -9,16 +9,23 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
+	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/cloakfleet/cloakfleet/internal/detector"
+	"github.com/cloakfleet/cloakfleet/internal/proxy"
 	"github.com/cloakfleet/cloakfleet/pkg/pii"
 )
 
@@ -31,14 +38,25 @@ var version = "dev"
 const usage = `cloakfleet — mask sensitive values before they reach a model.
 
 Usage:
+  cloakfleet proxy         run the agent: mask what goes out, restore what comes back
   cloakfleet scan [file]   report the sensitive values in a file, or in stdin
   cloakfleet version       print the version
 
-Environment:
-  %s    country pattern sets to load: %s, none,
-%s    or a comma-separated list. Unset means none: only the
-%s    locale-independent identifiers and the credentials.
-  %s comma-separated values never to mask.
+Point a client at the agent by naming the provider in the path:
+
+  ANTHROPIC_BASE_URL=%s/anthropic
+  OPENAI_BASE_URL=%s/openai
+
+Configuration:
+  %-28s which country pattern sets to load: %s,
+                               none, or a comma-separated list. Unset means none.
+  %-28s values never to mask, separated by commas.
+  %-28s what a masked value looks like: token or fake.
+  %-28s address to listen on (default %s).
+  %-28s upstream overrides, as code=url pairs.
+  %-28s 32-byte hex key for the session mapping.
+
+Every variable is documented in .env.example.
 `
 
 func main() {
@@ -57,6 +75,8 @@ func run(args []string, stdin io.Reader, stdout io.Writer) error {
 	}
 
 	switch cmd := args[0]; cmd {
+	case "proxy":
+		return runProxy(stdout)
 	case "scan":
 		return runScan(args[1:], stdin, stdout)
 	case "version":
@@ -71,12 +91,63 @@ func run(args []string, stdin io.Reader, stdout io.Writer) error {
 	}
 }
 
+// printUsage names the settings from the constants the code actually reads, and
+// the locales from the registry. Anything written out by hand here goes stale the
+// first time one of them is renamed, and a wrong instruction is worse than none.
 func printUsage(w io.Writer) {
-	pad := strings.Repeat(" ", len(detector.EnvLocale)+2)
+	listen := "http://" + proxy.DefaultListen
 	fmt.Fprintf(w, usage,
+		listen, listen,
 		detector.EnvLocale, strings.Join(pii.LocaleCodes(), ", "),
-		pad, pad,
-		detector.EnvAllowList)
+		detector.EnvAllowList,
+		detector.EnvSubstitution,
+		proxy.EnvListen, proxy.DefaultListen,
+		proxy.EnvProviders,
+		proxy.EnvEncryptionKey)
+}
+
+// runProxy serves until it is signalled, then stops taking new requests and lets
+// the ones in flight finish.
+//
+// The graceful stop is not politeness: a request cut off mid-flight has been
+// masked and stored but never answered, so the caller loses the turn and the
+// mapping keeps values nothing will ask for again.
+func runProxy(stdout io.Writer) error {
+	logger := slog.New(slog.NewTextHandler(stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+	srv, addr, err := proxy.FromEnv(logger)
+	if err != nil {
+		return err
+	}
+
+	server := &http.Server{
+		Addr:              addr,
+		Handler:           srv.Handler(),
+		ReadHeaderTimeout: 30 * time.Second,
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	errs := make(chan error, 1)
+	go func() {
+		logger.Info("listening", "address", addr, "providers", strings.Join(srv.Providers(), ","))
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errs <- err
+		}
+		close(errs)
+	}()
+
+	select {
+	case err := <-errs:
+		return err
+	case <-ctx.Done():
+		logger.Info("stopping, letting requests in flight finish")
+
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		return server.Shutdown(shutdownCtx)
+	}
 }
 
 func runScan(args []string, stdin io.Reader, stdout io.Writer) error {

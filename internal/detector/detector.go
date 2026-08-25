@@ -6,7 +6,12 @@
 // fixed.
 package detector
 
-import "github.com/cloakfleet/cloakfleet/pkg/pii"
+import (
+	"sync"
+	"sync/atomic"
+
+	"github.com/cloakfleet/cloakfleet/pkg/pii"
+)
 
 // Match is one sensitive value found in a piece of text.
 type Match struct {
@@ -28,16 +33,24 @@ type Match struct {
 	Confidence int
 }
 
-// Detector scans text against a catalogue.
+// Detector scans text against a catalogue, and masks what it finds.
 //
-// It holds no per-request state and is safe for concurrent use: everything that
-// varies with a request lives in the caller's text.
+// Safe for concurrent use. What varies with a request lives in the caller's text
+// and in its Pass; the only shared mutable state is the index counters, which
+// are shared on purpose — two requests in flight on one session must not mint
+// the same index for different values.
 type Detector struct {
 	patterns []pii.Pattern
 	config   Config
 
 	// allow is config.AllowList in the comparable form, precomputed once.
 	allow map[string]bool
+
+	// fakes are the stand-ins this deployment's locales resolve to, once.
+	fakes pii.FakeSet
+
+	mu       sync.RWMutex
+	counters map[string]*atomic.Int64 // token prefix -> highest index handed out
 }
 
 // New builds a Detector for a configuration.
@@ -61,12 +74,29 @@ func New(cfg Config) *Detector {
 		allow[normalizeListValue(v)] = true
 	}
 
-	return &Detector{patterns: patterns, config: cfg, allow: allow}
+	return &Detector{
+		patterns: patterns,
+		config:   cfg,
+		allow:    allow,
+		fakes:    pii.NewFakeSet(cfg.Locales),
+		counters: make(map[string]*atomic.Int64),
+	}
 }
 
 // Locales reports the country sets this detector loaded, for the status a
 // supervised agent reports about itself.
 func (d *Detector) Locales() []string { return d.config.Locales }
+
+// Substitution reports how this detector renders a masked value, for the same
+// status line.
+func (d *Detector) Substitution() Substitution { return d.config.Substitution }
+
+// Sample returns text exercising every category this detector can find, in every
+// notation its patterns accept.
+//
+// It lives here rather than beside whatever displays it, because the answer
+// depends on the configuration and the detector is what holds it.
+func (d *Detector) Sample() string { return pii.Sample(d.config.Locales) }
 
 // Scan returns the sensitive values in text, in reading order, with overlaps
 // resolved.

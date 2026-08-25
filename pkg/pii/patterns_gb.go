@@ -1,6 +1,9 @@
 package pii
 
-import "regexp"
+import (
+	"fmt"
+	"regexp"
+)
 
 // The United Kingdom set.
 //
@@ -72,6 +75,58 @@ var (
 			`|\b0[1-9]\d{1,3}[ .-]\d{3,4}[ .-]?\d{3,4}\b` + // grouped, first separator required
 			`|\b0[1-9]\d{8,9}\b`) // run together: ten or eleven digits in all
 )
+
+// unitedKingdomFakes are the UK stand-ins. Each one lives somewhere its issuer
+// never allocates, so it cannot be anybody's real value: an unissued National
+// Insurance prefix, the pseudo-postcode the ONS uses for "not known", the
+// numbers Ofcom reserves for drama, and an NHS number built to fail its own
+// check digit.
+var unitedKingdomFakes = map[Category]Generator{
+	// A check digit deliberately not the one the first nine produce.
+	CatNHSNumber: {Capacity: 999999999, Make: func(i int64) string {
+		body := fmt.Sprintf("%09d", i)
+		return body + invalidNHSCheckDigit(body)
+	}},
+
+	// ZZ is one of the prefixes never issued, which this catalogue's own check
+	// also rejects — so the stand-in is not detected again on a second pass.
+	CatNINO: {Capacity: 999999, Make: func(i int64) string {
+		return fmt.Sprintf("ZZ %02d %02d %02d A", i/10000%100, i/100%100, i%100)
+	}},
+
+	// ZZ99 is the Office for National Statistics pseudo-postcode for an unknown
+	// address, so it is never a place.
+	CatPostalCode: {Capacity: 10 * 26 * 26, Make: func(i int64) string {
+		i--
+		return fmt.Sprintf("ZZ99 %d%c%c", i/676, 'A'+byte(i/26%26), 'A'+byte(i%26))
+	}},
+
+	// 07700 900000-900999 is the Ofcom range reserved for drama, so no number in
+	// it reaches a subscriber.
+	CatPhone: {Capacity: 1000, Make: func(i int64) string {
+		return fmt.Sprintf("07700 900%03d", i-1)
+	}},
+}
+
+// invalidNHSCheckDigit renders a digit that is deliberately not the one body
+// produces, so the number fails its own mod-11 checksum.
+//
+// A weighted sum whose remainder gives 10 has no valid check digit at all, so
+// the number is already unusable and any digit will do.
+func invalidNHSCheckDigit(body string) string {
+	sum := 0
+	for i := range 9 {
+		sum += int(body[i]-'0') * (10 - i)
+	}
+	switch check := 11 - sum%11; check {
+	case 10:
+		return "0"
+	case 11:
+		return "1" // the valid digit would be 0
+	default:
+		return invalidCheckDigit(check)
+	}
+}
 
 // UnitedKingdomPatterns returns the UK set, checksummed and context-bearing
 // shapes first so a tie resolves towards the candidate that had evidence.

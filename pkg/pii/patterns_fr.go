@@ -1,6 +1,9 @@
 package pii
 
-import "regexp"
+import (
+	"fmt"
+	"regexp"
+)
 
 // The French set. Every numeric identifier here carries a checksum, which is
 // what lets the shapes be loose enough to match how the values are actually
@@ -115,6 +118,62 @@ var (
 	// deployment's allow list.
 	frSIRENRe = regexp.MustCompile(`\b\d{3}[ .]?\d{3}[ .]?\d{3}\b`)
 )
+
+// franceFakes are the French stand-ins for fake mode. Every one of them is
+// unattributable by construction: the checksummed identifiers are built to fail
+// their own checksum, the telephone numbers come from the block ARCEP reserves
+// for fiction, and the postcode uses a department number that does not exist —
+// which also means the stand-in is not detected again on a second pass.
+var franceFakes = map[Category]Generator{
+	// 06 39 98 xx xx is reserved by ARCEP for use in fiction, so no number in it
+	// can ring anybody.
+	CatPhone: {Capacity: 10000, Make: func(i int64) string {
+		i--
+		return fmt.Sprintf("06 39 98 %02d %02d", i/100, i%100)
+	}},
+
+	// A key that is deliberately not the one the thirteen digits produce.
+	CatNIR: {Capacity: 999999, Make: func(i int64) string {
+		body := fmt.Sprintf("1900199%06d", i) // sex, year, month, department, order
+		return body + fmt.Sprintf("%02d", (nirKey(body)%97)+1)
+	}},
+
+	CatSIREN: {Capacity: 99999999, Make: func(i int64) string {
+		body := fmt.Sprintf("%08d", i)
+		return body + invalidCheckDigit(luhnCheckDigit(body))
+	}},
+
+	CatSIRET: {Capacity: 9999999, Make: func(i int64) string {
+		body := fmt.Sprintf("%013d", i)
+		return body + invalidCheckDigit(luhnCheckDigit(body))
+	}},
+
+	// Departments stop at 98, so 99xxx is not a postcode — and this catalogue's
+	// own pattern rejects it, which is the property worth having: a stand-in
+	// that is detected again would be masked twice.
+	CatPostalCode: {Capacity: 999, Make: func(i int64) string {
+		return fmt.Sprintf("99000 Villeneuve-%d", i)
+	}},
+
+	CatAddress: {Capacity: 999, Make: func(i int64) string {
+		return fmt.Sprintf("%d rue de l'Exemple, 99000 Villeneuve", i)
+	}},
+
+	// WW is the series French temporary plates use, so it is never a permanent
+	// registration.
+	CatLicPlate: {Capacity: 1000, Make: func(i int64) string {
+		return fmt.Sprintf("WW-%03d-WW", i-1)
+	}},
+}
+
+// nirKey returns the two check digits a thirteen-digit mainland body produces.
+func nirKey(body string) int {
+	m := 0
+	for _, r := range body {
+		m = (m*10 + int(r-'0')) % 97
+	}
+	return 97 - m
+}
 
 // FrancePatterns returns the French set, longest identifier first so the NIR's
 // fifteen digits are never split by a shorter numeric shape when two candidates
