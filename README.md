@@ -100,6 +100,12 @@ the proxy would vanish at the exact moment it became useful, since the state wor
 seeing is that the agent is *not* there. It holds nothing, changes nothing, and
 quitting it leaves the agent masking.
 
+Its menu also hands over the line that points one tool at the agent, per provider —
+`ANTHROPIC_BASE_URL=http://127.0.0.1:8787/anthropic claude`, ready to paste into a
+terminal. A prefixed assignment rather than an export, so it applies to that run
+and leaves the shell as it was; a login file wants `eval "$(cloakfleet env)"`
+instead, and the menu says so where it hands the line over.
+
 `cloakfleet status` answers the same question without the installer, and answers
 it the useful way round: not "is the process up" but **what is it masking**. An
 agent with no locale selected is up, healthy and recognises almost nothing, so a

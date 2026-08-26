@@ -66,6 +66,21 @@ func TestShellEnvPrintsTheExportsWhenTheAgentAnswers(t *testing.T) {
 	if strings.Contains(got, "export GEMINI_BASE_URL") {
 		t.Error("a variable name was invented for a provider that has none")
 	}
+
+	// The caveat travels with the line here too, and as a comment, because this
+	// output is evaluated by a shell. A tool that quietly ignores the variable sends
+	// the traffic out unmasked, which has no symptom a person would notice — so it
+	// is said in both places the line is handed over, not just in the menu bar.
+	if !strings.Contains(got, "# "+CaveatFor("openai")) {
+		t.Errorf("the openai caveat is missing or is not a comment:\n%s", got)
+	}
+	// Every line of it, or `eval` on this output is a syntax error rather than an
+	// export — which would break every new shell on the machine.
+	for _, line := range strings.Split(strings.TrimSpace(got), "\n") {
+		if !strings.HasPrefix(line, "export ") && !strings.HasPrefix(line, "#") {
+			t.Errorf("this line is neither an export nor a comment, so eval would fail on it: %q", line)
+		}
+	}
 }
 
 // --force is for the operator who knows the agent is about to start, and for

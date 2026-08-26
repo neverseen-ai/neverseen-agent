@@ -5,6 +5,8 @@ import (
 	"context"
 	"image"
 	_ "image/png"
+	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -16,34 +18,26 @@ import (
 // recorder is a view that remembers what it was told, which is the whole of what
 // a test can check about a menu bar.
 type recorder struct {
-	mu       sync.Mutex
-	icons    [][]byte
-	tooltips []string
-	shown    [][]string
+	mu    sync.Mutex
+	shown []display
 }
 
-func (r *recorder) icon(png []byte) {
+func (r *recorder) show(d display) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.icons = append(r.icons, png)
-}
-
-func (r *recorder) tooltip(text string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.tooltips = append(r.tooltips, text)
-}
-
-func (r *recorder) lines(lines []string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.shown = append(r.shown, lines)
+	r.shown = append(r.shown, d)
 }
 
 func (r *recorder) updates() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return len(r.shown)
+}
+
+func (r *recorder) last() display {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.shown[len(r.shown)-1]
 }
 
 // The icon follows Masking and nothing else, so the picture and the exit code of
@@ -75,7 +69,8 @@ func TestTheIconFollowsWhetherValuesAreReplaced(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			png, tooltip, lines := render(tc.status)
+			got := render(tc.status)
+			png, tooltip, lines := got.icon, got.tooltip, got.lines
 			if !bytes.Equal(png, tc.wantIcon) {
 				t.Error("the wrong icon was chosen for this state")
 			}
@@ -98,7 +93,7 @@ func TestTheIconFollowsWhetherValuesAreReplaced(t *testing.T) {
 // The words have to name the consequence, not the process state. "Not answering"
 // alone tells somebody nothing about what it costs them.
 func TestTheMenuSaysWhatIsHappeningToTheTraffic(t *testing.T) {
-	_, _, lines := render(proxy.Status{Addr: "127.0.0.1:8787"})
+	lines := render(proxy.Status{Addr: "127.0.0.1:8787"}).lines
 	joined := strings.Join(lines, "\n")
 
 	for _, want := range []string{"clear", "not answering", "cloakfleet proxy"} {
@@ -107,8 +102,8 @@ func TestTheMenuSaysWhatIsHappeningToTheTraffic(t *testing.T) {
 		}
 	}
 
-	_, _, lines = render(proxy.Status{Addr: "127.0.0.1:8787", Answering: true,
-		Health: proxy.Health{Locales: []string{"fr"}, Substitution: "fake", Version: "9.9.9"}})
+	lines = render(proxy.Status{Addr: "127.0.0.1:8787", Answering: true,
+		Health: proxy.Health{Locales: []string{"fr"}, Substitution: "fake", Version: "9.9.9"}}).lines
 	joined = strings.Join(lines, "\n")
 	for _, want := range []string{"fr", "fake", "9.9.9"} {
 		if !strings.Contains(joined, want) {
@@ -180,7 +175,7 @@ func TestWatchAppliesOnlyWhatChanged(t *testing.T) {
 	mu.Unlock()
 
 	waitFor(t, func() bool { return view.updates() >= 2 })
-	if !bytes.Equal(view.icons[len(view.icons)-1], unmaskedIcon) {
+	if !bytes.Equal(view.last().icon, unmaskedIcon) {
 		t.Error("the icon did not change when the agent stopped")
 	}
 
@@ -214,5 +209,110 @@ func TestItReadsARealAgent(t *testing.T) {
 	}
 	if got.Addr != "127.0.0.1:1" {
 		t.Errorf("addr = %q, want the address that was asked", got.Addr)
+	}
+}
+
+// The submenu offers what the agent says it serves, not a list compiled in. A
+// hard-coded one would go on offering a provider a deployment had pointed
+// elsewhere, and would offer all eight while the agent was down.
+func TestTheProvidersOfferedAreTheOnesTheAgentServes(t *testing.T) {
+	serving := render(proxy.Status{Addr: "127.0.0.1:8787", Answering: true,
+		Health: proxy.Health{Locales: []string{"fr"}, Providers: []string{"anthropic", "gemini"}}})
+	if want := []string{"anthropic", "gemini"}; !slices.Equal(serving.providers, want) {
+		t.Errorf("providers = %v, want %v", serving.providers, want)
+	}
+
+	// Nothing answering serves nothing, so there is no line worth handing over.
+	stopped := render(proxy.Status{Addr: "127.0.0.1:8787"})
+	if len(stopped.providers) != 0 {
+		t.Errorf("a stopped agent offered %v", stopped.providers)
+	}
+}
+
+// A change in the provider list is a change on screen. It went unnoticed while
+// watch compared only the informational lines, which do not mention providers —
+// so an agent restarted with a different set would have kept the old submenu for
+// the life of the icon.
+func TestWatchNoticesAProviderListChange(t *testing.T) {
+	var mu sync.Mutex
+	answer := proxy.Status{Addr: "127.0.0.1:8787", Answering: true,
+		Health: proxy.Health{Locales: []string{"fr"}, Providers: []string{"anthropic"}}}
+
+	view := &recorder{}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	go watch(ctx, view, func() proxy.Status {
+		mu.Lock()
+		defer mu.Unlock()
+		return answer
+	}, time.Millisecond)
+
+	waitFor(t, func() bool { return view.updates() >= 1 })
+
+	mu.Lock()
+	answer.Providers = []string{"anthropic", "openai"} // the agent restarts with more
+	mu.Unlock()
+
+	waitFor(t, func() bool { return view.updates() >= 2 })
+	if want := []string{"anthropic", "openai"}; !slices.Equal(view.last().providers, want) {
+		t.Errorf("the menu shows %v, want %v", view.last().providers, want)
+	}
+}
+
+// The line handed over is the one the agent's own table produces, so the menu and
+// `cloakfleet env` cannot come to disagree about how a tool is pointed at it.
+func TestTheLineIsTheAgentsOwn(t *testing.T) {
+	// A provider whose variable *and* CLI are both de-facto gets a line somebody
+	// can paste and press return on. A prefixed assignment, not an export: it
+	// applies to that one run and leaves the shell as it was.
+	if got, want := proxy.PointAt("anthropic", "127.0.0.1:8787"),
+		"ANTHROPIC_BASE_URL=http://127.0.0.1:8787/anthropic claude"; got != want {
+		t.Errorf("PointAt = %q, want %q", got, want)
+	}
+	if got, want := proxy.PointAt("openai", "127.0.0.1:8787"),
+		"OPENAI_BASE_URL=http://127.0.0.1:8787/openai codex"; got != want {
+		t.Errorf("PointAt = %q, want %q", got, want)
+	}
+	// A provider with no agreed variable gets the URL and nothing invented: neither
+	// a variable name nor a command name, because either would fail after somebody
+	// had already pasted it and believed it. Six of the eight are in this case, and
+	// the table is where that stops being true, one verified pair at a time.
+	if got, want := proxy.PointAt("gemini", "127.0.0.1:8787"),
+		"http://127.0.0.1:8787/gemini"; got != want {
+		t.Errorf("PointAt = %q, want %q", got, want)
+	}
+}
+
+// The clipboard is reached through the platform's own tool. It cannot be asserted
+// on in CI without a desktop, so what is checked is that the failure is reported
+// rather than swallowed — the menu says so, and the entry does not lie.
+func TestTheClipboardFailureIsReported(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("pbcopy is the only clipboard this can rely on being present")
+	}
+	if err := copyToClipboard("cloakfleet tray test"); err != nil {
+		t.Errorf("copying to the clipboard failed: %v", err)
+	}
+}
+
+// Where a tool does not simply honour the variable, the entry says so. Codex reads
+// OPENAI_BASE_URL but a model_provider in its own config file wins over it, and on
+// a machine already configured for another provider the copied line does nothing —
+// silently, with the traffic going out unmasked. That failure has no symptom from
+// the terminal, which is why it is worth carrying to the point of handover.
+func TestTheCaveatTravelsWithTheLine(t *testing.T) {
+	caveat := proxy.CaveatFor("openai")
+	if !strings.Contains(caveat, "config.toml") {
+		t.Errorf("the openai caveat does not name the file that overrides it: %q", caveat)
+	}
+
+	// And only where there is something to say. A caveat on every provider would be
+	// noise, and noise is what stops the one that matters being read.
+	if got := proxy.CaveatFor("anthropic"); got != "" {
+		t.Errorf("anthropic carries a caveat it does not need: %q", got)
+	}
+	if got := proxy.CaveatFor("gemini"); got != "" {
+		t.Errorf("a provider with no entry at all carries a caveat: %q", got)
 	}
 }

@@ -280,6 +280,28 @@ the alternative is a feature whose behaviour has only ever run on somebody's
 screen. The icon follows `proxy.Status.Masking` and nothing else, so the picture
 and the exit code of `cloakfleet status` cannot disagree about the same agent.
 
+**`shellTools` is the one owner of how a tool is pointed at this agent.** One entry
+per provider carrying three facts that would drift apart in three tables: the
+environment variable its SDK reads, the CLI everybody runs against that variable,
+and the caveat where the tool does not simply honour it. `PointAt` builds the line
+from it and `CaveatFor` the warning, so `cloakfleet env` and the menu bar hand over
+the same thing — two spellings of that line would be two chances to be wrong about
+how somebody's traffic gets masked.
+
+Only two providers are in it, and the reason is the same one that keeps the other
+six as comments in `cloakfleet env`: a guessed variable name is an instruction that
+does nothing, and a guessed command name is worse — it fails with "command not
+found" after somebody has already pasted it and believed it. Adding one means a
+verified pair, not a plausible one. Where the CLI is known the line is a prefixed
+assignment (`ANTHROPIC_BASE_URL=… claude`) rather than an export: it applies to that
+run and leaves the shell as it was, which is what "the command to run" means.
+
+**A caveat is carried to every place the line is handed over.** Codex reads
+`OPENAI_BASE_URL` but a `model_provider` in `~/.codex/config.toml` wins over it — so
+on an already-configured machine the line does nothing, silently, and the traffic
+goes out unmasked. That failure has no symptom from the terminal, which is why it
+is in the table rather than in whichever surface happened to be written last.
+
 **The icons are generated and committed** (`go run ./internal/tray/icons/generate.go`),
 for the reason `testdata/heartbeats.json` is: a generated asset a reviewer can look
 at beats a build step nobody can, and the alternative is an SVG rasteriser in
