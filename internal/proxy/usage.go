@@ -32,17 +32,17 @@ func usageFrom(doc any) (model string, usage telemetry.TokenUsage) {
 
 func walkUsage(node any, model *string, usage *telemetry.TokenUsage) {
 	switch t := node.(type) {
-	case map[string]any:
+	case jsonObject:
 		if *model == "" {
-			if name, ok := t["model"].(string); ok {
+			if name, ok := stringAt(t, "model"); ok {
 				*model = name
 			}
 		}
-		if fields, ok := t["usage"].(map[string]any); ok {
+		if fields, ok := objectAt(t, "usage"); ok {
 			readUsage(fields, usage)
 		}
-		for _, child := range t {
-			walkUsage(child, model, usage)
+		for _, m := range t {
+			walkUsage(m.value, model, usage)
 		}
 
 	case []any:
@@ -66,13 +66,13 @@ func walkUsage(node any, model *string, usage *telemetry.TokenUsage) {
 // An unknown key is ignored rather than guessed at. A provider adding a count
 // then shows up as a gap in the total, which is visible; folding it into input
 // would show up as a wrong bill, which is not.
-func readUsage(fields map[string]any, usage *telemetry.TokenUsage) {
-	for name, raw := range fields {
-		n, ok := asInt(raw)
+func readUsage(fields jsonObject, usage *telemetry.TokenUsage) {
+	for _, m := range fields {
+		n, ok := asInt(m.value)
 		if !ok {
 			continue
 		}
-		switch name {
+		switch m.key {
 		case "input_tokens", "prompt_tokens":
 			usage.Input += n
 		case "output_tokens", "completion_tokens":

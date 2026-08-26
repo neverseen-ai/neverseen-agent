@@ -58,9 +58,9 @@ func mapStrings(v any, f func(string) string) any {
 			t[i] = mapStrings(item, f)
 		}
 		return t
-	case map[string]any:
-		for key, item := range t {
-			t[key] = mapStrings(item, f)
+	case jsonObject:
+		for i, m := range t {
+			t[i].value = mapStrings(m.value, f)
 		}
 		return t
 	default:
@@ -79,8 +79,8 @@ func decodeJSONBody(raw []byte) (any, error) {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
 
-	var doc any
-	if err := dec.Decode(&doc); err != nil {
+	doc, err := decodeValue(dec)
+	if err != nil {
 		return nil, err
 	}
 	// A document with trailing bytes is not one document. Accepting it would let
@@ -89,6 +89,152 @@ func decodeJSONBody(raw []byte) (any, error) {
 		return nil, errTrailingJSON
 	}
 	return doc, nil
+}
+
+// decodeValue reads one value, reading objects a token at a time so their keys
+// keep the order they arrived in.
+//
+// Decoding into a map[string]any is what the standard decoder does and it loses
+// that order, because a Go map has none: the body forwarded to the provider then
+// carried its fields in Go's sorted marshal order instead of the caller's. It is
+// the same document to a parser and nothing depended on it — but the audit console
+// prints the two halves of an exchange to be read against each other, and two
+// bodies whose fields are in different orders cannot be. The agent rewrites values;
+// it has no business rewriting the shape around them.
+//
+// It also stops a duplicated key being collapsed. Two members of the same name are
+// pathological rather than useful, but silently keeping one of them is the agent
+// deciding which — and whichever it dropped would have gone to the provider in the
+// original.
+func decodeValue(dec *json.Decoder) (any, error) {
+	tok, err := dec.Token()
+	if err != nil {
+		return nil, err
+	}
+
+	delim, isDelim := tok.(json.Delim)
+	if !isDelim {
+		// A string, a json.Number, a bool or nil — already the value itself.
+		return tok, nil
+	}
+
+	switch delim {
+	case '{':
+		obj := jsonObject{}
+		for dec.More() {
+			key, err := dec.Token()
+			if err != nil {
+				return nil, err
+			}
+			name, ok := key.(string)
+			if !ok {
+				// Unreachable through a decoder that validates as it reads, but
+				// silently treating a non-string key as one would be inventing a
+				// field name.
+				return nil, errNotAnObjectKey
+			}
+			value, err := decodeValue(dec)
+			if err != nil {
+				return nil, err
+			}
+			obj = append(obj, jsonMember{key: name, value: value})
+		}
+		_, err := dec.Token() // the closing brace
+		return obj, err
+
+	case '[':
+		arr := []any{}
+		for dec.More() {
+			item, err := decodeValue(dec)
+			if err != nil {
+				return nil, err
+			}
+			arr = append(arr, item)
+		}
+		_, err := dec.Token() // the closing bracket
+		return arr, err
+
+	default:
+		return nil, errTrailing("a document opening with " + delim.String())
+	}
+}
+
+// jsonObject is a JSON object holding its members in the order they were read.
+type jsonObject []jsonMember
+
+type jsonMember struct {
+	key   string
+	value any
+}
+
+// MarshalJSON writes the members in that order.
+//
+// Each one goes through an encoder with HTML escaping off, for the reason
+// encodeJSONBody has it off: the agent must not rewrite a "<" a caller wrote. A
+// nested object reaches its own MarshalJSON from here and is compacted without
+// being re-escaped, because the setting travels with the encoder doing the
+// compacting rather than with this method.
+func (o jsonObject) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	for i, m := range o {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		if err := writeJSONValue(&buf, m.key); err != nil {
+			return nil, err
+		}
+		buf.WriteByte(':')
+		if err := writeJSONValue(&buf, m.value); err != nil {
+			return nil, err
+		}
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// writeJSONValue appends one value, without the newline Encode adds — which would
+// be whitespace in the middle of a document.
+func writeJSONValue(buf *bytes.Buffer, v any) error {
+	enc := json.NewEncoder(buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return err
+	}
+	buf.Truncate(buf.Len() - 1)
+	return nil
+}
+
+// value returns what a key holds, and whether the object has it at all.
+//
+// The last member of that name wins, which is what every JSON parser a provider
+// might use would do with a duplicate. The members are all kept on the wire; this
+// is only about which one a reader here acts on.
+func (o jsonObject) value(key string) (any, bool) {
+	for i := len(o) - 1; i >= 0; i-- {
+		if o[i].key == key {
+			return o[i].value, true
+		}
+	}
+	return nil, false
+}
+
+// setValue replaces what an existing key holds.
+//
+// It replaces and never appends, and that is not a limitation to lift casually:
+// appending can reallocate the slice, and the object whose member holds this one
+// would go on referring to the old backing array — the write would be made and
+// then thrown away. Every caller is rewriting a value it has just read through
+// value, so a key that is not there cannot happen; if that ever changes, the
+// caller has to be the one that notices, because a setter reporting "no" into a
+// closure nobody can read from is a write silently lost.
+func (o jsonObject) setValue(key string, v any) {
+	for i := len(o) - 1; i >= 0; i-- {
+		if o[i].key == key {
+			o[i].value = v
+			return
+		}
+	}
 }
 
 // encodeJSONBody re-encodes a document without HTML escaping.
@@ -109,6 +255,8 @@ func encodeJSONBody(doc any) ([]byte, error) {
 }
 
 var errTrailingJSON = errTrailing("the body carries more than one JSON document")
+
+var errNotAnObjectKey = errTrailing("an object key is not a string")
 
 type errTrailing string
 

@@ -522,3 +522,77 @@ func TestSplitProvider(t *testing.T) {
 		})
 	}
 }
+
+// The body forwarded to the provider keeps its fields in the order the tool sent
+// them, at every depth.
+//
+// Decoding through a map[string]any lost that, because a Go map has no order: the
+// agent re-encoded the document in Go's sorted marshal order. It is the same
+// document to a parser and nothing depended on it — but the audit console prints
+// the body received and the body sent to be read against each other, and two
+// bodies whose fields are in different orders cannot be.
+func TestTheMaskedBodyKeepsItsKeyOrder(t *testing.T) {
+	// Deliberately not alphabetical, and not the order Go would choose: "model"
+	// before "max_tokens", "system" before "messages", and inside the message
+	// "role" after "content".
+	const body = `{"model":"claude-opus-5","max_tokens":1024,` +
+		`"system":[{"type":"text","text":"écris à pierre.paul@example.com"}],` +
+		`"messages":[{"content":"tél 06 12 34 56 78","role":"user"}]}`
+
+	got, ok := mapJSONStrings([]byte(body), func(s string) string { return s })
+	if !ok {
+		t.Fatal("the body was not read as JSON")
+	}
+	if string(got) != body {
+		t.Errorf("the order changed:\n got %s\nwant %s", got, body)
+	}
+}
+
+// A duplicated key is kept rather than collapsed. Two members of the same name are
+// pathological rather than useful, but silently keeping one is the agent deciding
+// which — and whichever it dropped would have gone to the provider in the original.
+func TestADuplicatedKeyIsNotCollapsed(t *testing.T) {
+	const body = `{"prompt":"first","prompt":"second"}`
+
+	got, ok := mapJSONStrings([]byte(body), strings.ToUpper)
+	if !ok {
+		t.Fatal("the body was not read as JSON")
+	}
+	if want := `{"prompt":"FIRST","prompt":"SECOND"}`; string(got) != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// The same holds on the way back: a streamed event is decoded, expanded and
+// re-encoded, so its fields would be reordered by the same defect.
+func TestAStreamedEventKeepsItsKeyOrder(t *testing.T) {
+	const event = `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"bonjour"}}`
+
+	decoded, err := decodeEvent(event)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	got, err := encodeJSONBody(decoded)
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	if string(got) != event {
+		t.Errorf("the order changed:\n got %s\nwant %s", got, event)
+	}
+}
+
+// HTML is not rewritten on its way through the ordered encoder either. Go's
+// encoder turns "<" into its numeric escape by default, which is safe and changes
+// bytes the agent has no business changing — a prompt full of markup would come
+// back to the caller looking mangled.
+func TestAngleBracketsSurviveTheRoundTrip(t *testing.T) {
+	const body = `{"prompt":"<div class=\"x\">a & b</div>"}`
+
+	got, ok := mapJSONStrings([]byte(body), func(s string) string { return s })
+	if !ok {
+		t.Fatal("the body was not read as JSON")
+	}
+	if string(got) != body {
+		t.Errorf("got %s, want %s", got, body)
+	}
+}

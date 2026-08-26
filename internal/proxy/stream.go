@@ -224,12 +224,12 @@ func eventPayload(line string) (string, bool) {
 
 // decodeEvent parses an event payload into an object, keeping numbers exactly as
 // written — see decodeJSONBody for why that matters.
-func decodeEvent(payload string) (map[string]any, error) {
+func decodeEvent(payload string) (jsonObject, error) {
 	doc, err := decodeJSONBody([]byte(payload))
 	if err != nil {
 		return nil, err
 	}
-	event, ok := doc.(map[string]any)
+	event, ok := doc.(jsonObject)
 	if !ok {
 		return nil, errNotAnEvent
 	}
@@ -246,29 +246,53 @@ var errNotAnEvent = errTrailing("the event payload is not a JSON object")
 // seven speak. An event matching neither is expanded in place instead — correct
 // for complete tokens, and unable to reassemble a split one, which is the honest
 // limit of not knowing a format.
-func deltaText(event map[string]any) (text string, set func(string), found bool) {
+func deltaText(event jsonObject) (text string, set func(string), found bool) {
 	// Anthropic: {"type":"content_block_delta","delta":{"text":"…"}}
-	if delta, ok := event["delta"].(map[string]any); ok {
-		if text, ok := delta["text"].(string); ok {
-			return text, func(v string) { delta["text"] = v }, true
+	if delta, ok := objectAt(event, "delta"); ok {
+		if text, ok := stringAt(delta, "text"); ok {
+			return text, func(v string) { delta.setValue("text", v) }, true
 		}
 	}
 
 	// OpenAI-compatible: {"choices":[{"delta":{"content":"…"}}]}
-	choices, ok := event["choices"].([]any)
+	raw, ok := event.value("choices")
+	if !ok {
+		return "", nil, false
+	}
+	choices, ok := raw.([]any)
 	if !ok || len(choices) == 0 {
 		return "", nil, false
 	}
-	choice, ok := choices[0].(map[string]any)
+	choice, ok := choices[0].(jsonObject)
 	if !ok {
 		return "", nil, false
 	}
-	delta, ok := choice["delta"].(map[string]any)
+	delta, ok := objectAt(choice, "delta")
 	if !ok {
 		return "", nil, false
 	}
-	if content, ok := delta["content"].(string); ok {
-		return content, func(v string) { delta["content"] = v }, true
+	if content, ok := stringAt(delta, "content"); ok {
+		return content, func(v string) { delta.setValue("content", v) }, true
 	}
 	return "", nil, false
+}
+
+// objectAt and stringAt read one typed field, so the navigation above says what it
+// is looking for rather than repeating a type assertion at every step.
+func objectAt(o jsonObject, key string) (jsonObject, bool) {
+	raw, ok := o.value(key)
+	if !ok {
+		return nil, false
+	}
+	nested, ok := raw.(jsonObject)
+	return nested, ok
+}
+
+func stringAt(o jsonObject, key string) (string, bool) {
+	raw, ok := o.value(key)
+	if !ok {
+		return "", false
+	}
+	text, ok := raw.(string)
+	return text, ok
 }
