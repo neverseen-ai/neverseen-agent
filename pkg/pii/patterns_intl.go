@@ -17,7 +17,18 @@ var (
 	// that the response path would expand into the middle of a word. The leading
 	// class replaces the boundary that cannot be trusted, and Group points past
 	// it.
-	emailRe = regexp.MustCompile(`(?:^|[^\p{L}\p{N}._%+\-@])([\p{L}\p{N}._%+\-]+@[\p{L}\p{N}.\-]+\.[\p{L}]{2,})`)
+	//
+	// The local part is {2,} rather than +, and the one character that buys is
+	// the whole reason: an escape sequence leaves a single letter welded to the
+	// address that follows it. In raw text, "…pourquoi.\n\n@RTK.md" reads as
+	// "n@RTK.md" — the "n" taken out of the "\n", a lone backslash left before
+	// the token, and the request refused for an invalid escape. Masking a JSON
+	// body value by value is what fixes that properly (see
+	// internal/proxy/jsonbody.go), but a flat-text body and the audit console
+	// still meet the raw form, and a one-character local part is not worth
+	// defending: the addresses that shape claims are overwhelmingly artefacts —
+	// a path, a filename, a shell redirection — rather than mailboxes.
+	emailRe = regexp.MustCompile(`(?:^|[^\p{L}\p{N}._%+\-@])([\p{L}\p{N}._%+\-]{2,}@[\p{L}\p{N}.\-]+\.[\p{L}]{2,})`)
 
 	// Card numbers, in the groups of four they are printed in and therefore
 	// pasted in. A digits-only expression missed "4532 0151 1283 0366"

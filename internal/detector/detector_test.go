@@ -175,7 +175,7 @@ func TestAllowList(t *testing.T) {
 func TestScanReportsInReadingOrder(t *testing.T) {
 	d := New(Config{})
 
-	got := d.Scan("first a@x.fr then b@y.fr and last c@z.fr")
+	got := d.Scan("first ab@x.fr then cd@y.fr and last ef@z.fr")
 	if len(got) != 3 {
 		t.Fatalf("found %d matches, want 3: %v", len(got), got)
 	}
@@ -184,7 +184,7 @@ func TestScanReportsInReadingOrder(t *testing.T) {
 			t.Fatalf("matches are not in reading order: %d then %d", got[i-1].Start, got[i].Start)
 		}
 	}
-	if got[0].Value != "a@x.fr" || got[2].Value != "c@z.fr" {
+	if got[0].Value != "ab@x.fr" || got[2].Value != "ef@z.fr" {
 		t.Errorf("got %q … %q, want the first and last addresses", got[0].Value, got[2].Value)
 	}
 }

@@ -50,11 +50,19 @@ cases:
     expect:
       - {category: EMAIL, value: "claire@example.fr"}
 
+  # Inherited as "a@x.fr,b@y.fr". What it measures is the separator — a comma
+  # with no space after it must not weld two addresses into one span, nor stop
+  # the second from being seen — and that is kept. The local parts are two
+  # characters because the email pattern now requires it: a one-character local
+  # part is what an escape sequence leaves behind ("\n@RTK.md" reads as
+  # "n@RTK.md"), and the addresses that shape claims are overwhelmingly
+  # artefacts rather than mailboxes. See prec-email-escape-artefact for the form
+  # this suite used to demand.
   - id: hard-emails-comma-separated-no-space
-    text: "Destinataires : a@x.fr,b@y.fr"
+    text: "Destinataires : ab@x.fr,cd@y.fr"
     expect:
-      - {category: EMAIL, value: "a@x.fr"}
-      - {category: EMAIL, value: "b@y.fr"}
+      - {category: EMAIL, value: "ab@x.fr"}
+      - {category: EMAIL, value: "cd@y.fr"}
 
   - id: hard-phone-international-with-trunk-zero
     text: "Standard : +33 (0)1 42 68 53 00"

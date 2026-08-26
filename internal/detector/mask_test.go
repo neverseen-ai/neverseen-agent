@@ -40,7 +40,7 @@ func TestMaskGivesOneValueOneToken(t *testing.T) {
 	d := New(Config{})
 
 	pass := d.NewPass(nil)
-	masked, replaced := d.Mask("write to a@x.fr, then to a@x.fr again, and to b@y.fr", pass)
+	masked, replaced := d.Mask("write to ab@x.fr, then to ab@x.fr again, and to cd@y.fr", pass)
 
 	if replaced != 3 {
 		t.Fatalf("replaced %d values, want 3 (repeats included)", replaced)

@@ -76,3 +76,27 @@ cases:
   - id: prec-postal-invalid-department
     text: "Référence interne 99123 Alpha au catalogue."
     expect: []
+
+  # An escape sequence welded to an address: in raw text "\n@RTK.md" reads as a
+  # one-character local part, and masking it took the "n" out of the "\n" and
+  # left a lone backslash before the token — every request refused for an
+  # invalid escape. The local part is {2,} for these three.
+  - id: prec-email-escape-artefact
+    text: "Explique-moi pourquoi.\\n\\n@RTK.md décrit le proxy."
+    expect: []
+
+  - id: prec-email-single-letter-local-part
+    text: "Redirige la sortie vers 2>@log.txt avant de relancer."
+    expect: []
+
+  - id: prec-email-path-artefact
+    text: "Le chemin ./cache/n@file.txt n'existe plus."
+    expect: []
+
+  # The form hard-emails-comma-separated-no-space used to demand. A mailbox of
+  # one character is rare enough not to defend and common enough as an artefact
+  # to cost precision, so it is recorded here as text that must come out
+  # untouched rather than left unmeasured.
+  - id: prec-email-one-character-mailbox
+    text: "Destinataires : a@x.fr,b@y.fr"
+    expect: []
