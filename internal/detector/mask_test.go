@@ -149,22 +149,83 @@ func TestFakeMode(t *testing.T) {
 		}
 	})
 
-	t.Run("a stand-in is not expanded on the way back", func(t *testing.T) {
-		// Fake mode is one-way at the proxy on purpose: the point of a stand-in
-		// is that it reads as prose, and expanding it would undo what the
-		// deployment asked for. The same filter is what stops a masked
-		// credential from being turned back into a live secret.
+	t.Run("a stand-in is expanded on the way back", func(t *testing.T) {
+		// Fake mode round-trips, like token mode. What keeps that safe is one step
+		// upstream, not here: a credential never gets a stand-in, so a non-token
+		// key cannot be one and the value-matching path cannot expand a secret.
 		masked, minted, _ := d.MaskOnce("écrire à claire@example.fr")
 
-		if got := Unmask(masked, minted); got != masked {
-			t.Errorf("a stand-in was expanded back: %q became %q", masked, got)
-		}
-		// The mapping still holds the pair, so a caller that wants the reverse
-		// can do it; the proxy simply does not.
-		if len(minted) != 1 {
-			t.Errorf("the mapping should still record the pair, got %v", minted)
+		if got := Unmask(masked, minted); got != "écrire à claire@example.fr" {
+			t.Errorf("Unmask(%q) = %q, want the original text", masked, got)
 		}
 	})
+
+	t.Run("a credential still travels as a token, and only a token expands it", func(t *testing.T) {
+		const key = "sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"
+		masked, minted, _ := d.MaskOnce("export KEY=" + key)
+
+		// The guard the value path relies on: every key in the mapping for a
+		// credential is a bracket token, so nothing else can reach it.
+		for mask := range minted {
+			if !pii.IsToken(mask) {
+				t.Errorf("a credential was mapped to a non-token %q", mask)
+			}
+		}
+		if got := Unmask(masked, minted); got != "export KEY="+key {
+			t.Errorf("Unmask(%q) = %q, want the original", masked, got)
+		}
+	})
+
+	t.Run("a stand-in inside another is expanded once, widest first", func(t *testing.T) {
+		// Two entries where one contains the other: expanded in turn rather than
+		// in one walk, the shorter one lands inside text that has already been
+		// expanded and puts a value inside a value.
+		known := map[string]string{
+			"1 rue de l'Exemple, 99000 Villeneuve": "10 rue jean jaures, 29200 BREST",
+			"99000":                                "29200",
+		}
+		const answer = "il habite 1 rue de l'Exemple, 99000 Villeneuve"
+
+		if got := Unmask(answer, known); got != "il habite 10 rue jean jaures, 29200 BREST" {
+			t.Errorf("Unmask = %q, want the address expanded once", got)
+		}
+	})
+
+	t.Run("a token this process never minted is left alone", func(t *testing.T) {
+		known := map[string]string{"contact2@example.org": "claire@example.fr"}
+		const answer = "see [EMAIL_9] and contact2@example.org"
+
+		if got := Unmask(answer, known); got != "see [EMAIL_9] and claire@example.fr" {
+			t.Errorf("Unmask = %q, want the unknown token untouched", got)
+		}
+	})
+}
+
+// The held-back tail has to cover a stand-in as well as a token, or a streamed
+// answer in fake mode restores nothing while a buffered one round-trips.
+func TestTailLenCoversBothShapes(t *testing.T) {
+	known := map[string]string{
+		"[EMAIL_1]":            "claire@example.fr",
+		"contact2@example.org": "andre@example.fr",
+	}
+
+	tests := []struct {
+		name string
+		text string
+		want int
+	}{
+		{name: "nothing pending", text: "bonjour", want: 0},
+		{name: "the start of a token", text: "écrire à [EMA", want: 4},
+		{name: "the start of a stand-in", text: "écrire à contact2@exa", want: 12},
+		{name: "a whole stand-in is not held back", text: "écrire à contact2@example.org", want: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := TailLen(tt.text, known); got != tt.want {
+				t.Errorf("TailLen(%q) = %d, want %d", tt.text, got, tt.want)
+			}
+		})
+	}
 }
 
 // The invariant the indexed design exists for: two different originals never

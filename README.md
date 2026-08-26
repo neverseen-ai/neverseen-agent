@@ -47,6 +47,79 @@ token column and tells you whether the text round-trips exactly.
 
 Nothing on it is sent anywhere, stored, or written to the session vault.
 
+### Watching a real exchange: `cloakfleet audit`
+
+The test page answers what *would* happen to a text. `cloakfleet audit` answers
+what happened to a request your tool actually sent: it runs the agent in the
+foreground on its own port and prints, for every exchange, the body it received
+from the tool, the body it sent to the provider, and every value it replaced on
+the way out and restored on the way back — coloured, when it is writing to a
+terminal.
+
+```console
+$ CLOAKFLEET_PII_LOCALE=fr cloakfleet audit
+
+cloakfleet audit — the agent in the foreground, on 127.0.0.1:33333.
+
+  locales:      fr
+  substitution: token
+
+In another terminal, run your tool through it:
+
+  ANTHROPIC_BASE_URL=http://127.0.0.1:33333/anthropic claude
+  OPENAI_BASE_URL=http://127.0.0.1:33333/openai codex
+  # codex ignores this if ~/.codex/config.toml sets model_provider, or if you pass --profile
+…
+── IN   from the tool · session=default · 84 B ────────────────────────────────
+{"prompt":"écris à pierre.paul@example.com, tél 06 12 34 56 78, matricule ZZ-4471"}
+                        ^ blue: about to be replaced        ^ unmarked: not recognised
+MASK pierre.paul@example.com TO [EMAIL_1]
+MASK 06 12 34 56 78 TO [PHONE_1]
+── OUT  to anthropic · session=default · 67 B ─────────────────────────────────
+{"prompt":"écris à [EMAIL_1], tél [PHONE_1], matricule ZZ-4471"}
+                    ^ red: will be turned back on the way in
+UNMASK [EMAIL_1] TO pierre.paul@example.com
+UNMASK [PHONE_1] TO 06 12 34 56 78
+```
+
+Blue is a value in clear and red is a replacement, in the bodies and in the
+MASK/UNMASK lines alike, so the eye follows one colour from the body that arrived
+through to the body that left. In `fake` mode the replacement is a stand-in
+rather than a token — `1 rue de l'Exemple, 99000 Villeneuve` — and it is marked
+just the same, because what was substituted comes from the exchange rather than
+from the shape of the text. What
+is unmarked in both is the finding: `matricule ZZ-4471` is in the body that left,
+so the catalogue never recognised it and it went to the provider in clear. No
+count reports that.
+
+It is the same pipeline as `cloakfleet proxy` — the same catalogue, the same
+substitution mode, the same vault — so what you watch is what the agent does.
+Two things differ, both on purpose. It listens on **33333**, so it sits beside
+the agent your shell and menu bar are already pointed at instead of fighting it
+for the socket. And it is the one place in this agent where a real value is
+written out: the log carries counts, the heartbeat carries no content at all,
+and this console carries values because "is my address actually being replaced"
+cannot be answered by a number. It goes to that terminal only — nothing is
+written to a file, and nothing of it is ever reported to a backend.
+
+A value is named once as it is replaced, and once as it is restored, rather than
+once per occurrence: a system prompt resent every turn would otherwise bury the
+exchange you are looking at. The bodies themselves are printed whole, however
+long: a ceiling would be the console deciding which part of your traffic is worth
+looking at, and the part it cut is exactly where a value nothing recognised would
+be. The rule above each one says the size, so a body scrolling past is still
+accounted for.
+
+`fake` mode round-trips too: a stand-in is put back on the way in, by matching
+its own text, so you see a MASK and an UNMASK line there as well. What keeps that
+safe is that a credential never gets a stand-in — every secret category is
+replaced by a bracket token by design — so the value-matching path can never
+expand one into a live secret.
+
+Colour is on only when the console is a terminal, so `cloakfleet audit | tee
+audit.log` gives plain text you can grep for a value rather than escape
+sequences through the middle of it.
+
 Or scan a file from the shell, without starting anything:
 
 ```console
@@ -77,9 +150,10 @@ NHS_NUMBER               9434765919
 4. The response is expanded back on the way out — buffered or streamed, through
    the same expansion.
 
-Only bracket tokens are ever expanded. That filter is what stops a masked
-credential from being turned back into a live secret, and it is why `fake` mode
-is deliberately one-way.
+Both shapes a masked value takes are expanded: a bracket token, and — in `fake`
+mode — the stand-in that replaced it. What stops a masked credential from being
+turned back into a live secret is one step earlier: a credential never gets a
+stand-in, so it only ever travels as a bracket token.
 
 ## Install
 

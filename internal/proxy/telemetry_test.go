@@ -183,7 +183,7 @@ func TestNoBackendMeansNoReporter(t *testing.T) {
 	t.Setenv("CLOAKFLEET_PII_LOCALE", "fr")
 	t.Setenv("CLOAKFLEET_BACKEND_URL", "")
 
-	agent, err := FromEnv(nil)
+	agent, err := FromEnv(nil, Options{})
 	if err != nil {
 		t.Fatalf("FromEnv: %v", err)
 	}
@@ -221,7 +221,7 @@ func TestBackendConfiguredMeansAReporter(t *testing.T) {
 	t.Setenv("CLOAKFLEET_ENROLMENT_TOKEN", "enrol-me")
 	t.Setenv("CLOAKFLEET_IDENTITY_FILE", t.TempDir()+"/agent.json")
 
-	agent, err := FromEnv(nil)
+	agent, err := FromEnv(nil, Options{})
 	if err != nil {
 		t.Fatalf("FromEnv: %v", err)
 	}

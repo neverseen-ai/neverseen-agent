@@ -67,6 +67,21 @@ var shellTools = map[string]struct {
 	},
 }
 
+// ToolCodes reports the providers a tool can be pointed at with a line worth
+// printing, in a stable order.
+//
+// From the same table PointAt reads, because a second list of "which providers do
+// we know how to hand over" is a second chance to hand over a variable name
+// nobody's SDK reads.
+func ToolCodes() []string {
+	codes := make([]string, 0, len(shellTools))
+	for code := range shellTools {
+		codes = append(codes, code)
+	}
+	sort.Strings(codes)
+	return codes
+}
+
 // CaveatFor reports what somebody has to know before trusting the line PointAt
 // returns for a provider, or empty when there is nothing to add.
 func CaveatFor(code string) string { return shellTools[code].Caveat }
@@ -123,13 +138,7 @@ func ShellEnv(ctx context.Context, w io.Writer, addr string, force bool) error {
 		return nil
 	}
 
-	codes := make([]string, 0, len(shellTools))
-	for code := range shellTools {
-		codes = append(codes, code)
-	}
-	sort.Strings(codes)
-
-	for _, code := range codes {
+	for _, code := range ToolCodes() {
 		fmt.Fprintf(w, "export %s=%s/%s\n", shellTools[code].Variable, base, code)
 
 		// Right under the line it qualifies, and as a comment because this output is

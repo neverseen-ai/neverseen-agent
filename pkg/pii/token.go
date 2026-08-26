@@ -29,11 +29,36 @@ func Token(cat Category, index int64) string {
 
 // IsToken reports whether s is exactly one token.
 //
-// It is the filter the response path applies before expanding anything, and it
-// has to stay this strict. Loosening it is what would let a masked credential —
-// or a generated stand-in, which is one-way by design — be expanded back into
-// the real value on its way to the caller.
+// The response path expands what a session minted, whatever shape it took, so
+// this is no longer the only door in: a stand-in is expanded by matching its own
+// text. What it still decides is which mapping entries take the token path —
+// which is every credential, because a secret category never gets a stand-in
+// (see Detector.render). Loosening it to match something that is not a token
+// would put a value on that path with no shape to check it by.
 func IsToken(s string) bool { return tokenRe.MatchString(s) }
+
+// TokenAt returns the token text begins with, or empty when it does not begin
+// with one.
+//
+// Anchored, for the callers that walk a text position by position rather than
+// replacing matches: the response path, which expands, and the audit console,
+// which marks. Both need "is there a token exactly here", and two spellings of
+// that question would be two answers about what may be expanded.
+func TokenAt(text string) string {
+	if len(text) == 0 || text[0] != '[' {
+		return ""
+	}
+	for i := 1; i < len(text) && i <= maxTokenLen; i++ {
+		if text[i] != ']' {
+			continue
+		}
+		if candidate := text[:i+1]; IsToken(candidate) {
+			return candidate
+		}
+		return "" // the first bracket closes here; nothing longer can be a token
+	}
+	return ""
+}
 
 // FindTokens returns every token in text, in order, with duplicates.
 func FindTokens(text string) []string { return tokenScanRe.FindAllString(text, -1) }

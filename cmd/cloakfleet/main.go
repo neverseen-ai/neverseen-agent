@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -40,6 +41,8 @@ const usage = `cloakfleet — mask sensitive values before they reach a model.
 
 Usage:
   cloakfleet proxy         run the agent: mask what goes out, restore what comes back
+  cloakfleet audit         run it in the foreground on port %s, printing every
+                           value it replaces and restores, in clear
   cloakfleet scan [file]   report the sensitive values in a file, or in stdin
   cloakfleet status        report whether the agent is masking, and what
   cloakfleet env [--force] print the shell exports that point a tool at the agent
@@ -108,7 +111,9 @@ func run(args []string, stdin io.Reader, stdout io.Writer) error {
 
 	switch cmd := args[0]; cmd {
 	case "proxy":
-		return runProxy(stdout)
+		return serve(stdout, proxy.Options{})
+	case "audit":
+		return runAudit(stdout)
 	case "scan":
 		return runScan(args[1:], stdin, stdout)
 	case "status":
@@ -151,6 +156,7 @@ func runStatus(stdout io.Writer) error {
 func printUsage(w io.Writer) {
 	listen := "http://" + proxy.DefaultListen
 	fmt.Fprintf(w, usage,
+		auditPort(),
 		listen, listen, listen,
 		detector.EnvLocale, strings.Join(pii.LocaleCodes(), ", "),
 		detector.EnvAllowList,
@@ -169,7 +175,94 @@ func printUsage(w io.Writer) {
 // The graceful stop is not politeness: a request cut off mid-flight has been
 // masked and stored but never answered, so the caller loses the turn and the
 // mapping keeps values nothing will ask for again.
-func runProxy(stdout io.Writer) error {
+// runAudit runs the agent in the foreground with the console revealing what it
+// replaced, and prints the command to point a tool at it from another terminal.
+//
+// It is the same pipeline as `proxy` — the same detector, the same vault, the same
+// substitution mode — because an audit of a different pipeline audits nothing.
+// The only two differences are the port and the console, and both are Options
+// rather than a second assembly.
+func runAudit(stdout io.Writer) error {
+	// Built before anything is printed, so a configuration error is reported
+	// instead of a screenful of instructions for an agent that never starts.
+	logger := slog.New(slog.NewTextHandler(stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	proxy.Version = version
+
+	agent, err := proxy.FromEnv(logger, proxy.Options{
+		Listen: proxy.DefaultAuditListen,
+		Audit:  stdout,
+	})
+	if err != nil {
+		return err
+	}
+
+	printAuditInstructions(stdout, agent)
+	return serveAgent(logger, agent)
+}
+
+// printAuditInstructions says what to run elsewhere, and what this terminal is
+// about to show.
+//
+// The state comes from the assembled agent rather than from the environment, for
+// the reason `status` reports what is being applied rather than that the process
+// is up: an agent with no locale selected is perfectly healthy and recognises
+// almost nothing, and an audit console that stayed silent would read as "nothing
+// sensitive in my data" instead of "nothing configured to look for it".
+func printAuditInstructions(w io.Writer, agent *proxy.Agent) {
+	state := agent.Server.State()
+
+	fmt.Fprintf(w, "\ncloakfleet audit — the agent in the foreground, on %s.\n\n", agent.Addr)
+
+	locales := "none"
+	if len(state.Locales) > 0 {
+		locales = strings.Join(state.Locales, ",")
+	}
+	fmt.Fprintf(w, "  locales:      %s\n", locales)
+	fmt.Fprintf(w, "  substitution: %s\n", state.Substitution)
+	if len(state.Locales) == 0 {
+		fmt.Fprintf(w, "\n  Nothing will be masked: no country pattern set is loaded. Set %s\n", detector.EnvLocale)
+		fmt.Fprintf(w, "  to one of %s before trusting an empty console.\n", strings.Join(pii.LocaleCodes(), ", "))
+	}
+
+	fmt.Fprint(w, "\nIn another terminal, run your tool through it:\n\n")
+	for _, code := range proxy.ToolCodes() {
+		fmt.Fprintf(w, "  %s\n", proxy.PointAt(code, agent.Addr))
+
+		// Carried here as everywhere the line is handed over: a tool that quietly
+		// ignores the variable sends the traffic out unmasked, and this console
+		// would stay empty while it happened — which is the one reading an audit
+		// must never be able to get wrong.
+		if caveat := proxy.CaveatFor(code); caveat != "" {
+			fmt.Fprintf(w, "  # %s\n", caveat)
+		}
+	}
+
+	fmt.Fprint(w, "\nEvery value this agent replaces on the way out and restores on the way back\n")
+	fmt.Fprint(w, "is printed below, in clear:\n\n")
+	fmt.Fprint(w, "  MASK pierre.paul@example.com TO [EMAIL_1]\n")
+	fmt.Fprint(w, "  UNMASK [EMAIL_1] TO pierre.paul@example.com\n\n")
+
+	// Said plainly, because it is the one place in this agent where a real value
+	// is written out: the log carries counts, the heartbeat carries no content at
+	// all, and this mode is the deliberate exception for one operator looking at
+	// their own data. It goes to this terminal only, and stops with it.
+	fmt.Fprint(w, "That is this mode only, on this terminal, for your own data — nothing is\n")
+	fmt.Fprint(w, "written to a file and nothing of it is ever reported to a backend.\n")
+	fmt.Fprint(w, "Ctrl-C stops the agent.\n\n")
+}
+
+// auditPort is the port DefaultAuditListen names, for the usage text.
+//
+// Derived rather than written out, so the two cannot disagree about where the
+// command a person is told to run actually listens.
+func auditPort() string {
+	if _, port, err := net.SplitHostPort(proxy.DefaultAuditListen); err == nil {
+		return port
+	}
+	return proxy.DefaultAuditListen
+}
+
+func serve(stdout io.Writer, opts proxy.Options) error {
 	logger := slog.New(slog.NewTextHandler(stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	// Stamped before anything is assembled, because the agent reports it about
@@ -177,11 +270,17 @@ func runProxy(stdout io.Writer) error {
 	// a fleet nobody can audit.
 	proxy.Version = version
 
-	agent, err := proxy.FromEnv(logger)
+	agent, err := proxy.FromEnv(logger, opts)
 	if err != nil {
 		return err
 	}
 
+	return serveAgent(logger, agent)
+}
+
+// serveAgent is the serving half, shared by `proxy` and `audit` so the two cannot
+// come to differ about shutdown, supervision or the last heartbeat.
+func serveAgent(logger *slog.Logger, agent *proxy.Agent) error {
 	server := &http.Server{
 		Addr:              agent.Addr,
 		Handler:           agent.Server.Handler(),

@@ -3,6 +3,7 @@ package proxy
 import (
 	"encoding/hex"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -46,6 +47,16 @@ const (
 // DefaultIdentityFile is where an agent keeps the identity a backend issued it.
 const DefaultIdentityFile = "~/.cloakfleet/agent.json"
 
+// DefaultAuditListen is where `cloakfleet audit` listens.
+//
+// A port of its own, and not a preference: an audit run is meant to sit beside a
+// workstation's ordinary agent — the one the shell profile and the menu bar are
+// already pointed at — rather than to replace it for the length of the run. On
+// the same port the two would race for the socket, and whichever lost would
+// leave the operator reading an empty console while their traffic went through
+// the other one.
+const DefaultAuditListen = "127.0.0.1:33333"
+
 // DefaultListen binds the loopback interface only.
 //
 // Not a default to override lightly. The agent trusts whoever reaches it — it
@@ -64,12 +75,30 @@ type Agent struct {
 	Reporter *telemetry.Reporter
 }
 
+// Options are what the command decides about an agent, as opposed to what the
+// environment does.
+//
+// It exists so `cloakfleet audit` can differ from `cloakfleet proxy` in the two
+// ways it has to — a port of its own and a console to reveal on — without a
+// second assembly of the pipeline, which is the divergence this project's one
+// entrypoint rule exists to prevent, and without a command reading an
+// environment variable, which is the other rule.
+type Options struct {
+	// Listen overrides the configured address. Empty means the environment
+	// decides, which is the ordinary case.
+	Listen string
+
+	// Audit is where every value replaced or restored is written, in clear. Nil
+	// everywhere but the audit command.
+	Audit io.Writer
+}
+
 // FromEnv assembles everything the agent needs to serve: the detector, the
 // session vault, the server over them, and a reporter when one is configured.
 //
 // One function, so the command that calls it reads no environment of its own and
 // cannot drift from what this configures.
-func FromEnv(logger *slog.Logger) (*Agent, error) {
+func FromEnv(logger *slog.Logger, opts Options) (*Agent, error) {
 	det, err := detector.FromEnv()
 	if err != nil {
 		return nil, err
@@ -90,12 +119,22 @@ func FromEnv(logger *slog.Logger) (*Agent, error) {
 	}
 
 	recorder := telemetry.NewRecorder(time.Now())
-	srv, err := New(Config{Providers: providers, Logger: logger, Recorder: recorder}, det, v)
+	srv, err := New(Config{
+		Providers: providers,
+		Logger:    logger,
+		Recorder:  recorder,
+		Audit:     opts.Audit,
+	}, det, v)
 	if err != nil {
 		return nil, err
 	}
 
-	addr := strings.TrimSpace(os.Getenv(EnvListen))
+	// The command's choice wins over the environment: an audit run on the
+	// configured port would fight the agent already listening there.
+	addr := opts.Listen
+	if addr == "" {
+		addr = strings.TrimSpace(os.Getenv(EnvListen))
+	}
 	if addr == "" {
 		addr = DefaultListen
 	}

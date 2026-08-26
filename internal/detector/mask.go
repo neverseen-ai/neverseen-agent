@@ -2,6 +2,7 @@ package detector
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"sync/atomic"
 
@@ -63,6 +64,16 @@ type Pass struct {
 	// has to store.
 	minted map[string]string
 
+	// Reveal, when set, is called the first time a value is replaced, with the
+	// value in clear. It is the audit console and nothing else — see
+	// internal/proxy/audit.go for why that surface is allowed to see content
+	// when no other one is.
+	//
+	// At minting rather than per occurrence: it fires in order of appearance,
+	// and a value repeated forty times in a system prompt is one transformation
+	// to look at rather than forty identical lines to scroll past.
+	Reveal func(original, replacement string)
+
 	// counts is how many values were replaced per category, repeats included.
 	//
 	// Repeats included on purpose: a value masked three times in one body is
@@ -104,6 +115,9 @@ func (p *Pass) mask(cat pii.Category, locale, original string) string {
 
 	p.byValue[original] = masked
 	p.minted[masked] = original
+	if p.Reveal != nil {
+		p.Reveal(original, masked)
+	}
 	return masked
 }
 
@@ -193,20 +207,147 @@ func (d *Detector) MaskOnce(text string) (string, map[string]string, int) {
 	return masked, pass.Minted(), replaced
 }
 
-// Unmask puts the originals back, for every token the mapping knows.
+// Unmask puts the originals back, for everything the mapping holds.
 //
-// Only bracket tokens are expanded, and that is a guarantee rather than an
-// omission. A generated stand-in is left alone — fake mode is one-way at the
-// proxy on purpose, because a stand-in reads as prose and expanding it back
-// would undo the substitution the deployment asked for. Never loosen this to
-// match a value rather than a token: the same filter is what stops a masked
-// credential from being expanded into a live secret on its way to a caller.
+// A mapping holds two shapes, because a masked value takes two. A bracket token
+// is expanded whatever the mode. A generated stand-in — fake mode's substitution,
+// which reads as prose — is expanded too, matched by its own text, so an exchange
+// in fake mode round-trips like any other.
+//
+// That is a deliberate reversal of what this used to do, and what still holds it
+// safe is upstream rather than here: a credential never gets a stand-in.
+// Detector.render falls back to a bracket token for every secret category by
+// design, so a non-token key in the mapping cannot be a credential, and the
+// value-matching path below can never expand one into a live secret. Removing
+// that fallback would remove this guarantee with it.
+//
+// A token this process never minted is still left alone: inventing a value for it
+// would put data in front of the caller that nothing supports.
+//
+// TODO: a short stand-in can be matched by coincidence — a fake postcode is five
+// digits, and a model that wrote those five digits about something else has them
+// replaced by the caller's real postcode. The stand-ins are picked to be
+// implausible rather than short (see pii.FakeSet), which narrows it but does not
+// close it; a minimum length, or marking the substitution invisibly, is the
+// upgrade path if it is ever seen.
 func Unmask(text string, known map[string]string) string {
+	return UnmaskSeen(text, known, nil)
+}
+
+// UnmaskSeen is Unmask, reporting each replacement it expanded.
+//
+// One implementation rather than two, because the shapes it accepts are the
+// guarantee: a second walk over the text written to report on it would be a
+// second answer to "what may be expanded", and the wrong one restores something
+// this agent never masked.
+//
+// seen receives the original value in clear, so nothing but the audit console may
+// pass a non-nil one — see internal/proxy/audit.go.
+func UnmaskSeen(text string, known map[string]string, seen func(masked, original string)) string {
 	if len(known) == 0 {
 		return text
 	}
-	return pii.ReplaceTokens(text, func(token string) (string, bool) {
-		original, ok := known[token]
-		return original, ok
-	})
+
+	standIns := standInsOf(known)
+	if len(standIns) == 0 {
+		// Token mode, which is every session that has minted nothing but tokens:
+		// one regex scan that answers "is there anything here at all", and the
+		// text is returned untouched when there is not.
+		return pii.ReplaceTokens(text, func(token string) (string, bool) {
+			original, ok := known[token]
+			if ok && seen != nil {
+				seen(token, original)
+			}
+			return original, ok
+		})
+	}
+
+	// One forward walk once stand-ins are in play, and it has to be a walk rather
+	// than a replacement per entry: one stand-in can contain another — a fake
+	// postcode inside the fake address it belongs to — and replacing them in turn
+	// expands the shorter one inside text that has already been expanded, which
+	// puts a value inside a value.
+	var starts [256]bool
+	for _, standIn := range standIns {
+		starts[standIn[0]] = true
+	}
+
+	var b strings.Builder
+	b.Grow(len(text))
+	for i := 0; i < len(text); {
+		// Longest first, so the entry that wins at a position is the widest one.
+		if starts[text[i]] {
+			matched := ""
+			for _, standIn := range standIns {
+				if strings.HasPrefix(text[i:], standIn) {
+					matched = standIn
+					break
+				}
+			}
+			if matched != "" {
+				i += len(matched)
+				b.WriteString(report(known, matched, seen))
+				continue
+			}
+		}
+
+		if token := pii.TokenAt(text[i:]); token != "" {
+			if _, ok := known[token]; ok {
+				i += len(token)
+				b.WriteString(report(known, token, seen))
+				continue
+			}
+		}
+
+		b.WriteByte(text[i])
+		i++
+	}
+	return b.String()
+}
+
+// report returns what a masked value stands for, telling the console about it.
+func report(known map[string]string, masked string, seen func(masked, original string)) string {
+	original := known[masked]
+	if seen != nil {
+		seen(masked, original)
+	}
+	return original
+}
+
+// TailLen returns how much of the end of text has to be held back because it
+// could be the beginning of something this mapping would expand.
+//
+// Streaming needs it, and it has to cover both shapes for the same reason the
+// expander does: generated text arrives in pieces of a few characters, so a
+// stand-in the model echoed is split across two of them exactly as a token is.
+// Answering only for tokens is what left fake mode restoring nothing in a
+// streamed answer while a buffered one round-tripped.
+func TailLen(text string, known map[string]string) int {
+	tail := pii.TokenTailLen(text)
+	for _, standIn := range standInsOf(known) {
+		limit := min(len(standIn)-1, len(text))
+		for k := limit; k > tail; k-- {
+			if strings.HasSuffix(text, standIn[:k]) {
+				tail = k
+				break
+			}
+		}
+	}
+	return tail
+}
+
+// standInsOf returns the mapping's keys that are not tokens, longest first.
+//
+// Longest first is what makes the walk above take the widest match at each
+// position. Empty for a session that minted only tokens, which is what keeps
+// token mode on the regex path it has always been on.
+func standInsOf(known map[string]string) []string {
+	var standIns []string
+	for masked := range known {
+		if masked != "" && !pii.IsToken(masked) {
+			standIns = append(standIns, masked)
+		}
+	}
+	sort.Slice(standIns, func(i, j int) bool { return len(standIns[i]) > len(standIns[j]) })
+	return standIns
 }

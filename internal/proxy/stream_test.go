@@ -19,7 +19,7 @@ import (
 func rehydrate(t *testing.T, stream string, known map[string]string) string {
 	t.Helper()
 
-	out, err := io.ReadAll(newStreamRehydrator(io.NopCloser(strings.NewReader(stream)), known, nil))
+	out, err := io.ReadAll(newStreamRehydrator(io.NopCloser(strings.NewReader(stream)), known, nil, nil))
 	if err != nil {
 		t.Fatalf("read the rehydrated stream: %v", err)
 	}

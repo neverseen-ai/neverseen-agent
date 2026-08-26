@@ -40,6 +40,11 @@ type Config struct {
 	// Nil discards them.
 	Logger *slog.Logger
 
+	// Audit receives one line per value replaced or restored, values in clear.
+	// Nil — the ordinary case — means no audit output at all. Only `cloakfleet
+	// audit` sets it; see audit.go for why this one surface may see content.
+	Audit io.Writer
+
 	// Recorder accumulates what a supervised agent reports. Nil means one is
 	// created anyway: counting costs a mutex and the request path then has one
 	// shape rather than two, with no branch that only runs where nobody looked.
@@ -52,6 +57,10 @@ type Server struct {
 	vault    *vault.Vault
 	log      *slog.Logger
 	recorder *telemetry.Recorder
+
+	// audit is nil unless the agent was built in audit mode. Its methods are
+	// nil-safe, so the request path calls them without a branch.
+	audit *auditor
 
 	providers []Provider
 	routes    map[string]*httputil.ReverseProxy
@@ -85,6 +94,7 @@ func New(cfg Config, det *detector.Detector, v *vault.Vault) (*Server, error) {
 		vault:     v,
 		log:       logger,
 		recorder:  recorder,
+		audit:     newAuditor(cfg.Audit),
 		providers: providers,
 		routes:    make(map[string]*httputil.ReverseProxy, len(providers)),
 		startedAt: time.Now(),
@@ -173,7 +183,7 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request) {
 	}
 
 	session := sessionOf(r)
-	if err := s.maskRequest(session, r); err != nil {
+	if err := s.maskRequest(session, code, r); err != nil {
 		// Fail closed. Forwarding a body this could not read is exactly the
 		// leak the agent exists to prevent, so an unreadable body is an error
 		// rather than a pass-through.
@@ -191,7 +201,7 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request) {
 
 // maskRequest replaces the sensitive values in the body and records what it
 // replaced, in the session's vault, before the request goes anywhere.
-func (s *Server) maskRequest(session string, r *http.Request) error {
+func (s *Server) maskRequest(session, provider string, r *http.Request) error {
 	if r.Body == nil || r.ContentLength == 0 {
 		return nil
 	}
@@ -203,10 +213,21 @@ func (s *Server) maskRequest(session string, r *http.Request) error {
 
 	pass := s.det.NewPass(s.vault.Load(session))
 
-	replaced := 0
+	// Collected rather than printed as they are found, so the console can write
+	// the whole outbound half of one exchange in a single block: what arrived,
+	// what was replaced in it, and what left. Two tools talking to the agent at
+	// once would otherwise interleave their bodies on the screen.
+	var replaced [][2]string
+	if s.audit != nil {
+		pass.Reveal = func(original, replacement string) {
+			replaced = append(replaced, [2]string{original, replacement})
+		}
+	}
+
+	count := 0
 	mask := func(text string) string {
 		out, n := s.det.Mask(text, pass)
-		replaced += n
+		count += n
 		return out
 	}
 
@@ -219,6 +240,12 @@ func (s *Server) maskRequest(session string, r *http.Request) error {
 	} else {
 		masked = mask(string(body))
 	}
+
+	// Both halves, side by side, before anything else can fail: the two bodies are
+	// what an operator reads to see that the value they typed is not in the one
+	// that left. The clear half is the reason this is a mode of its own — see
+	// audit.go.
+	s.audit.request(session, provider, string(body), masked, replaced)
 
 	if err := s.vault.Save(session, pass.Minted()); err != nil {
 		// The mapping is what makes the answer readable again. Masking without
@@ -233,12 +260,12 @@ func (s *Server) maskRequest(session string, r *http.Request) error {
 	r.Header.Set("Content-Length", strconv.Itoa(len(masked)))
 	r.Header.Del("Content-Encoding") // readBody has decompressed it
 
-	if replaced > 0 {
+	if count > 0 {
 		s.recorder.Masked(pass.Counts())
 
 		// Counts, never content: the log is the one place a masked value could
 		// come back into the clear by accident.
-		s.log.Info("request masked", "session", session, "values", replaced, "minted", len(pass.Minted()))
+		s.log.Info("request masked", "session", session, "values", count, "minted", len(pass.Minted()))
 	}
 	return nil
 }
@@ -278,7 +305,7 @@ func (s *Server) unmask(resp *http.Response) error {
 	}
 
 	if isEventStream(resp.Header.Get("Content-Type")) {
-		resp.Body = newStreamRehydrator(resp.Body, known, s.recorder.Usage)
+		resp.Body = newStreamRehydrator(resp.Body, known, s.recorder.Usage, s.audit.unmaskedSeen())
 		return nil
 	}
 
@@ -292,7 +319,9 @@ func (s *Server) unmask(resp *http.Response) error {
 	// contain a quote or a newline, and splicing one into raw JSON produces a
 	// document the caller cannot parse. Putting it into a decoded string and
 	// letting the encoder escape it is the only way that is always correct.
-	expand := func(text string) string { return detector.Unmask(text, known) }
+	expand := func(text string) string {
+		return detector.UnmaskSeen(text, known, s.audit.unmaskedSeen())
+	}
 
 	out := ""
 	if doc, err := decodeJSONBody(body); err == nil {

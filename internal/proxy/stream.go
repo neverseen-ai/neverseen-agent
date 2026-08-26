@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/cloakfleet/cloakfleet/internal/detector"
-	"github.com/cloakfleet/cloakfleet/pkg/pii"
 	"github.com/cloakfleet/cloakfleet/pkg/telemetry"
 )
 
@@ -44,6 +43,10 @@ type streamRehydrator struct {
 	usageTotals telemetry.TokenUsage
 	usageSent   bool
 
+	// seen reports each replacement put back, for the audit console. Nil
+	// otherwise, which is the ordinary case.
+	seen func(replacement, original string)
+
 	out  bytes.Buffer
 	done bool
 
@@ -57,12 +60,14 @@ type streamRehydrator struct {
 }
 
 func newStreamRehydrator(body io.ReadCloser, known map[string]string,
-	onUsage func(string, telemetry.TokenUsage)) io.ReadCloser {
+	onUsage func(string, telemetry.TokenUsage),
+	seen func(replacement, original string)) io.ReadCloser {
 	return &streamRehydrator{
 		src:     bufio.NewReader(body),
 		closer:  body,
 		known:   known,
 		onUsage: onUsage,
+		seen:    seen,
 	}
 }
 
@@ -127,7 +132,7 @@ func (r *streamRehydrator) rewrite(line string) string {
 		// Not JSON — the "[DONE]" sentinel, or a shape we do not model. There is
 		// no structure to work with, so expand whole tokens in the raw text and
 		// hold nothing back.
-		return strings.Replace(line, payload, detector.Unmask(payload, r.known), 1)
+		return strings.Replace(line, payload, detector.UnmaskSeen(payload, r.known, r.seen), 1)
 	}
 
 	// The same decoded event answers what the exchange cost. Accumulated rather
@@ -144,7 +149,7 @@ func (r *streamRehydrator) rewrite(line string) string {
 
 	// Every string in the event, decoded, so an original carrying a quote or a
 	// newline is escaped by the encoder rather than spliced into raw JSON.
-	expand := func(text string) string { return detector.Unmask(text, r.known) }
+	expand := func(text string) string { return detector.UnmaskSeen(text, r.known, r.seen) }
 	mapStrings(event, expand)
 
 	text, setText, found := deltaText(event)
@@ -161,7 +166,7 @@ func (r *streamRehydrator) rewrite(line string) string {
 	combined := expand(r.pending + text)
 
 	r.pending = ""
-	if tail := pii.TokenTailLen(combined); tail > 0 {
+	if tail := detector.TailLen(combined, r.known); tail > 0 {
 		r.pending, combined = combined[len(combined)-tail:], combined[:len(combined)-tail]
 	}
 
