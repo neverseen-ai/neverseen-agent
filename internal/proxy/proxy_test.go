@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -435,10 +436,21 @@ func TestHealth(t *testing.T) {
 	}
 	// The health line says what the agent is applying, which is what makes it
 	// worth having: an operator can see the locale from outside the process.
-	for _, want := range []string{`"status":"ok"`, `"locales":"fr"`, `"substitution":"token"`} {
-		if !strings.Contains(got.body, want) {
-			t.Errorf("the health line does not carry %s: %s", want, got.body)
-		}
+	//
+	// Decoded into the type the route is marshalled from, rather than matched as a
+	// substring: the point of one type for both sides is that a field cannot be
+	// renamed on one of them, and an assertion against hand-written JSON would be
+	// a third spelling to keep in step.
+	var health Health
+	if err := json.Unmarshal([]byte(got.body), &health); err != nil {
+		t.Fatalf("the health line does not parse: %v — %s", err, got.body)
+	}
+	if health.Status != "ok" || health.Substitution != "token" ||
+		!slices.Equal(health.Locales, []string{"fr"}) {
+		t.Errorf("the health line says %+v, want the locale and mode being applied", health)
+	}
+	if health.Version == "" || len(health.Providers) == 0 {
+		t.Errorf("the health line leaves version or providers empty: %+v", health)
 	}
 }
 

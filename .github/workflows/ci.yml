@@ -72,8 +72,14 @@ jobs:
   # release configuration still builds, and whether the installer is valid shell.
   # Both are only ever exercised at release time otherwise, which is the worst
   # moment to find out.
+  #
+  # On macOS, and that is forced rather than chosen: cloakfleet-tray puts an icon
+  # in the menu bar through Cocoa, so it needs cgo and the frameworks it links
+  # against, which exist on no other runner. The agent itself is pure Go and is
+  # cross-compiled from here for both platforms, as it always was — the Mac is
+  # needed for the icon, not for the thing that does the masking.
   distribution:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -95,6 +101,13 @@ jobs:
         with:
           version: latest
           args: build --snapshot --clean
+
+  # Its own job, on Linux, because shellcheck is installed with apt-get and the
+  # release job no longer runs anywhere that has it.
+  installer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Check the installer is portable shell
         run: |

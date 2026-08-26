@@ -1,10 +1,12 @@
 package proxy
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -204,8 +206,12 @@ func TestNoBackendMeansNoReporter(t *testing.T) {
 	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(resp.Body)
-	if !strings.Contains(string(body), `"locales":"fr"`) {
-		t.Errorf("an unsupervised agent is not fully configured: %s", body)
+	var health Health
+	if err := json.Unmarshal(body, &health); err != nil {
+		t.Fatalf("the health line does not parse: %v — %s", err, body)
+	}
+	if !slices.Equal(health.Locales, []string{"fr"}) {
+		t.Errorf("an unsupervised agent is not fully configured: %+v", health)
 	}
 }
 

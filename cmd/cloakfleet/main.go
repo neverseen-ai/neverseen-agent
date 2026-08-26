@@ -41,6 +41,7 @@ const usage = `cloakfleet — mask sensitive values before they reach a model.
 Usage:
   cloakfleet proxy         run the agent: mask what goes out, restore what comes back
   cloakfleet scan [file]   report the sensitive values in a file, or in stdin
+  cloakfleet status        report whether the agent is masking, and what
   cloakfleet env [--force] print the shell exports that point a tool at the agent
   cloakfleet version       print the version
 
@@ -75,8 +76,23 @@ Supervision is optional, and the agent is complete without it:
 Every variable is documented in .env.example.
 `
 
+// errQuiet exits non-zero without a message, for a command that has already said
+// everything it has to say on its own output.
+//
+// `status` needs it: its whole job is to report a state, and one of those states
+// is worth a non-zero exit so a script can act on it — but printing the same
+// diagnosis again on stderr, prefixed as an error, would make the ordinary case
+// of a stopped agent read like a malfunction of the command.
+var errQuiet = errors.New("")
+
 func main() {
-	if err := run(os.Args[1:], os.Stdin, os.Stdout); err != nil {
+	err := run(os.Args[1:], os.Stdin, os.Stdout)
+	switch {
+	case err == nil:
+		return
+	case errors.Is(err, errQuiet):
+		os.Exit(1)
+	default:
 		fmt.Fprintln(os.Stderr, "cloakfleet:", err)
 		os.Exit(1)
 	}
@@ -95,6 +111,8 @@ func run(args []string, stdin io.Reader, stdout io.Writer) error {
 		return runProxy(stdout)
 	case "scan":
 		return runScan(args[1:], stdin, stdout)
+	case "status":
+		return runStatus(stdout)
 	case "env":
 		return runEnv(args[1:], stdout)
 	case "version":
@@ -107,6 +125,24 @@ func run(args []string, stdin io.Reader, stdout io.Writer) error {
 		printUsage(stdout)
 		return fmt.Errorf("unknown command %q", cmd)
 	}
+}
+
+// runStatus reports what the agent is applying, or that there is nothing there.
+//
+// It reads no environment of its own — proxy.ListenAddress owns that question, as
+// the same rule requires everywhere else in this command.
+//
+// The exit code is non-zero unless the agent is actually masking. Answering is not
+// enough: an agent with no locale selected is up and recognises almost nothing,
+// and a check that called that healthy would be the check somebody trusted while
+// their traffic went out in clear.
+func runStatus(stdout io.Writer) error {
+	status := proxy.Query(context.Background(), proxy.ListenAddress(), 2*time.Second)
+	status.Write(stdout)
+	if !status.Masking() {
+		return errQuiet
+	}
+	return nil
 }
 
 // printUsage names the settings from the constants the code actually reads, and

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -143,5 +144,20 @@ func TestRunScanHonoursTheAllowList(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "no sensitive values found") {
 		t.Errorf("an allow-listed value was still reported:\n%s", out.String())
+	}
+}
+
+// status answers about an agent that is not there, and exits non-zero without
+// turning the ordinary case of a stopped agent into an error message.
+func TestRunStatusWithNoAgent(t *testing.T) {
+	t.Setenv("CLOAKFLEET_LISTEN", "127.0.0.1:1") // nothing listens there
+
+	var out strings.Builder
+	err := run([]string{"status"}, nil, &out)
+	if !errors.Is(err, errQuiet) {
+		t.Errorf("err = %v, want errQuiet: the exit code is the signal, not a message", err)
+	}
+	if !strings.Contains(out.String(), "not answering on 127.0.0.1:1") {
+		t.Errorf("the report does not name where it looked:\n%s", out.String())
 	}
 }

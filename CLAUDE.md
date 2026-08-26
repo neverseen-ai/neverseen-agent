@@ -33,10 +33,29 @@ go test ./internal/detector/ -run TestAccuracyCorpus -v   # one suite, verbose
 
 ## Architecture
 
-**One entrypoint.** `cmd/cloakfleet` is the only binary. Agent Veil, which this
-project replaces, shipped two, each assembling its own pipeline from the same
-packages — and they drifted, so the same request was masked in one and answered
-in clear in the other. Do not add a second `main`.
+**One entrypoint for the agent.** `cmd/cloakfleet` is the only binary that masks
+anything. Agent Veil, which this project replaces, shipped two, each assembling
+its own pipeline from the same packages — and they drifted, so the same request
+was masked in one and answered in clear in the other. Do not add a second `main`
+that assembles a pipeline.
+
+**`cmd/cloakfleet-tray` is the one exception, and the bar it had to clear.** It
+puts an icon in the menu bar saying whether the agent is masking. It assembles
+nothing — no detector, no vault, no provider table, no key, no configuration — it
+reads `/healthz` and paints, so there is nothing in it that could come to disagree
+with the agent about what masking means.
+
+What earned it a binary of its own is what happened when it was a subcommand,
+which was tried and measured: the menu bar is Cocoa, cgo is a property of a whole
+binary rather than of a subcommand, and `bin/cloakfleet` came out linking AppKit,
+no longer building under `CGO_ENABLED=0`, and running a GUI toolkit's package
+initialiser in every proxy process that would never draw anything. Worse, the two
+then shipped together — a broken Cocoa build would mean no release of the masking
+agent at all. That is the rule the telemetry already follows at runtime, the thing
+that watches the control must never be able to stop it, applied to the build.
+
+Anything else proposing a second `main` has to clear the same bar: assembles no
+pipeline, holds no secret, and pays a cost the agent would otherwise carry.
 
 **The environment is read in one place**: `detector.FromEnv`, from the constants
 `detector.EnvLocale` and `detector.EnvAllowList`. Never read an environment
@@ -237,6 +256,45 @@ with the cached part broken out underneath as a *subset*. Reading both would bil
 the same tokens twice, so the OpenAI breakdown is deliberately not read.
 
 ### Distribution
+
+**One type answers `/healthz`, and one function asks it.** `proxy.Health` is
+marshalled by the route and decoded by every local caller in the same package, so
+the two cannot come to disagree about a field name; `proxy.Query` is the only
+place that asks whether the agent is there, and `cloakfleet env` decides whether
+to export anything at all through it. Two ways to ask that question are two ways
+to answer it differently.
+
+**The menu bar icon is a separate process on purpose, not by packaging accident.**
+An icon inside the proxy vanishes at the exact moment it becomes useful: the state
+worth showing is that the agent is *not there*, and only something that outlasts it
+can show that. Its launchd agent deliberately has no `KeepAlive`, unlike the
+agent's — the menu offers "Quit the icon", and launchd would put it straight back
+while the person watched nothing happen. The agent keeps `KeepAlive` because nobody
+should stop the masking by accident; closing a window has to work.
+
+**Everything in `internal/tray` that decides what to show is separate from the
+toolkit.** `render` and `watch` take no part of fyne.io/systray and are covered by
+tests; the adapter that touches the toolkit has three methods and no logic. A menu
+bar cannot be asserted on in CI, so what can be is kept where a test reaches it —
+the alternative is a feature whose behaviour has only ever run on somebody's
+screen. The icon follows `proxy.Status.Masking` and nothing else, so the picture
+and the exit code of `cloakfleet status` cannot disagree about the same agent.
+
+**The icons are generated and committed** (`go run ./internal/tray/icons/generate.go`),
+for the reason `testdata/heartbeats.json` is: a generated asset a reviewer can look
+at beats a build step nobody can, and the alternative is an SVG rasteriser in
+`go.mod` for two 32×32 pictures. They are black plus alpha because macOS is handed
+them as template images and recolours them for a light or a dark bar. The state is
+carried by the mark's own vocabulary — the right-hand square outlined while that
+value is being replaced, filled when it is not — rather than by a badge over it: a
+strike was tried and is eight pixels of diagonal at the size this is actually seen.
+
+**And what `status` reports is what the agent is *applying*, not that it is up.**
+`Status.Masking` is deliberately not `Answering`: an agent with no locale selected
+is healthy and recognises almost nothing, which is the same reason the supervision
+contract carries `State` rather than a heartbeat alone. The exit code follows the
+former, so a script that trusts it is not trusting a green light over traffic in
+clear.
 
 **The installer never exports a base URL into a shell profile.** It adds
 `eval "$(cloakfleet env)"`, and that command prints nothing when the agent is not

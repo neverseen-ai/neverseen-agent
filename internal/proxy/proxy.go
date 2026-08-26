@@ -11,6 +11,7 @@ package proxy
 import (
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -145,8 +146,15 @@ func (s *Server) Handler() http.Handler {
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprintf(w, `{"status":"ok","locales":%q,"substitution":%q}`+"\n",
-		strings.Join(s.det.Locales(), ","), s.det.Substitution())
+	// Marshalled from the type a local caller decodes, in this same package, so
+	// the route cannot grow a field on one side only.
+	_ = json.NewEncoder(w).Encode(Health{
+		Status:       "ok",
+		Version:      Version,
+		Locales:      s.det.Locales(),
+		Substitution: s.det.Substitution().String(),
+		Providers:    s.Providers(),
+	})
 }
 
 // forward is the whole request path: pick the upstream, mask the body, remember

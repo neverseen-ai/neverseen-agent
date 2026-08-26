@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/http"
 	"sort"
 	"strings"
 	"time"
@@ -50,7 +49,7 @@ func ShellEnv(ctx context.Context, w io.Writer, addr string, force bool) error {
 	}
 	base := "http://" + addr
 
-	if !force && !agentIsListening(ctx, base) {
+	if !force && !agentIsListening(ctx, addr) {
 		fmt.Fprintf(w, "# cloakfleet is not answering on %s, so nothing is exported here and\n", addr)
 		fmt.Fprintf(w, "# your tools will reach their provider directly, unmasked. Start it with\n")
 		fmt.Fprintf(w, "# `cloakfleet proxy`, or pass --force to export anyway.\n")
@@ -76,30 +75,21 @@ func ShellEnv(ctx context.Context, w io.Writer, addr string, force bool) error {
 	return nil
 }
 
+// listenTimeout is how long a local caller waits for the agent to answer.
+//
+// Short because `cloakfleet env` runs on every new shell when it is wired into a
+// profile, and a second of latency there is a second a developer waits for their
+// prompt. On the loopback interface the answer takes a millisecond or it is not
+// coming.
+const listenTimeout = 300 * time.Millisecond
+
 // agentIsListening asks the health endpoint, briefly.
 //
-// Briefly because this runs on every new shell when it is wired into a profile,
-// and a second of latency there is a second a developer waits for their prompt.
-// On the loopback interface the answer takes a millisecond or it is not coming.
-func agentIsListening(ctx context.Context, base string) bool {
-	ctx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/healthz", nil)
-	if err != nil {
-		return false
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return false
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	// Read and discard, so the connection can be reused rather than left half
-	// open on a machine that opens a shell every few seconds.
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1024))
-	return resp.StatusCode == http.StatusOK
+// Through Query rather than a request of its own: two ways to ask "is the agent
+// there" are two ways to answer it differently, and this one decides whether a
+// shell exports anything at all.
+func agentIsListening(ctx context.Context, addr string) bool {
+	return Query(ctx, addr, listenTimeout).Answering
 }
 
 // ListenAddress reports where the agent is configured to listen, for the commands

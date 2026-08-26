@@ -85,10 +85,36 @@ is deliberately one-way.
 
 ```bash
 ./install.sh              # build, install, run as a service (launchd or systemd)
+                          # …and on macOS, an icon in the menu bar
 ./install.sh --shell      # …and add the shell line, if you want it
 ./install.sh --status     # is it running, and what is it applying
 ./install.sh --restart    # after editing ~/.cloakfleet/.env
 ./install.sh --uninstall  # stop it, remove the service, undo the shell line
+```
+
+On macOS the same answer is in the menu bar, from a second small binary
+(`cloakfleet-tray`) that reads the agent's health and paints an icon: the mark with
+its right-hand square outlined while values are being replaced, filled when they
+are not. It is a separate process from the agent on purpose — an icon living inside
+the proxy would vanish at the exact moment it became useful, since the state worth
+seeing is that the agent is *not* there. It holds nothing, changes nothing, and
+quitting it leaves the agent masking.
+
+`cloakfleet status` answers the same question without the installer, and answers
+it the useful way round: not "is the process up" but **what is it masking**. An
+agent with no locale selected is up, healthy and recognises almost nothing, so a
+green light there would be a green light over traffic going out in clear. It exits
+non-zero unless the agent is actually masking, which makes it usable from a
+script.
+
+```
+$ cloakfleet status
+cloakfleet is masking on 127.0.0.1:8787.
+
+  version        1.4.2
+  locales        fr, gb
+  substitution   token
+  providers      anthropic, openai
 ```
 
 The shell line is `eval "$(cloakfleet env)"`, and the reason it is written that

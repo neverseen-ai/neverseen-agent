@@ -1,8 +1,13 @@
 version: 2
 
-# One binary, four platforms, no packaging cleverness. The install script below
-# fetches an archive and puts the binary somewhere; anything more elaborate is a
-# second way to install that would drift from the first.
+# The agent for four targets, the menu bar icon for the two macOS ones, and no
+# packaging cleverness. The install script below unpacks an archive and puts the
+# binaries somewhere; anything more elaborate is a second way to install that
+# would drift from the first.
+#
+# The macOS archives carry both binaries and the Linux ones carry only the agent,
+# which is not an oversight: the icon is Cocoa, and Linux has no menu bar to put it
+# in. See internal/tray for what a Linux tray would actually cost.
 
 project_name: cloakfleet
 
@@ -14,6 +19,9 @@ before:
     - go test ./...
 
 builds:
+  # The agent, unchanged: pure Go, statically linked, cross-compiled for both
+  # platforms from wherever this runs. It has no C dependency and it must keep
+  # having none — it is the binary that proxies people's credentials.
   - id: cloakfleet
     main: ./cmd/cloakfleet
     binary: cloakfleet
@@ -25,6 +33,34 @@ builds:
       # The version the agent reports about itself. It is a var rather than a
       # const precisely so this works — declared const, the flag is silently
       # inert and every release reports the same string.
+      - -s -w -X main.version={{ .Version }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+  # The menu bar icon, which is Cocoa and therefore needs cgo. Its own build entry
+  # so the requirement stops here: the agent above still builds with CGO_ENABLED=0,
+  # and a Cocoa build that broke would cost the icon rather than the release of the
+  # masking agent.
+  #
+  # It is why this repository's release runs on macOS — nothing else has the
+  # frameworks this links against. The agent's targets are cross-compiled from
+  # there, which pure Go does anywhere.
+  - id: cloakfleet-tray
+    main: ./cmd/cloakfleet-tray
+    binary: cloakfleet-tray
+    env:
+      - CGO_ENABLED=1
+    goos: [darwin]
+    goarch: [amd64, arm64]
+    overrides:
+      # The runners are Apple Silicon, so the Intel build is a cross-compile, and
+      # cgo does not take the architecture from GOARCH — it has to be told, or it
+      # compiles arm64 objects and the link fails on a mismatch nobody reads.
+      - goos: darwin
+        goarch: amd64
+        env:
+          - CGO_ENABLED=1
+          - "CC=clang -arch x86_64"
+    ldflags:
       - -s -w -X main.version={{ .Version }}
     mod_timestamp: "{{ .CommitTimestamp }}"
 

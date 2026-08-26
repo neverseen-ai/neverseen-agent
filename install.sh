@@ -24,11 +24,14 @@
 #   ./install.sh --status      is it running, and what is it applying
 #   ./install.sh --restart     restart it (after editing the config)
 #   ./install.sh --logs        follow its log
-#   ./install.sh --uninstall   stop it, remove the service, undo the shell line
+#   ./install.sh --uninstall   stop it, remove the services, undo the shell line
 
 set -eu
 
 BIN_NAME=cloakfleet
+# The menu bar icon is its own binary, and only on macOS: it is Cocoa, and Linux
+# has no menu bar to put it in. See internal/tray for what a Linux tray would cost.
+TRAY_NAME=cloakfleet-tray
 PREFIX="${CLOAKFLEET_PREFIX:-$HOME/.local}"
 BIN_DIR="$PREFIX/bin"
 CONFIG_DIR="$HOME/.cloakfleet"
@@ -37,6 +40,8 @@ LOG_FILE="$CONFIG_DIR/agent.log"
 
 SERVICE_LABEL=ai.cloakfleet.agent
 LAUNCH_AGENT="$HOME/Library/LaunchAgents/$SERVICE_LABEL.plist"
+TRAY_LABEL=ai.cloakfleet.tray
+TRAY_AGENT="$HOME/Library/LaunchAgents/$TRAY_LABEL.plist"
 SYSTEMD_UNIT="$HOME/.config/systemd/user/cloakfleet.service"
 
 # The line added to a profile. Matched verbatim on uninstall, so it has to stay
@@ -76,6 +81,25 @@ install_binary() {
 
     chmod 0755 "$BIN_DIR/$BIN_NAME"
     say "Installed $BIN_DIR/$BIN_NAME"
+
+    # The icon, on macOS only, and never a reason to fail. If it cannot be built or
+    # is not in the archive, the agent is installed and masking anyway — the icon
+    # is how somebody sees that, not part of it.
+    if [ "$(platform)" = darwin ]; then
+        if [ -f ./go.mod ] && command -v go >/dev/null 2>&1; then
+            if go build -ldflags "-s -w -X main.version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)" \
+                -o "$BIN_DIR/$TRAY_NAME" ./cmd/cloakfleet-tray 2>/dev/null; then
+                chmod 0755 "$BIN_DIR/$TRAY_NAME"
+                say "Installed $BIN_DIR/$TRAY_NAME"
+            else
+                say "Could not build $TRAY_NAME (it needs a C toolchain); skipping the menu bar icon"
+            fi
+        elif [ -f "./$TRAY_NAME" ]; then
+            cp "./$TRAY_NAME" "$BIN_DIR/$TRAY_NAME"
+            chmod 0755 "$BIN_DIR/$TRAY_NAME"
+            say "Installed $BIN_DIR/$TRAY_NAME"
+        fi
+    fi
 
     case ":$PATH:" in
         *":$BIN_DIR:"*) ;;
@@ -146,6 +170,39 @@ EOF
     launchctl unload "$LAUNCH_AGENT" 2>/dev/null || true
     launchctl load -w "$LAUNCH_AGENT"
     say "Loaded the launchd agent $SERVICE_LABEL"
+
+    install_tray_darwin
+}
+
+install_tray_darwin() {
+    [ -x "$BIN_DIR/$TRAY_NAME" ] || return 0
+
+    mkdir -p "$(dirname "$TRAY_AGENT")"
+    cat > "$TRAY_AGENT" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$TRAY_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string><string>-c</string>
+    <string>set -a; . "$CONFIG_FILE"; set +a; exec "$BIN_DIR/$TRAY_NAME"</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <!-- No KeepAlive, unlike the agent's. The icon's own menu offers "Quit the
+       icon", and launchd would put it straight back — the person would click it
+       and watch nothing happen. The agent keeps KeepAlive because nobody is meant
+       to be able to stop the masking by accident; the icon is only a window onto
+       it, and closing a window has to work. It returns at the next login. -->
+  <key>StandardOutPath</key><string>$LOG_FILE</string>
+  <key>StandardErrorPath</key><string>$LOG_FILE</string>
+</dict>
+</plist>
+EOF
+    launchctl unload "$TRAY_AGENT" 2>/dev/null || true
+    launchctl load -w "$TRAY_AGENT"
+    say "Loaded the launchd agent $TRAY_LABEL (the menu bar icon)"
 }
 
 install_service_linux() {
@@ -229,16 +286,27 @@ do_status() {
 
     say "Service:"
     case "$(platform)" in
-        darwin) launchctl list | grep -F "$SERVICE_LABEL" || say "  not loaded" ;;
+        darwin)
+            launchctl list | grep -F "$SERVICE_LABEL" || say "  not loaded"
+            # An `if`, not `[ … ] && …`: with set -e a false test at the end of this
+            # branch is a failing compound, and the script would exit on a machine
+            # that simply has no icon installed.
+            if [ -f "$TRAY_AGENT" ]; then
+                launchctl list | grep -F "$TRAY_LABEL" || say "  the menu bar icon is not loaded"
+            fi
+            ;;
         linux)  systemctl --user is-active cloakfleet.service || true ;;
     esac
 
+    # Through the agent's own command rather than curl and a raw body. One place
+    # decides what "working" means, and it distinguishes an agent that is up from
+    # one that is up and actually masking, which a 200 does not.
+    #
+    # The address is passed in because the command reads it from the environment
+    # and this script is not the service: the variable lives in the config file,
+    # which nothing has sourced here.
     say "Health:"
-    if curl -fsS --max-time 2 "http://$addr/healthz" 2>/dev/null; then
-        :
-    else
-        say "  not answering on $addr"
-    fi
+    CLOAKFLEET_LISTEN="$addr" "$BIN_DIR/$BIN_NAME" status || true
 }
 
 do_restart() {
@@ -246,6 +314,10 @@ do_restart() {
         darwin)
             launchctl unload "$LAUNCH_AGENT" 2>/dev/null || true
             launchctl load -w "$LAUNCH_AGENT"
+            if [ -f "$TRAY_AGENT" ]; then
+                launchctl unload "$TRAY_AGENT" 2>/dev/null || true
+                launchctl load -w "$TRAY_AGENT"
+            fi
             ;;
         linux) systemctl --user restart cloakfleet.service ;;
     esac
@@ -264,6 +336,8 @@ do_uninstall() {
         darwin)
             launchctl unload "$LAUNCH_AGENT" 2>/dev/null || true
             rm -f "$LAUNCH_AGENT"
+            launchctl unload "$TRAY_AGENT" 2>/dev/null || true
+            rm -f "$TRAY_AGENT"
             ;;
         linux)
             systemctl --user disable --now cloakfleet.service 2>/dev/null || true
@@ -274,8 +348,8 @@ do_uninstall() {
     say "Stopped and removed the service."
 
     unwire_shell
-    rm -f "$BIN_DIR/$BIN_NAME"
-    say "Removed $BIN_DIR/$BIN_NAME"
+    rm -f "$BIN_DIR/$BIN_NAME" "$BIN_DIR/$TRAY_NAME"
+    say "Removed $BIN_DIR/$BIN_NAME and, if it was there, $BIN_DIR/$TRAY_NAME"
 
     # The config and the identity are left alone on purpose. The config is the
     # operator's own work, and the identity is what a supervision backend knows
