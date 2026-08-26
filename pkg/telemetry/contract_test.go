@@ -22,20 +22,23 @@ import (
 // argues for it in a diff a reviewer can see — which is the only point at which
 // "should the backend know this?" gets asked out loud.
 var allowedStrings = map[string]string{
-	"agent_id":           "an identity the backend itself issued",
-	"state.version":      "the agent build, which is the point of reporting state",
-	"state.platform":     "the operating system and architecture",
-	"state.substitution": "which of two modes is running: token or fake",
-	"state.locales[]":    "country codes from the agent's own registry",
-	"state.providers[]":  "upstream codes from the agent's own list",
-	"state.addresses[]":  "the machine's own IP addresses — personal data, and the one field here that is; see the field's comment",
-	"counters.masked{}":  "category names from the agent's own catalogue, never a value",
-	"counters.models{}":  "the model id the provider reported, which is a product name",
+	"agent_id":                    "an identity the backend itself issued",
+	"state.version":               "the agent build, which is the point of reporting state",
+	"state.platform":              "the operating system and architecture",
+	"state.substitution":          "which of two modes is running: token or fake",
+	"state.locales[]":             "country codes from the agent's own registry",
+	"state.providers[]":           "upstream codes from the agent's own list",
+	"state.addresses[]":           "the machine's own IP addresses — personal data, and the one field here that is; see the field's comment",
+	"buckets[].counters.masked{}": "category names from the agent's own catalogue, never a value",
+	"buckets[].counters.models{}": "the model id the provider reported, which is a product name",
 }
 
 func TestHeartbeatCarriesNoContent(t *testing.T) {
+	// The type an agent actually posts, so a bucket's own fields are walked at the
+	// path they reach the wire under. Walking Heartbeat instead would check a shape
+	// nothing sends and miss anything a bucket gained.
 	var found []string
-	stringPaths(reflect.TypeOf(Heartbeat{}), "", &found)
+	stringPaths(reflect.TypeOf(HeartbeatBatch{}), "", &found)
 	sort.Strings(found)
 
 	for _, path := range found {
@@ -119,7 +122,7 @@ func jsonName(field reflect.StructField) string {
 // knows about is the failure mode this guards: a field renamed here and read
 // under its old name there fails no compiler and no unit test, and shows up as a
 // dashboard column that is quietly always zero.
-const goldenPath = "testdata/heartbeat.json"
+const goldenPath = "testdata/heartbeats.json"
 
 var updateGolden = flag.Bool("update-golden", false, "rewrite "+goldenPath+" from this run")
 
@@ -127,11 +130,10 @@ func TestHeartbeatWireFormat(t *testing.T) {
 	// Fixed values throughout: a golden file built from time.Now() pins nothing.
 	at := time.Date(2026, 8, 25, 14, 30, 0, 0, time.UTC)
 
-	hb := Heartbeat{
+	batch := HeartbeatBatch{
 		Schema:  SchemaVersion,
 		AgentID: "agt_7f3c9a21",
 		SentAt:  at,
-		Window:  Window{Start: at.Add(-5 * time.Minute), End: at},
 		State: State{
 			Version:      "1.4.2",
 			Platform:     "darwin/arm64",
@@ -146,70 +148,91 @@ func TestHeartbeatWireFormat(t *testing.T) {
 			// RFC 3849), so nothing here is a real machine anywhere.
 			Addresses: []string{"192.0.2.47", "2001:db8::47"},
 		},
-		Counters: Counters{
-			Requests: 128,
-			Masked:   map[string]int{"EMAIL": 41, "NIR": 3, "SECRET_OPENAI_KEY": 1},
-			Models: map[string]TokenUsage{
-				// The shape a coding agent actually produces: a little fresh
-				// input, a lot of cache read.
-				"claude-sonnet-4": {Input: 1_204, Output: 22_871, CacheWrite: 18_430, CacheRead: 184_302},
-				"gpt-4o":          {Input: 9_140, Output: 1_205},
+		// Two buckets, not one. A batch of one would be a golden in which the
+		// plural case — the whole reason the message is a batch — never appears,
+		// and a backend that only ever read the first element would pass.
+		Buckets: []Bucket{
+			{
+				Window: Window{Start: at.Add(-10 * time.Minute), End: at.Add(-5 * time.Minute)},
+				Counters: Counters{
+					Requests: 128,
+					Masked: map[string]int{
+						"EMAIL":             41,
+						"NIR":               3,
+						"SECRET_OPENAI_KEY": 1,
+					},
+					Models: map[string]TokenUsage{
+						"claude-sonnet-4": {
+							Input:      1204,
+							Output:     22871,
+							CacheWrite: 18430,
+							CacheRead:  184302,
+						},
+						"gpt-4o": {Input: 9140, Output: 1205},
+					},
+					// Both omitempty, and in the example on purpose: a field neither
+					// repository ever saw on the wire is exactly the drift this
+					// golden exists to catch.
+					Restarts: 2,
+					Dropped:  2,
+				},
 			},
-			Dropped: 2,
+			{
+				Window:   Window{Start: at.Add(-5 * time.Minute), End: at},
+				Counters: Counters{Requests: 7},
+			},
 		},
 	}
 
-	encoded, err := json.MarshalIndent(hb, "", "  ")
+	encoded, err := json.MarshalIndent(batch, "", "  ")
 	if err != nil {
 		t.Fatalf("encode: %v", err)
 	}
 	encoded = append(encoded, '\n')
 
 	if *updateGolden {
-		if err := os.MkdirAll(filepath.Dir(goldenPath), 0o750); err != nil {
-			t.Fatalf("create the golden directory: %v", err)
-		}
-		if err := os.WriteFile(goldenPath, encoded, 0o600); err != nil {
-			t.Fatalf("write the golden: %v", err)
+		if err := os.WriteFile(filepath.Clean(goldenPath), encoded, 0o600); err != nil {
+			t.Fatal(err)
 		}
 		t.Logf("rewrote %s", goldenPath)
 	}
 
 	// Compared against the embedded copy rather than by re-reading the file, so
 	// that what the backend imports and what this test checks cannot differ.
-	if string(encoded) != ExampleHeartbeatJSON {
+	if string(encoded) != ExampleHeartbeatsJSON {
 		t.Errorf("the wire format changed.\n got:\n%s\nwant:\n%s\n\n"+
 			"If the change is intended, run with -update-golden and say in the commit what a "+
-			"backend on the old format will do with the new one.", encoded, ExampleHeartbeatJSON)
+			"backend on the old format will do with the new one.", encoded, ExampleHeartbeatsJSON)
 	}
 
 	// And it has to survive the round trip, or the backend reads something the
 	// agent did not mean.
-	var back Heartbeat
+	var back HeartbeatBatch
 	if err := json.Unmarshal(encoded, &back); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if !reflect.DeepEqual(hb, back) {
-		t.Errorf("the heartbeat does not round-trip through JSON:\n got %+v\nwant %+v", back, hb)
+	if !reflect.DeepEqual(batch, back) {
+		t.Errorf("the batch does not round-trip through JSON:\n got %+v\nwant %+v", back, batch)
 	}
-}
 
-// An empty window must not carry empty maps: a backend counting keys would read
-// "no categories" and "the field is absent" the same way, and omitempty is what
-// keeps a quiet agent's heartbeat small.
-func TestEmptyCountersOmitTheirMaps(t *testing.T) {
-	encoded, err := json.Marshal(Heartbeat{Schema: SchemaVersion})
-	if err != nil {
-		t.Fatal(err)
+	// And expanding it gives the shared fields to every bucket. A backend reading
+	// the first element's window for all of them would otherwise pass every test
+	// here and file a week of buckets under one five-minute period.
+	windows := batch.Windows()
+	if len(windows) != len(batch.Buckets) {
+		t.Fatalf("Windows gave %d reports for %d buckets", len(windows), len(batch.Buckets))
 	}
-	for _, absent := range []string{"masked", "models", "dropped"} {
-		if strings.Contains(string(encoded), absent) {
-			t.Errorf("an empty heartbeat carries %q: %s", absent, encoded)
+	for i, one := range windows {
+		if one.AgentID != batch.AgentID || one.Schema != batch.Schema || !one.SentAt.Equal(batch.SentAt) {
+			t.Errorf("report %d does not carry the batch's own identity: %+v", i, one)
 		}
-	}
-	// The counts that are always meaningful stay, including at zero: a window
-	// with no requests is a fact, not a missing field.
-	if !strings.Contains(string(encoded), `"requests":0`) {
-		t.Errorf("an empty heartbeat drops its request count: %s", encoded)
+		if !one.Window.Start.Equal(batch.Buckets[i].Window.Start) {
+			t.Errorf("report %d covers from %v, want %v", i,
+				one.Window.Start, batch.Buckets[i].Window.Start)
+		}
+		if one.Counters.Requests != batch.Buckets[i].Counters.Requests {
+			t.Errorf("report %d carries %d requests, want %d", i,
+				one.Counters.Requests, batch.Buckets[i].Counters.Requests)
+		}
 	}
 }

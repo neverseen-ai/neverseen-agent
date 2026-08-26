@@ -2,8 +2,8 @@ package telemetry
 
 import _ "embed"
 
-// ExampleHeartbeatJSON is one heartbeat, on the wire, exactly as an agent sends
-// it.
+// ExampleHeartbeatsJSON is one batch of heartbeats, on the wire, exactly as an
+// agent sends it.
 //
 // It is embedded rather than left as a file so that both sides of the contract
 // can test against the same bytes without knowing where the other one's source
@@ -16,5 +16,5 @@ import _ "embed"
 // to re-stamp them. That is deliberate: a golden file built from time.Now() pins
 // nothing.
 //
-//go:embed testdata/heartbeat.json
-var ExampleHeartbeatJSON string
+//go:embed testdata/heartbeats.json
+var ExampleHeartbeatsJSON string

@@ -31,9 +31,93 @@ import (
 // Sent in every message so a backend serving several agent versions can tell
 // them apart, and so an agent talking to an older backend is rejected cleanly
 // rather than silently misread.
-const SchemaVersion = 1
+//
+// 2 because an agent now posts a HeartbeatBatch to /v1/heartbeats where it used to
+// post a Heartbeat to /v1/heartbeat, and Counters gained Restarts. The path change
+// alone would have an older backend answer 404, which the agent reads as an outage
+// and buffers against for seven days; the version is what turns that into the
+// refusal the field exists to produce. Bumping it is not optional on a change like
+// this — the field is only worth anything if it moves when the wire does.
+const SchemaVersion = 2
 
-// Heartbeat is what a supervised agent reports, on a fixed interval.
+// HeartbeatBatch is what a supervised agent posts: one or more buckets, with the
+// fields they share said once.
+//
+// A batch rather than a message per bucket, because an agent that could not reach
+// the backend keeps closing a bucket every interval and has a backlog to file when
+// it comes back. A week of five-minute buckets is two thousand of them, and two
+// thousand signed requests from every workstation in the fleet, at the moment the
+// service recovers, is a recovery that ends in a second outage. Batched, the same
+// week is a few dozen requests.
+//
+// The ordinary case — one bucket, on the interval — is the same message with one
+// element. Deliberately: a separate shape for the single case would be a second
+// code path exercised only after an outage, which is the branch nobody tests.
+type HeartbeatBatch struct {
+	Schema int `json:"schema"`
+
+	// AgentID is the identity the backend issued at enrolment.
+	AgentID string `json:"agent_id"`
+
+	// SentAt is when the agent composed this message — not when any of the buckets
+	// were measured. The backend uses it to spot a clock that is wrong and to
+	// reject a replayed message.
+	SentAt time.Time `json:"sent_at"`
+
+	// State is what the agent is applying right now, so it is said once for the
+	// whole batch: stamping a week-old bucket with today's configuration would be
+	// no more true for being repeated on every one of them.
+	State State `json:"state"`
+
+	// Buckets are the windows being filed, oldest first.
+	Buckets []Bucket `json:"buckets"`
+}
+
+// Bucket is one window's counters.
+type Bucket struct {
+	// Window is the period the counters cover. Sent explicitly rather than
+	// inferred from the interval, because a bucket that waited out an outage is
+	// filed long after the period it measured.
+	//
+	// It is also what makes filing a bucket idempotent. An agent forgets a batch
+	// only once the backend has answered, so a process killed between the answer
+	// and that write re-sends buckets that were in fact stored — and the backend
+	// recognises them by (agent, window) and accepts the retry without counting it
+	// twice. Any backend on this contract has to key on the window for that reason:
+	// nothing else in a bucket identifies it.
+	Window Window `json:"window"`
+
+	// Counters are what happened during the window.
+	Counters Counters `json:"counters"`
+}
+
+// Windows expands a batch into the per-window reports a backend records, so that
+// both sides cannot disagree about how the shared fields are applied.
+//
+// Here rather than in the backend for the same reason Sign is here: one
+// implementation, because two would be two chances to differ — and a batch whose
+// buckets were stamped with the wrong sender or schema on one side only has no
+// symptom beyond a dashboard that is subtly wrong.
+func (b HeartbeatBatch) Windows() []Heartbeat {
+	out := make([]Heartbeat, 0, len(b.Buckets))
+	for _, one := range b.Buckets {
+		out = append(out, Heartbeat{
+			Schema:   b.Schema,
+			AgentID:  b.AgentID,
+			SentAt:   b.SentAt,
+			Window:   one.Window,
+			State:    b.State,
+			Counters: one.Counters,
+		})
+	}
+	return out
+}
+
+// Heartbeat is one window as a backend records it: a batch's shared fields plus
+// one of its buckets, expanded by Windows.
+//
+// Not a message in its own right — an agent posts a HeartbeatBatch — but the shape
+// a stored window has, and the argument every function that records one takes.
 type Heartbeat struct {
 	Schema int `json:"schema"`
 
@@ -132,8 +216,22 @@ type Counters struct {
 	// time one did.
 	Models map[string]TokenUsage `json:"models,omitempty"`
 
-	// Dropped counts heartbeats this agent had to discard because the backend
-	// was unreachable for longer than its buffer holds.
+	// Restarts counts how many times the agent process started during the window.
+	//
+	// Reported per window rather than inferred from StartedAt, because StartedAt
+	// only ever shows the *current* process: an agent that restarted eleven times
+	// between two heartbeats looks, from that field alone, exactly like one that
+	// restarted once. And an agent buffering through a backend outage files a
+	// bucket every interval, so the restarts stay attributed to the five minutes
+	// they happened in rather than to the moment the backend came back.
+	//
+	// The agent counts its own start, so the first window an agent ever files
+	// carries 1 — that one is the install rather than a restart, and the backend
+	// can tell because it is the same report that enrolled.
+	Restarts int `json:"restarts,omitempty"`
+
+	// Dropped counts windows this agent had to discard because the backend was
+	// unreachable for longer than its buffer holds.
 	//
 	// Reported rather than hidden: a gap in the record is exactly what an
 	// auditor needs to see, and a silently lost window looks identical to a

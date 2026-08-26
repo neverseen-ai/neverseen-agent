@@ -60,41 +60,22 @@ func TestTakeStartsANewWindow(t *testing.T) {
 	}
 }
 
-// A heartbeat that could not be delivered must not lose its window: the record
-// the backend keeps would have a hole in it that looks exactly like a period in
-// which nothing happened.
-func TestRestoreKeepsAFailedWindow(t *testing.T) {
+// A process builds exactly one Recorder, so the constructor is where a start is
+// counted: there is no separate call anybody can forget, and no way for the tally
+// to disagree with how many processes there actually were.
+func TestARecorderCountsItsProcessStart(t *testing.T) {
 	r := NewRecorder(epoch)
-	r.Request()
-	r.Masked(map[pii.Category]int{pii.CatEmail: 4})
-	r.Usage("gpt-4o", telemetry.TokenUsage{Input: 10, Output: 2, CacheWrite: 3, CacheRead: 7})
 
-	counters, window := r.Take(epoch.Add(5 * time.Minute))
-	r.Restore(counters, window)
-
-	// More happens while the backend is still down.
-	r.Request()
-	r.Usage("gpt-4o", telemetry.TokenUsage{Input: 5, CacheRead: 1})
-
-	merged, mergedWindow := r.Take(epoch.Add(10 * time.Minute))
-
-	if merged.Requests != 2 {
-		t.Errorf("requests = %d, want 2 — the restored window plus the new one", merged.Requests)
+	first, _ := r.Take(epoch.Add(5 * time.Minute))
+	if first.Restarts != 1 {
+		t.Errorf("restarts = %d in the first bucket, want 1", first.Restarts)
 	}
-	if merged.Masked["EMAIL"] != 4 {
-		t.Errorf("masked = %v, want EMAIL:4 carried over", merged.Masked)
-	}
-	// Every count, not just the two obvious ones. Cache tokens dominate a coding
-	// agent's bill, so losing them on a retry would understate it by an order of
-	// magnitude while looking plausible.
-	want := telemetry.TokenUsage{Input: 15, Output: 2, CacheWrite: 3, CacheRead: 8}
-	if got := merged.Models["gpt-4o"]; got != want {
-		t.Errorf("usage = %+v, want %+v", got, want)
-	}
-	// And the window covers the whole period, so a backend computing a rate
-	// divides by what was actually measured.
-	if !mergedWindow.Start.Equal(epoch) {
-		t.Errorf("the merged window starts at %v, want %v", mergedWindow.Start, epoch)
+
+	// And only in the bucket the start happened in. Repeated on every bucket, a
+	// perfectly healthy agent would read as one restarting every five minutes.
+	second, _ := r.Take(epoch.Add(10 * time.Minute))
+	if second.Restarts != 0 {
+		t.Errorf("restarts = %d in the next bucket, want 0", second.Restarts)
 	}
 }
 
@@ -104,7 +85,7 @@ func TestDropIsReportedAndDoesNotStretchTheWindow(t *testing.T) {
 	r := NewRecorder(epoch)
 	r.Request()
 	r.Take(epoch.Add(5 * time.Minute)) // taken and lost
-	r.Drop()
+	r.Drop(1)
 
 	counters, window := r.Take(epoch.Add(10 * time.Minute))
 	if counters.Dropped != 1 {

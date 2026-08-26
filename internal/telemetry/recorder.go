@@ -37,14 +37,26 @@ type Recorder struct {
 	masked   map[string]int
 	models   map[string]telemetry.TokenUsage
 	dropped  int
+	restarts int
+
+	// changes counts what has been recorded into the open window, so a caller can
+	// tell whether it is worth writing to disk again without comparing two sets of
+	// maps. Reset with the counters, so zero means "nothing to snapshot".
+	changes uint64
 }
 
 // NewRecorder starts a window at now.
+//
+// It opens with one restart already counted, because a process builds exactly one
+// Recorder: making the constructor the place a start is recorded means there is no
+// separate call anybody can forget to make, and no way for the count to disagree
+// with the number of processes there actually were.
 func NewRecorder(now time.Time) *Recorder {
 	return &Recorder{
-		start:  now,
-		masked: make(map[string]int),
-		models: make(map[string]telemetry.TokenUsage),
+		start:    now,
+		masked:   make(map[string]int),
+		models:   make(map[string]telemetry.TokenUsage),
+		restarts: 1,
 	}
 }
 
@@ -53,6 +65,7 @@ func (r *Recorder) Request() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.requests++
+	r.changes++
 }
 
 // Masked counts values replaced, by category. Repeats included: a value masked
@@ -64,6 +77,7 @@ func (r *Recorder) Masked(counts map[pii.Category]int) {
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.changes++
 	for cat, n := range counts {
 		r.masked[string(cat)] += n
 	}
@@ -82,6 +96,7 @@ func (r *Recorder) Usage(model string, usage telemetry.TokenUsage) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	r.changes++
 	seen := r.models[model]
 	seen.Input += usage.Input
 	seen.Output += usage.Output
@@ -102,6 +117,7 @@ func (r *Recorder) Take(now time.Time) (telemetry.Counters, telemetry.Window) {
 	counters := telemetry.Counters{
 		Requests: r.requests,
 		Dropped:  r.dropped,
+		Restarts: r.restarts,
 	}
 	if len(r.masked) > 0 {
 		counters.Masked = r.masked
@@ -112,52 +128,69 @@ func (r *Recorder) Take(now time.Time) (telemetry.Counters, telemetry.Window) {
 	window := telemetry.Window{Start: r.start, End: now}
 
 	r.start = now
-	r.requests, r.dropped = 0, 0
+	r.requests, r.dropped, r.restarts = 0, 0, 0
+	r.changes = 0
 	r.masked = make(map[string]int)
 	r.models = make(map[string]telemetry.TokenUsage)
 
 	return counters, window
 }
 
-// Restore puts a window's counters back after a failed send, so the next attempt
-// carries them.
+// Snapshot is what the open window holds right now, without closing it.
 //
-// Without it a heartbeat that could not be delivered loses its window outright,
-// and the record the backend keeps has a hole in it that looks exactly like a
-// period in which nothing happened.
-func (r *Recorder) Restore(counters telemetry.Counters, window telemetry.Window) {
+// It exists so a bucket in progress can be written to disk between the intervals
+// that close them: a hard kill — SIGKILL, a power cut, a battery reaching zero —
+// cannot be caught and handled, so the only thing that bounds what it costs is
+// having written the counters down recently. Nothing about it touches the request
+// path; it is read on the reporter's own goroutine like everything else here.
+//
+// The maps are copied rather than handed over, because the window stays open and
+// the recorder goes on writing to its own.
+//
+// The third result changes whenever something was counted, so a caller can skip
+// rewriting a file that would come out identical — an idle workstation should not
+// be writing the same bytes every half minute for the life of the process.
+func (r *Recorder) Snapshot(now time.Time) (telemetry.Counters, telemetry.Window, uint64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if window.Start.Before(r.start) {
-		r.start = window.Start
+	counters := telemetry.Counters{
+		Requests: r.requests,
+		Dropped:  r.dropped,
+		Restarts: r.restarts,
 	}
-	r.requests += counters.Requests
-	r.dropped += counters.Dropped
-	for cat, n := range counters.Masked {
-		r.masked[cat] += n
+	if len(r.masked) > 0 {
+		counters.Masked = make(map[string]int, len(r.masked))
+		for cat, n := range r.masked {
+			counters.Masked[cat] = n
+		}
 	}
-	for model, usage := range counters.Models {
-		seen := r.models[model]
-		seen.Input += usage.Input
-		seen.Output += usage.Output
-		seen.CacheWrite += usage.CacheWrite
-		seen.CacheRead += usage.CacheRead
-		r.models[model] = seen
+	if len(r.models) > 0 {
+		counters.Models = make(map[string]telemetry.TokenUsage, len(r.models))
+		for model, usage := range r.models {
+			counters.Models[model] = usage
+		}
 	}
+	return counters, telemetry.Window{Start: r.start, End: now}, r.changes
 }
 
-// Drop abandons a window and records that it happened.
+// Drop records that n buckets were abandoned without being delivered.
 //
 // Counted and reported rather than dropped quietly: a gap in the record is
-// exactly what an auditor needs to see, and a silently lost window is
-// indistinguishable from a quiet one.
+// exactly what an auditor needs to see, and a silently lost bucket is
+// indistinguishable from a quiet five minutes.
 //
-// It deliberately does not extend the current window backwards the way Restore
-// does. The data for that period is gone, and a window claiming to start before
-// the data it holds would have a backend dividing by a period it never measured.
-func (r *Recorder) Drop() {
+// The count lands in the *current* window, deliberately, rather than extending it
+// backwards over the period that was lost. That data is gone, and a window
+// claiming to start before the data it holds would have a backend dividing by a
+// period it never measured.
+func (r *Recorder) Drop(n int) {
+	if n <= 0 {
+		return
+	}
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.dropped++
+	r.dropped += n
+	r.changes++
 }

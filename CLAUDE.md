@@ -9,8 +9,10 @@ out and restoring them on the way back. Module path:
 open source — say "source available").
 
 The paid supervision backend is a **separate, private repository**
-(`cloakfleet-cloud`). It imports this one; this one must never import it, and
-must compile and run with no backend at all.
+(`cloakfleet-cloud`), checked out alongside this one — `../cloakfleet-cloud`. It
+imports this one; this one must never import it, and must compile and run with no
+backend at all. Read it there when a change touches the shared contract
+(`pkg/telemetry`); never add it as a dependency.
 
 ## Commands
 
@@ -128,7 +130,7 @@ changing, which on the dashboard is indistinguishable from a laptop moving
 networks.
 
 **Adding a field to the contract means updating the golden in the same commit.**
-`testdata/heartbeat.json` is regenerated with `go test ./pkg/telemetry/
+`testdata/heartbeats.json` is regenerated with `go test ./pkg/telemetry/
 -update-golden`, and it must *exercise* the new field: `Addresses` is `omitempty`,
 so an example that left it out would be a field neither repository ever tested on
 the wire — which is exactly the drift the shared golden exists to catch. Use
@@ -141,9 +143,93 @@ has no reporter at all rather than one that quietly does nothing. A supervision
 backend that cannot be reached must never stop the masking, or the security
 control is taken down by the tool that watches it.
 
-**A failed heartbeat keeps its window** and merges it into the next, up to six
-hours, then abandons it and *counts the loss*. A silently dropped window looks
-exactly like a quiet one, and the gap is what an auditor needs to see.
+**A window the backend refused becomes a bucket in a queue on disk**
+(`internal/telemetry/buffer.go`), and a bucket is still closed every interval
+while the backend is down. That is what keeps the record's five-minute grain
+through an outage: merged into one window instead, a supervision service down over
+a weekend came back to a single report saying "eleven thousand requests, some time
+between Friday and Monday" — which cannot answer when a spike happened, when an
+agent restarted, or whether the policy changed halfway through.
+
+**So `Run` holds two cadences, and they must stay apart.** A ticker closes a
+bucket every interval whatever the backend is doing; a separate timer sends, on
+the retry ladder. Fused — one timer that both closed the window and sent it — the
+window boundaries moved with the backend's health, which is the bug above.
+
+**On disk because the buffer is otherwise only as durable as the process.** A
+workstation rebooted, suspended or updated mid-outage lost every queued bucket
+*and* the dropped counter that recorded the loss, which is the one outcome that
+counter exists to prevent. The file is written by rename, not in place: a torn
+file is unreadable at the next start, which loses exactly what the persistence was
+added to keep.
+
+**Two bounds, because the interval is configurable**: seven days of age, and 2016
+buckets. An agent set to report every ten seconds reaches the age bound having
+queued sixty thousand buckets. Age is measured from where a bucket *ends*, not
+where it starts — a laptop suspended for a week wakes with one bucket covering the
+whole week, and measured from the start it would be discarded the moment it was
+closed. Whichever bound bites, the oldest go and **the loss is counted** into the
+bucket being closed right then: a gap nobody counted looks exactly like a quiet
+period, and that figure is what an auditor needs.
+
+**The backlog goes in one batch per request, sixty buckets at a time**
+(`maxBucketsPerRequest`), oldest first, and while any remains the next attempt is a
+second away rather than an interval — a week of buckets delivered one attempt per
+five minutes would take a week again. Batched because every workstation in the
+fleet comes back the moment the backend does: a week is two thousand buckets, and
+two thousand signed requests per workstation is a recovery that ends in a second
+outage. The bound is the backend's body limit, not politeness. The ordinary case is
+the same message with one bucket — a separate shape for the single case would be a
+code path exercised only after an outage.
+
+**And it is retried on a ladder** — 1s, 5s, 10s, 20s, 40s, doubling on, capped at
+the reporting interval (`retryAfter`). Short at the bottom because most failures
+are a redeployment or one dropped connection, and waiting a whole interval to find
+that out has the fleet view calling a healthy agent silent for five minutes;
+growing because a backend that is genuinely down must not be hit every second by
+every workstation; capped at the interval because a ladder that grew past it would
+have a backend recovering after an hour waiting another hour to hear from anybody.
+One success resets it. A failure to *enrol* climbs the same ladder — it is the same
+backend being unreachable.
+
+**A hard kill cannot be caught, so what bounds it is having written recently.**
+`snapshotInterval` (30s) writes the bucket *in progress*, and the next process
+files it as a bucket of its own — its window ending at the snapshot, not at the
+kill, so nothing is attributed to a period nobody measured. What is still lost is
+bounded by that interval; driving it to zero means writing on every request, which
+the request path must not pay for.
+
+**Two files, and that is the reason.** The queue is rewritten only when a bucket is
+closed or delivered; the bucket in progress lives beside it under
+`livePathFor(path)` and is the one rewritten often. In one file, a snapshot every
+thirty seconds re-serialised the whole backlog — during a long outage on a busy
+workstation, a megabyte of JSON onto the disk twice a minute for as long as the
+outage lasted.
+
+**The interval that closes a bucket clears the `live` entry with it**, and that is
+not housekeeping — it is the whole hazard of the mechanism. For as long as both
+exist the same counters are on disk twice and only one is still true; left behind,
+the next process files both and every number for that period doubles.
+`TestClosingABucketClearsTheLiveEntry` reads the files rather than the loaded
+queue, because loading deliberately turns a `live` entry into an ordinary bucket
+and is the one view in which the distinction no longer exists.
+
+**The dropped count is on disk with the buckets**, not only in memory — it would
+otherwise be lost by exactly the crash the file exists to survive, which is the one
+outcome that figure exists to prevent. It keeps the file alive on its own: an empty
+queue that discarded the count would report the gap as a quiet period. And one
+unusable bucket costs one bucket — `keepUsable` steps over it and counts it, rather
+than refusing the file and throwing away every good bucket beside it. Nothing is written while
+nothing is counted — `Recorder.Snapshot`'s change count is what makes an idle
+workstation stop rewriting the same bytes every thirty seconds.
+
+**A process builds exactly one `Recorder`, so the constructor is where a restart
+is counted.** `Counters.Restarts` is per bucket, and `NewRecorder` opens with one
+already counted: there is then no separate call anybody can forget, and no way for
+the tally to disagree with how many processes there actually were. It cannot be
+derived from `State.StartedAt`, which only ever holds the current process — eleven
+restarts between two heartbeats read there as one. The first bucket an agent ever
+files carries 1, and that one is the install.
 
 **Reading token usage is where the vendors disagree about more than spelling.**
 Anthropic reports cache tokens *beside* the input; OpenAI reports the whole input
@@ -160,9 +246,10 @@ machine down with the proxy. Availability over enforcement, on purpose.
 
 **It touches no login file unless asked** (`--shell`), and `--uninstall` undoes
 exactly what it added. It leaves `~/.cloakfleet/` alone, because that holds the
-operator's config and the identity a backend knows the machine by — deleting the
-identity silently would have the next install enrol as a second agent and count
-twice against what they pay for.
+operator's config, the identity a backend knows the machine by, and any buckets
+not yet delivered — deleting the identity silently would have the next install
+enrol as a second agent and count twice against what they pay for, and deleting
+the buffer would throw away the record of an outage that is still in progress.
 
 ## Conventions
 

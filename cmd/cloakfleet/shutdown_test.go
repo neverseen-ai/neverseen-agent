@@ -44,12 +44,13 @@ func TestTheLastWindowIsFiledBeforeTheCommandReturns(t *testing.T) {
 				AgentID: "agt_shutdown_test",
 				Key:     strings.Repeat("ab", 32),
 			})
-		case "/v1/heartbeat":
+		case "/v1/heartbeats":
 			body, _ := io.ReadAll(r.Body)
-			var hb telemetry.Heartbeat
-			if err := json.Unmarshal(body, &hb); err == nil {
+			var batch telemetry.HeartbeatBatch
+			if err := json.Unmarshal(body, &batch); err == nil {
 				mu.Lock()
-				heartbeats = append(heartbeats, hb)
+				// Expanded through the contract's own function, as the backend does.
+				heartbeats = append(heartbeats, batch.Windows()...)
 				mu.Unlock()
 			}
 		default:

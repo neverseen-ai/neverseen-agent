@@ -128,9 +128,14 @@ func reporterFromEnv(logger *slog.Logger, recorder *telemetry.Recorder, srv *Ser
 		BaseURL:        strings.TrimRight(backend, "/"),
 		EnrolmentToken: strings.TrimSpace(os.Getenv(EnvEnrolmentToken)),
 		IdentityFile:   identity,
-		Recorder:       recorder,
-		State:          srv.State,
-		Logger:         logger,
+		// Beside the identity rather than behind a setting of its own: it is agent
+		// state an operator never edits, it belongs in the directory the installer
+		// already leaves alone on uninstall, and a variable nobody would set is one
+		// more line of documentation to keep true.
+		BufferFile: filepath.Join(filepath.Dir(identity), "buffer.json"),
+		Recorder:   recorder,
+		State:      srv.State,
+		Logger:     logger,
 	})
 }
 
