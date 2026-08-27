@@ -17,6 +17,16 @@ import (
 func TestCheckCatalogue(t *testing.T) {
 	ok := regexp.MustCompile(`x`)
 
+	// One sound entry, and a helper that breaks exactly one field of it. Written
+	// this way so a new required field fails every case that should fail rather
+	// than being quietly absent from four hand-written literals.
+	sound := CategoryInfo{Prefix: "A", Score: 50, Group: GroupPersonal, Label: "a value"}
+	without := func(break_ func(*CategoryInfo)) CategoryInfo {
+		broken := sound
+		break_(&broken)
+		return broken
+	}
+
 	tests := []struct {
 		name     string
 		patterns []Pattern
@@ -26,7 +36,7 @@ func TestCheckCatalogue(t *testing.T) {
 		{
 			name:     "a sound catalogue passes",
 			patterns: []Pattern{{Regex: ok, Category: "A", Label: "a"}},
-			registry: map[Category]CategoryInfo{"A": {Prefix: "A", Score: 50}},
+			registry: map[Category]CategoryInfo{"A": sound},
 		},
 		{
 			// The failure that shipped in the project this replaces: a pattern
@@ -34,26 +44,59 @@ func TestCheckCatalogue(t *testing.T) {
 			// "[_1]" and whose matches were scored by a default.
 			name:     "a pattern emitting an unregistered category",
 			patterns: []Pattern{{Regex: ok, Category: "GHOST", Label: "ghost pattern"}},
-			registry: map[Category]CategoryInfo{"A": {Prefix: "A", Score: 50}},
+			registry: map[Category]CategoryInfo{"A": sound},
 			want:     "not in the registry",
 		},
 		{
 			name:     "a registered category with no prefix",
 			patterns: nil,
-			registry: map[Category]CategoryInfo{"A": {Score: 50}},
+			registry: map[Category]CategoryInfo{"A": without(func(i *CategoryInfo) { i.Prefix = "" })},
 			want:     "no token prefix",
 		},
 		{
 			name:     "a registered category with no score",
 			patterns: nil,
-			registry: map[Category]CategoryInfo{"A": {Prefix: "A"}},
+			registry: map[Category]CategoryInfo{"A": without(func(i *CategoryInfo) { i.Score = 0 })},
 			want:     "outside 1-100",
 		},
 		{
 			name:     "a score above the scale",
 			patterns: nil,
-			registry: map[Category]CategoryInfo{"A": {Prefix: "A", Score: 101}},
+			registry: map[Category]CategoryInfo{"A": without(func(i *CategoryInfo) { i.Score = 101 })},
 			want:     "outside 1-100",
+		},
+		{
+			// A category with no label: every surface listing it would have to
+			// invent a name, and two of them would invent different ones.
+			name:     "a registered category with no label",
+			patterns: nil,
+			registry: map[Category]CategoryInfo{"A": without(func(i *CategoryInfo) { i.Label = "" })},
+			want:     "no label",
+		},
+		{
+			// A category with no group is absent from every surface that lists the
+			// catalogue by family — which is the only way forty of them are listed.
+			name:     "a registered category with no group",
+			patterns: nil,
+			registry: map[Category]CategoryInfo{"A": without(func(i *CategoryInfo) { i.Group = "" })},
+			want:     "no group",
+		},
+		{
+			name:     "a category naming a group that does not exist",
+			patterns: nil,
+			registry: map[Category]CategoryInfo{"A": without(func(i *CategoryInfo) { i.Group = "invented" })},
+			want:     "not registered",
+		},
+		{
+			// Two identical rows in the menu that switches them, and no way for
+			// somebody unticking one to know which they got.
+			name:     "two categories sharing a label",
+			patterns: nil,
+			registry: map[Category]CategoryInfo{
+				"A": sound,
+				"B": {Prefix: "B", Score: 50, Group: GroupPersonal, Label: "a value"},
+			},
+			want: "share the label",
 		},
 	}
 

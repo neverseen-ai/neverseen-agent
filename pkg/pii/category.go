@@ -130,71 +130,83 @@ type CategoryInfo struct {
 	// string, and without the rank "postgres://admin:pw@db" resolved to an
 	// EMAIL match — over the password, not the host.
 	Secret bool
+
+	// Group is the family this category is listed under by anything that has to
+	// put the catalogue in front of a person. Forty switches is not a list
+	// anybody reads; see group.go for why the grouping is deliberately not the
+	// same fact as Secret.
+	Group Group
+
+	// Label is the category's name in words, for a menu or a report. It is not
+	// Pattern.Label, which describes one *shape* — Slack has a bot token and an
+	// app token, and those need different labels under one category. This is the
+	// one name the category itself carries.
+	Label string
 }
 
 // categoryRegistry is the whole catalogue, minus the regexes.
 var categoryRegistry = map[Category]CategoryInfo{
 	// --- locale-independent identifiers -------------------------------------
-	CatEmail:      {Prefix: "EMAIL", Score: 95},
-	CatCreditCard: {Prefix: "CARD", Score: 95, Verify: LuhnCheck},
-	CatIBAN:       {Prefix: "IBAN", Score: 95, Verify: IBANCheck},
-	CatIPAddr:     {Prefix: "IP", Score: 75},
-	CatMongoID:    {Prefix: "MONGOID", Score: 85},
-	CatDOB:        {Prefix: "DOB", Score: 75},
+	CatEmail:      {Prefix: "EMAIL", Score: 95, Group: GroupPersonal, Label: "Email address"},
+	CatCreditCard: {Prefix: "CARD", Score: 95, Verify: LuhnCheck, Group: GroupBanking, Label: "Payment card"},
+	CatIBAN:       {Prefix: "IBAN", Score: 95, Verify: IBANCheck, Group: GroupBanking, Label: "Bank account (IBAN)"},
+	CatIPAddr:     {Prefix: "IP", Score: 75, Group: GroupTechnical, Label: "IP address"},
+	CatMongoID:    {Prefix: "MONGOID", Score: 85, Group: GroupTechnical, Label: "Database identifier"},
+	CatDOB:        {Prefix: "DOB", Score: 75, Group: GroupPersonal, Label: "Date of birth"},
 
 	// --- France -------------------------------------------------------------
-	CatNIR:   {Prefix: "NIR", Score: 95, Verify: NIRCheck},
-	CatSIREN: {Prefix: "SIREN", Score: 85, Verify: SIRENCheck},
-	CatSIRET: {Prefix: "SIRET", Score: 90, Verify: SIRETCheck},
+	CatNIR:   {Prefix: "NIR", Score: 95, Verify: NIRCheck, Group: GroupPersonal, Label: "Social security number (fr)"},
+	CatSIREN: {Prefix: "SIREN", Score: 85, Verify: SIRENCheck, Group: GroupCompany, Label: "SIREN (fr)"},
+	CatSIRET: {Prefix: "SIRET", Score: 90, Verify: SIRETCheck, Group: GroupCompany, Label: "SIRET (fr)"},
 
 	// --- United Kingdom -----------------------------------------------------
-	CatNHSNumber: {Prefix: "NHS", Score: 95, Verify: NHSNumberCheck},
+	CatNHSNumber: {Prefix: "NHS", Score: 95, Verify: NHSNumberCheck, Group: GroupPersonal, Label: "NHS number (gb)"},
 	// No checksum, but the letter rules are strict enough to stand on their
 	// own: six of the twenty-six letters are excluded from the first position,
 	// seven from the second, and seven whole prefixes are unissued.
-	CatNINO: {Prefix: "NINO", Score: 90, Verify: NINOCheck},
+	CatNINO: {Prefix: "NINO", Score: 90, Verify: NINOCheck, Group: GroupPersonal, Label: "National Insurance number (gb)"},
 
 	// --- United States ------------------------------------------------------
-	CatSSN:           {Prefix: "SSN", Score: 85, Verify: SSNCheck},
-	CatEIN:           {Prefix: "EIN", Score: 75}, // no checksum; the dashed shape is the evidence
-	CatRoutingNumber: {Prefix: "ABA", Score: 90, Verify: RoutingNumberCheck},
+	CatSSN:           {Prefix: "SSN", Score: 85, Verify: SSNCheck, Group: GroupPersonal, Label: "Social security number (us)"},
+	CatEIN:           {Prefix: "EIN", Score: 75, Group: GroupCompany, Label: "Employer identification number (us)"}, // no checksum; the dashed shape is the evidence
+	CatRoutingNumber: {Prefix: "ABA", Score: 90, Verify: RoutingNumberCheck, Group: GroupBanking, Label: "Bank routing number (us)"},
 
 	// --- shapes several locales contribute to -------------------------------
-	CatPhone:      {Prefix: "PHONE", Score: 90},
-	CatAddress:    {Prefix: "ADDR", Score: 85},
-	CatPostalCode: {Prefix: "POSTCODE", Score: 80}, // anchored on a commune, a state or an outward code
-	CatLicPlate:   {Prefix: "PLATE", Score: 80},
+	CatPhone:      {Prefix: "PHONE", Score: 90, Group: GroupPersonal, Label: "Telephone"},
+	CatAddress:    {Prefix: "ADDR", Score: 85, Group: GroupPersonal, Label: "Postal address"},
+	CatPostalCode: {Prefix: "POSTCODE", Score: 80, Group: GroupPersonal, Label: "Postcode"}, // anchored on a commune, a state or an outward code
+	CatLicPlate:   {Prefix: "PLATE", Score: 80, Group: GroupPersonal, Label: "Vehicle registration"},
 
 	// Declared by the deployment rather than guessed, so it outscores every
 	// pattern. Which span it actually takes is arbitrated separately — see the
 	// detector's overlap resolution.
-	CatCustom: {Prefix: "CUSTOM", Score: 100},
+	CatCustom: {Prefix: "CUSTOM", Score: 100, Group: GroupDeclared, Label: "Declared value"},
 
 	// --- credentials --------------------------------------------------------
-	CatOpenAIKey:      {Prefix: "OPENAI_KEY", Score: 98, Secret: true},
-	CatAnthropicKey:   {Prefix: "ANTHROPIC_KEY", Score: 98, Secret: true},
-	CatGoogleKey:      {Prefix: "GOOGLE_KEY", Score: 97, Secret: true},
-	CatAWSAccessKey:   {Prefix: "AWS_AKEY", Score: 97, Secret: true},
-	CatAWSSecretKey:   {Prefix: "AWS_SKEY", Score: 90, Secret: true},
-	CatGitHubToken:    {Prefix: "GH_TOKEN", Score: 98, Secret: true},
-	CatGitLabToken:    {Prefix: "GL_TOKEN", Score: 97, Secret: true},
-	CatSlackToken:     {Prefix: "SLACK_TOKEN", Score: 95, Secret: true},
-	CatStripeKey:      {Prefix: "STRIPE_KEY", Score: 97, Secret: true},
-	CatSendGridKey:    {Prefix: "SG_KEY", Score: 96, Secret: true},
-	CatTwilioKey:      {Prefix: "TWILIO_KEY", Score: 95, Secret: true},
-	CatNPMToken:       {Prefix: "NPM_TOKEN", Score: 96, Secret: true},
-	CatPyPIToken:      {Prefix: "PYPI_TOKEN", Score: 96, Secret: true},
-	CatDockerToken:    {Prefix: "DOCKER_TOKEN", Score: 96, Secret: true},
-	CatHFToken:        {Prefix: "HF_TOKEN", Score: 95, Secret: true},
-	CatReplicateToken: {Prefix: "REPLICATE_TOKEN", Score: 95, Secret: true},
-	CatPEMKey:         {Prefix: "PEM_KEY", Score: 99, Secret: true},
-	CatJWT:            {Prefix: "JWT", Score: 92, Secret: true},
-	CatConnStr:        {Prefix: "CONN_STR", Score: 92, Secret: true},
-	CatGenericSecret:  {Prefix: "SECRET", Score: 80, Secret: true},
+	CatOpenAIKey:      {Prefix: "OPENAI_KEY", Score: 98, Secret: true, Group: GroupSecrets, Label: "OpenAI key"},
+	CatAnthropicKey:   {Prefix: "ANTHROPIC_KEY", Score: 98, Secret: true, Group: GroupSecrets, Label: "Anthropic key"},
+	CatGoogleKey:      {Prefix: "GOOGLE_KEY", Score: 97, Secret: true, Group: GroupSecrets, Label: "Google key"},
+	CatAWSAccessKey:   {Prefix: "AWS_AKEY", Score: 97, Secret: true, Group: GroupSecrets, Label: "AWS access key"},
+	CatAWSSecretKey:   {Prefix: "AWS_SKEY", Score: 90, Secret: true, Group: GroupSecrets, Label: "AWS secret key"},
+	CatGitHubToken:    {Prefix: "GH_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "GitHub token"},
+	CatGitLabToken:    {Prefix: "GL_TOKEN", Score: 97, Secret: true, Group: GroupSecrets, Label: "GitLab token"},
+	CatSlackToken:     {Prefix: "SLACK_TOKEN", Score: 95, Secret: true, Group: GroupSecrets, Label: "Slack token"},
+	CatStripeKey:      {Prefix: "STRIPE_KEY", Score: 97, Secret: true, Group: GroupSecrets, Label: "Stripe key"},
+	CatSendGridKey:    {Prefix: "SG_KEY", Score: 96, Secret: true, Group: GroupSecrets, Label: "SendGrid key"},
+	CatTwilioKey:      {Prefix: "TWILIO_KEY", Score: 95, Secret: true, Group: GroupSecrets, Label: "Twilio key"},
+	CatNPMToken:       {Prefix: "NPM_TOKEN", Score: 96, Secret: true, Group: GroupSecrets, Label: "npm token"},
+	CatPyPIToken:      {Prefix: "PYPI_TOKEN", Score: 96, Secret: true, Group: GroupSecrets, Label: "PyPI token"},
+	CatDockerToken:    {Prefix: "DOCKER_TOKEN", Score: 96, Secret: true, Group: GroupSecrets, Label: "Docker token"},
+	CatHFToken:        {Prefix: "HF_TOKEN", Score: 95, Secret: true, Group: GroupSecrets, Label: "Hugging Face token"},
+	CatReplicateToken: {Prefix: "REPLICATE_TOKEN", Score: 95, Secret: true, Group: GroupSecrets, Label: "Replicate token"},
+	CatPEMKey:         {Prefix: "PEM_KEY", Score: 99, Secret: true, Group: GroupSecrets, Label: "Private key"},
+	CatJWT:            {Prefix: "JWT", Score: 92, Secret: true, Group: GroupSecrets, Label: "JSON web token"},
+	CatConnStr:        {Prefix: "CONN_STR", Score: 92, Secret: true, Group: GroupConnection, Label: "Connection string"},
+	CatGenericSecret:  {Prefix: "SECRET", Score: 80, Secret: true, Group: GroupSecrets, Label: "Secret in an assignment"},
 	// Above the generic secret: both patterns claim the same "KEY=value" span,
 	// and 64 hex characters behind that hint are not a coincidence, so the
 	// specific category is the one worth reporting.
-	CatHexSecret: {Prefix: "HEX_KEY", Score: 85, Secret: true},
+	CatHexSecret: {Prefix: "HEX_KEY", Score: 85, Secret: true, Group: GroupSecrets, Label: "Hexadecimal key"},
 }
 
 func init() { validateCatalogue() }
@@ -230,13 +242,35 @@ func checkCatalogue(patterns []Pattern, registry map[Category]CategoryInfo) erro
 	}
 	sort.Slice(cats, func(i, j int) bool { return cats[i] < cats[j] })
 
+	// Labels are checked for collisions as prefixes are, and for the same reason
+	// one level up: two categories sharing a label are two identical rows in the
+	// menu that switches them, and somebody unticking one of them has no way to
+	// know which. NIR and SSN are both "social security number" until the
+	// catalogue says which country's.
+	labels := make(map[string]Category, len(registry))
+
 	for _, cat := range cats {
-		switch info := registry[cat]; {
+		info := registry[cat]
+		switch {
 		case info.Prefix == "":
 			return fmt.Errorf("category %q has no token prefix: its tokens would render as \"[_1]\"", cat)
 		case info.Score <= 0 || info.Score > 100:
 			return fmt.Errorf("category %q scores %d, outside 1-100: a score of zero is never reported", cat, info.Score)
+		case info.Label == "":
+			return fmt.Errorf("category %q has no label: every surface that lists it would have to "+
+				"invent a name, and two of them would invent different ones", cat)
+		case info.Group == "":
+			return fmt.Errorf("category %q has no group: it would be absent from every surface that "+
+				"lists the catalogue by family, which is the only way forty categories are listed at all", cat)
 		}
+		if _, ok := groupRegistry[info.Group]; !ok {
+			return fmt.Errorf("category %q names group %q, which is not registered", cat, info.Group)
+		}
+		if other, clash := labels[info.Label]; clash {
+			return fmt.Errorf("categories %q and %q share the label %q: a list of them would "+
+				"show two identical rows", other, cat, info.Label)
+		}
+		labels[info.Label] = cat
 	}
 	return nil
 }
@@ -252,6 +286,15 @@ func Info(cat Category) (CategoryInfo, bool) {
 // Prefix returns the token prefix of a category, or "" when it is unregistered.
 func Prefix(cat Category) string {
 	return categoryRegistry[cat].Prefix
+}
+
+// Label returns the category's name in words, or the code itself for a category
+// that is not registered — which validateCatalogue has already ruled out.
+func Label(cat Category) string {
+	if info, ok := categoryRegistry[cat]; ok {
+		return info.Label
+	}
+	return string(cat)
 }
 
 // IsSecret reports whether a category holds a credential.
