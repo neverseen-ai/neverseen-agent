@@ -45,6 +45,8 @@ Usage:
                            value it replaces and restores, in clear
   cloakfleet scan [file]   report the sensitive values in a file, or in stdin
   cloakfleet status        report whether the agent is masking, and what
+  cloakfleet mask          list what is masked, and switch a category or a family
+                           off for this run
   cloakfleet env [--force] print the shell exports that point a tool at the agent
   cloakfleet version       print the version
 
@@ -118,6 +120,8 @@ func run(args []string, stdin io.Reader, stdout io.Writer) error {
 		return runScan(args[1:], stdin, stdout)
 	case "status":
 		return runStatus(stdout)
+	case "mask":
+		return runMask(args[1:], stdout)
 	case "env":
 		return runEnv(args[1:], stdout)
 	case "version":
