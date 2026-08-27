@@ -47,6 +47,7 @@ cloakfleet audit         run it in the foreground on 33333, printing every value
                          it replaces and restores, in clear
 cloakfleet scan [file]   report the sensitive values in a file, or in stdin
 cloakfleet status        report whether the agent is masking, and what
+cloakfleet mask          list what is masked, and switch a category or family off
 cloakfleet env [--force] print the shell exports that point a tool at the agent
 cloakfleet version       print the version
 ```
@@ -65,10 +66,13 @@ the last heartbeat.
 ### `status` — what is being *applied*, not that the process is up
 
 `runStatus` (`main.go:141`) calls `proxy.Query` and exits non-zero unless
-`Status.Masking()` is true. **Answering is not enough:** an agent with no locale selected is
+`Status.Level()` is `LevelFull`. **Answering is not enough, and neither is masking:** an agent with no locale selected is
 up, healthy and recognises almost nothing, and a check that called that healthy would be the
 check somebody trusted while their traffic went out in clear
-(`TestAnAgentWithNoLocaleIsNotMasking`).
+(`TestAnAgentWithNoLocaleIsNotMasking`) — and an agent with a category switched off is
+masking everything except the thing somebody switched off, which zero must not mean either.
+That state prints the names of what is in clear, not a count: a name is what tells somebody
+whether the category they care about is among them.
 
 The non-zero exit uses `errQuiet` (`main.go:88`) — exit 1 with no extra message — because the
 command's whole job is to report a state, and printing the same diagnosis again on stderr
@@ -81,6 +85,60 @@ writes **nothing** if it is not (unless `--force`). That is the whole point: a l
 evaluating `eval "$(cloakfleet env)"` has to be a no-op on a machine where the agent is
 stopped. See [Distribution](distribution.md#pointing-a-tool-at-the-agent) for the failure this
 avoids and the `shellTools` table it reads.
+
+### `mask` — see and change what is masked
+
+```
+cloakfleet mask                       list what is applied: mode, countries, categories
+cloakfleet mask --off EMAIL,DOB       stop masking these
+cloakfleet mask --on DOB              mask them again
+cloakfleet mask --off personal        a whole family, by its name
+cloakfleet mask --reset               mask everything again
+cloakfleet mask --substitution fake   change what a masked value becomes
+cloakfleet mask --locales fr,gb       load these country pattern sets
+cloakfleet mask --locales none        load none of them
+```
+
+**Every change carries the whole state**, because the route replaces it rather than
+patching it — a request naming only `--off` would wipe the locale selection. The
+command reads the current state, applies what was named, and sends all three.
+
+**`--locales` replaces the selection**, so it names every country wanted; `none` is
+spelled out rather than expressed as an empty argument, because `--locales ""` is what
+a shell produces from an unset variable by accident and must not silently mean "stop
+looking for anything".
+
+It exists because the menu bar is Cocoa: a Linux workstation had the route and no way
+to reach it but `curl`. It reads and writes through `proxy.Query` and
+`proxy.SetPolicy` — the one asker and the one writer — so it cannot come to disagree
+with the menu bar about what a category is called or how it is switched, and it reads
+no environment of its own.
+
+**A name may be a category or a family**, because the point of grouping forty
+categories is that people think in families. The two namespaces cannot collide: a
+family is lower case, a category upper.
+
+**Only what the agent can actually find is listed.** With one locale loaded the
+catalogue holds categories whose patterns are not in the detector at all
+(`Detector.Categories`), and a switch for a US social security number on a French
+deployment would say the agent is masking them.
+
+**A locked category named directly is an error; named through its family it is
+skipped.** Somebody typing `--off SECRET_ANTHROPIC_KEY` has a belief about what the
+agent will do and the only useful answer is that it will not — while `--off secrets`
+is a reasonable thing to try, and refusing the whole request over it would leave
+nothing switched.
+
+**`--off` is a read-modify-write, and that is a deliberate exception.** The route
+takes the whole set precisely to avoid one, because the hazard is two *surfaces*
+changing the policy at the same moment. This is a person at a keyboard who has just
+been shown the state and is about to be shown it again: the command prints the
+catalogue from the agent's reply afterwards, which is the same mitigation the menu bar
+uses when it redraws from the reply rather than from its own click.
+
+The first column is a word rather than a tick, so `cloakfleet mask | grep "in clear"`
+answers the question the command exists for. A symbol would need a legend and would
+not survive a pipe.
 
 ### `scan` — the offline check
 

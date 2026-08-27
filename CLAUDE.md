@@ -94,9 +94,52 @@ area: the reasoning is what stops a tempting simplification being reintroduced.
   out.
 - **Everywhere else: counts and category names, never content.** The heartbeat
   carries no content at all.
-- **`Status.Masking` is deliberately not `Answering`.** An agent with no locale
-  selected is healthy and recognises almost nothing; the exit code and the menu
-  bar icon both follow the former.
+- **Three levels, not two, and each surface follows the right one.**
+  `Status.Masking` is deliberately not `Answering` — an agent with no locale
+  selected is healthy and recognises almost nothing. `Status.Level` is deliberately
+  not `Masking`: an agent with a category switched off *is* masking, and reporting
+  that alone is the green light over the values that are not being replaced. The
+  exit code of `cloakfleet status` and the menu bar icon both follow **Level**, so
+  zero means "everything this configuration loaded is being replaced".
+- **`cloakfleet mask` and the menu bar are the two surfaces, and both go through
+  `proxy.SetPolicy`** — the one writer, as `proxy.Query` is the one asker. The command
+  exists because the menu bar is Cocoa and a Linux workstation had the route and no
+  way to reach it. It accepts a family name as well as a category code, and lists only
+  what the detector can actually emit (`Detector.Categories`): a switch for a category
+  no loaded locale can find would say the agent is masking it.
+- **Three things change while the agent runs: the switched-off categories, the
+  substitution mode and the loaded locales.** All three live behind one atomic
+  pointer in `detector.policy`, and the locales carry `patterns` and `fakes` with
+  them in one `catalogue` value — swapped whole, because a scan reading new patterns
+  against the old stand-in table would render a French address with an American
+  postcode. One atomic load per scan, not a lock: the alternative is a read lock on
+  the hottest loop in the agent to serve a click a day.
+- **`PUT /policy` replaces the whole state, and refuses a partial request.** Not
+  "absent means unchanged": an empty locale list is a *valid* state — the one an
+  agent starts in — so absence cannot mean "leave them alone" without making "load
+  none" unsayable. And a caller sending only `off` would silently wipe the locale
+  selection, which is the request that turns an agent into one masking almost
+  nothing while reporting success. It is **not a transaction**: each part refuses on
+  its own and earlier parts stay applied, which is why every surface redraws from
+  the reply rather than from its own request.
+- **A locale selection is stored in registry order whatever order it arrived in.**
+  Load order settles which country claims a value both could read, so a selection
+  that reordered them would quietly change what nine bare digits become.
+- **An unknown locale code is refused, not skipped.** `pii.LocalePatterns` skips one
+  by design — it must not decide policy about a selection — so nothing below would
+  notice, and an operator who mistyped "uk" would be told the change succeeded.
+- **The mode may change mid-session**, and the vault is what makes that safe: it
+  maps a replacement to its original and expansion accepts both shapes, so
+  stand-ins minted before the change go on being restored while new values get
+  tokens. A credential is tokenized in either mode.
+- **A category can be switched off, and `PUT /policy` is the only way.** It is the
+  one route that changes what the agent does and the only authenticated one: a
+  secret in `~/.cloakfleet/control.key` (0600), in a custom header, which is what a
+  browser cannot set cross-origin. Left open, any local process — or a page
+  somebody visits — could disable the control silently. The whole set is replaced,
+  never toggled: two surfaces on one agent interleave the halves of a
+  read-modify-write. **A credential is refused by the detector**, not by the menu,
+  so nothing can route around it; `pii.Switchable` is that rule.
 
 ### Supervision — `openwiki/architecture/supervision.md`
 
@@ -105,6 +148,10 @@ area: the reasoning is what stops a tempting simplification being reintroduced.
 - **Nothing in a heartbeat is content.** `TestHeartbeatCarriesNoContent` walks the
   type; a new string field fails until it is on the allow list **with a reason**.
   Do not add one to make a dashboard nicer.
+- **`State.Masking` and `State.SwitchedOff` are read at every heartbeat**, not
+  cached at start-up like the rest of `State`: they change while the process runs,
+  and cached, a fleet view would show every agent applying its whole catalogue
+  whatever anybody switched off.
 - **`State.Addresses` is the one field that is personal data**, and its entry says
   why. Local addresses only, loopback and link-local dropped, stably ordered,
   capped.
@@ -164,10 +211,13 @@ area: the reasoning is what stops a tempting simplification being reintroduced.
 The full procedure, and which test fails on each forgotten step:
 `openwiki/workflows/extending-the-catalogue.md`. In short:
 
-- **A PII category** — one entry in `categoryRegistry`, its pattern in the right
-  set, a line in `pkg/pii/sample.go`, a corpus case (**including one that must
-  come out untouched**), then `make score-update`. `validateCatalogue` panics at
-  package initialisation if a pattern emits an unregistered category.
+- **A PII category** — one entry in `categoryRegistry` carrying the prefix, score,
+  checksum, credential flag, **group and label**; its pattern in the right set; a
+  line in `pkg/pii/sample.go`; a corpus case (**including one that must come out
+  untouched**); then `make score-update`. `validateCatalogue` panics at package
+  initialisation on an unregistered category, a missing group or label, or a label
+  another category already uses — two identical rows in the menu that switches them
+  is a person unticking one with no idea which they got.
 - **A locale** — one entry in `localeRegistry`, `patterns_<code>.go`, a corpus
   suite, a block in `.env.example`, `make score-update`. Three tests fail on the
   commit that forgets any of those. `Priority` is load order, and load order

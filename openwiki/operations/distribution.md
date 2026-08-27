@@ -104,9 +104,30 @@ by tests; the adapter that touches the toolkit (`systray.go`) has three methods 
 A menu bar cannot be asserted on in CI, so what can be is kept where a test reaches it — the
 alternative is a feature whose behaviour has only ever run on somebody's screen.
 
-- **The icon follows `Status.Masking()` and nothing else**, so the picture and the exit code of
+- **The icon follows `Status.Level()` and nothing else**, so the picture and the exit code of
   `cloakfleet status` cannot disagree about the same agent
-  (`TestTheIconFollowsWhetherValuesAreReplaced`).
+  (`TestTheIconFollowsWhetherValuesAreReplaced`,
+  `TestAPartlyMaskingAgentGetsItsOwnIcon`). **There are three icons**, because a category
+  can be switched off: such an agent is masking, so the masking picture would be the green
+  light over the values that are not being replaced, and the unmasked one would be a lie
+  about the twenty-odd categories that are. The third is the right-hand square **half
+  filled** — the mark's own vocabulary again, and half rather than a smaller inner square
+  because at sixteen points an inner shape is three pixels with a one-pixel gap.
+- **The switch menu is built from what the agent published, never from `pkg/pii`.** The
+  menu bar could import the catalogue directly, and must not: the agent is the one applying
+  it, so a menu built from its own copy would go on offering a switch a rebuilt agent had
+  stopped honouring. `/healthz` carries the groups, their categories, what is off and what
+  is locked.
+- **A group with some of its categories off says so in its title** — "Personal details — 1
+  of 2 off". `fyne.io/systray` offers `Check()` and `Uncheck()` and nothing between, so a
+  partly-off group cannot show a third tick state, and drawn simply unticked it would claim
+  nothing in the family was being masked.
+- **A locked family is one dim line with a count**, not a submenu: twenty API keys nobody
+  may switch off is twenty rows of nothing to do, and a submenu that opened onto them would
+  read as an invitation.
+- **A click sends the whole set and redraws from the reply**, so a refused click corrects
+  itself rather than leaving a tick that lies. `proxy.SetPolicy` is the one place a local
+  surface writes this, as `proxy.Query` is the one place it is read.
 - `display` is **one value rather than four calls**, so `watch` can tell whether anything
   changed by comparing two of them — and a fifth thing to show cannot be added without the
   comparison being updated with it. `watch` applies only on a change, because a menu bar told

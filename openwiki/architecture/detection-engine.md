@@ -62,6 +62,76 @@ pattern emits a category with no registry entry. That is what makes "one entry i
 registry" the whole of adding a category — the four-places-to-forget problem cannot come
 back.
 
+### Groups and labels: how forty categories are put in front of a person
+
+`CategoryInfo` also carries a `Group` and a `Label` (`pkg/pii/group.go`), and both are
+catalogue facts rather than presentation: the catalogue's job is what counts as sensitive,
+how it is recognised, **and what it is called**.
+
+Seven groups, in display order rather than alphabetical — the first entries are the ones
+somebody opened a menu for, and alphabetical puts *Banking*, which nobody switches off by
+accident, above the personal details they came for:
+
+| Group | n | Why the boundary is there |
+| --- | --- | --- |
+| Personal details | 10 | what people reach for, and the largest — so a group switch alone is not enough |
+| Company identifiers | 3 | the strongest case for switching off: a registration number is public, and nine digits under a Luhn key is every internal fleet id too |
+| Technical identifiers | 2 | the other strong case: debugging a network needs the address in the prompt |
+| Banking | 3 | all three carry a checksum, so none is a false positive somebody switches off in irritation |
+| Declared by this deployment | 1 | `CUSTOM`, the only category somebody authored on purpose |
+| Connection strings | 1 | a group of one, and it earns it — `postgres://admin:pw@db` is what a person looks for |
+| Secrets and keys | 20 | the API keys and tokens |
+
+**`pii.Switchable` follows `Secret`, not the group**, and the two are deliberately not
+merged. The flag decides what may be switched off; the group decides how a person finds it.
+That is why connection strings sit apart and are still locked, and why `CUSTOM` is locked
+too — switching off what a deployment declared itself would undo the one decision somebody
+made explicitly.
+
+`validateCatalogue` enforces all of it at package initialisation: a category with no group,
+a group that is not registered, a missing label, or **a label another category already
+uses**. That last one is the same class as the unique-prefix rule one level up — NIR and SSN
+are both "social security number" until the catalogue says which country's, and two
+identical rows in a menu is a person unticking one with no idea which they got.
+
+### Three things change while the agent runs
+
+The switched-off categories, the substitution mode and the loaded locales all live
+behind one atomic pointer in `detector.policy` (`internal/detector/policy.go`).
+
+The locales are the heavy one: changing them means a different pattern set **and** a
+different stand-in table, so both travel together in one `catalogue` value that is
+swapped whole. Separately mutated, a scan could read the new patterns against the old
+`FakeSet` and render a French address with an American postcode. `Detector.SetLocales`
+stores the selection in **registry order** whatever order it arrived in, because load
+order settles which country claims a value both could read — and it **refuses an
+unknown code** rather than skipping it, since `pii.LocalePatterns` skips by design and
+nothing below would notice a typo.
+
+The mode may change mid-session, and the vault is what makes that safe: it maps a
+replacement to its original and expansion accepts both shapes, so stand-ins minted
+before the change go on being restored while new values get tokens. A credential is
+tokenized either way — `render` checks `IsSecret` before the mode.
+
+The one detector that does *not* follow the live mode is the derived one the test page
+uses: it pins its own with `subOverride`, because that page renders one text in both
+modes at once and reading the live mode would draw the same column twice. It still
+follows every locale change and every switched-off category, since it shares the
+policy pointer.
+
+### A switched-off category is skipped before anything else runs
+
+`Detector.candidates` consults the disabled set **before the checksum and before the
+score** (`internal/detector/policy.go`). A category switched off is not a weak match: it is
+one this agent has been told not to look at, and running its checksum to throw the answer
+away is work on the hottest loop in the agent.
+
+The set is an immutable map behind an atomic pointer, not a mutex: every request reads it
+once per candidate, and a write happens when somebody clicks a menu item. It is **shared by
+pointer** with any detector `WithSubstitution` derives — the test page renders both modes
+through two detectors, and a copy would have that page go on showing a category the agent
+had stopped masking, while the page exists to say what the agent does to a text.
+
 ### A checksum lets a shape be loose; without one, the shape is all there is
 
 A value that fails its `Verify` is **dropped outright, not scored down**. Fifteen digits

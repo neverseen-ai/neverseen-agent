@@ -6,8 +6,11 @@ problem, which this repo has already had.
 
 ## Adding a PII category
 
-1. **One entry in `categoryRegistry`** (`pkg/pii/category.go:136`) carrying the token
-   prefix, the score, the checksum if there is one, and whether it is a credential.
+1. **One entry in `categoryRegistry`** (`pkg/pii/category.go`) carrying the token prefix,
+   the score, the checksum if there is one, whether it is a credential, **its group and its
+   label**. `validateCatalogue` panics at package initialisation on a missing group or
+   label, on a group that is not registered, and on a label another category already uses —
+   so none of the six can be forgotten.
 2. **Its pattern in the right set** — `patterns_fr.go`, `patterns_gb.go`, `patterns_us.go`,
    `patterns_intl.go` or `patterns_secret.go`. Mind the ordering rule: the first pattern to
    claim a literal wins, so a specific shape must precede a broader one.
@@ -72,6 +75,22 @@ on `localeRegistry` records it).
    beside the pair it qualifies, not in whichever surface was written last. `cloakfleet env`,
    the audit console and the menu bar all hand over the caveat because they all read this
    table.
+
+## Adding a group
+
+One entry in `groupRegistry` (`pkg/pii/group.go`) with a label and an `Order`, and at least
+one category pointing at it. `TestEveryCategoryIsInAGroupAndEveryGroupIsUsed` fails on a
+group nothing points at — a heading a menu would draw empty, which is the
+documentation-ahead-of-the-code failure in another form — and on a grouping that does not
+account for the whole catalogue between its groups.
+
+`Order` is display order, and it is a decision: the first entries are the ones somebody
+opened the menu for. `TestGroupsAreInDisplayOrder` pins it, so a reordering is deliberate.
+
+Mind the menu's ceilings if a group is large: `maxGroupEntries` (8) and
+`maxCategoryEntries` (12) in `internal/tray/systray.go` bound the pools, because the toolkit
+builds a menu once and cannot add an entry later. Past them the entries say how many are
+missing rather than dropping them quietly.
 
 ## Adding a field to the supervision contract
 

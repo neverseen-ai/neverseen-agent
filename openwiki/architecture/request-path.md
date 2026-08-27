@@ -196,9 +196,38 @@ anything richer would be a local oracle for what a person has been doing.
 
 `proxy.Query` (`status.go:61`) is the only place that asks whether the agent is there. It
 returns **no error**, because "nothing is listening" is an answer to the question and not a
-failure to answer it. `Status.Masking()` (`status.go:54`) is deliberately not `Answering`:
-an agent with no locale selected is up, healthy, and recognises almost nothing — the state
-a green light would call fine while the traffic went out in clear.
+failure to answer it. `Status.Masking()` is deliberately not `Answering`: an agent with no
+locale selected is up, healthy, and recognises almost nothing — the state a green light
+would call fine while the traffic went out in clear.
+
+**And `Status.Level()` is deliberately not `Masking()`** — the same distinction one level
+further in. An agent with a category switched off *is* masking: most of the catalogue, and
+the credentials always. Reporting that as simply "masking" is the green light over the
+values that are not being replaced, so there are three answers (`detector.LevelNone`,
+`LevelPartial`, `LevelFull`), and the exit code of `cloakfleet status` and the menu bar
+icon both follow this rather than `Masking()`. An agent that answers without the field is
+read from what it did carry: a build with no policy route cannot have anything switched
+off, so `LevelFull` is a fact about that build rather than an assumption.
+
+**`PUT /policy` is the one route that changes what the agent does, and the only
+authenticated one** (`internal/proxy/policy.go`). Everything else the agent serves is a
+proxy hop carrying the caller's own credential, or a read-only description of the
+configuration — safe unauthenticated on the loopback because the worst it gives a local
+process is that description. This one switches masking off, and left open, any local
+process could disable the control; so could a page in a browser, because a form post to
+`127.0.0.1` needs nobody's permission. What closes it is a secret in
+`~/.cloakfleet/control.key` (0600) sent in a custom header — which is precisely what a
+browser cannot set on a simple cross-origin request, so no page on the internet can reach
+it at all. That is the mechanism, not politeness about CORS, which the agent does not
+implement and must not.
+
+The request **replaces the whole set** rather than toggling one category: two surfaces can
+be looking at one agent, and a toggle is a read-modify-write whose halves interleave into a
+set neither of them asked for. The reply is the agent's own `Health`, so a caller redraws
+from what is true rather than from what it asked for. And **the detector is what refuses a
+credential** (`pii.Switchable`), not the route and not the menu — a surface that merely hid
+those rows would still be talking to an agent that accepted the request from anything else
+on the machine.
 
 ## Token usage and counters
 
