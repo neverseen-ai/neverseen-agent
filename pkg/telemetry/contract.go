@@ -195,6 +195,29 @@ type State struct {
 	// observes the connection coming from separately — which also means this field
 	// being wrong or absent costs nothing that matters.
 	Addresses []string `json:"addresses,omitempty"`
+
+	// Masking is how much of the catalogue the agent is applying: "full",
+	// "partial" or "none".
+	//
+	// It exists because Locales alone stopped answering the question. An agent can
+	// now be told to stop masking a category, so it can be loaded with three
+	// locales and still be sending email addresses to a provider in clear — and a
+	// fleet view reading only Locales would show that agent as configured and
+	// green. This is the answering/masking distinction the whole State type exists
+	// for, one level further in.
+	Masking string `json:"masking,omitempty"`
+
+	// SwitchedOff names the categories the agent is not masking.
+	//
+	// Category names, which the counters already carry, so this adds no new kind
+	// of string to the contract — and it is the field that makes Masking
+	// actionable: "partial" sends somebody looking, "partial, and EMAIL is off"
+	// tells them whether it matters. A supervision backend that could see the
+	// state but not what was in it would report a problem nobody could size.
+	//
+	// Deliberately not a count. Two categories off is not a fact anybody can act
+	// on, and the names cost nothing that a value would.
+	SwitchedOff []string `json:"switched_off,omitempty"`
 }
 
 // Counters are the tallies for one window.

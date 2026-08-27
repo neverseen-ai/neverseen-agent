@@ -18,6 +18,11 @@
     "addresses": [
       "192.0.2.47",
       "2001:db8::47"
+    ],
+    "masking": "partial",
+    "switched_off": [
+      "IP_ADDRESS",
+      "MONGO_ID"
     ]
   },
   "buckets": [

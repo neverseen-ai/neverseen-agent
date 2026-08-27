@@ -130,8 +130,8 @@ func (p *Pass) mask(cat pii.Category, locale, original string) string {
 // less like prose. Every credential takes it by design — a stand-in that looks
 // like a working API key is a thing somebody will try to use.
 func (d *Detector) render(cat pii.Category, locale string, index int64) string {
-	if d.config.Substitution == SubstitutionFake && !pii.IsSecret(cat) {
-		if fake, ok := d.fakes.Value(cat, locale, index); ok {
+	if d.Substitution() == SubstitutionFake && !pii.IsSecret(cat) {
+		if fake, ok := d.catalogue().fakes.Value(cat, locale, index); ok {
 			return fake
 		}
 	}

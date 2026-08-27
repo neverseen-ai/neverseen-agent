@@ -33,7 +33,7 @@ func TestSampleExercisesEveryCategory(t *testing.T) {
 			}
 
 			var missing []string
-			for _, p := range d.patterns {
+			for _, p := range d.catalogue().patterns {
 				if !found[p.Category] {
 					missing = append(missing, string(p.Category)+" ("+p.Label+")")
 				}

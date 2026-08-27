@@ -116,7 +116,10 @@ func TestTheMenuSaysWhatIsHappeningToTheTraffic(t *testing.T) {
 // Committed assets are the kind of thing a copy-and-paste leaves identical, and
 // two identical icons would be an indicator that never changes.
 func TestTheIcons(t *testing.T) {
-	for name, raw := range map[string][]byte{"masking": maskingIcon, "unmasked": unmaskedIcon} {
+	icons := map[string][]byte{
+		"masking": maskingIcon, "partial": partialIcon, "unmasked": unmaskedIcon,
+	}
+	for name, raw := range icons {
 		cfg, format, err := image.DecodeConfig(bytes.NewReader(raw))
 		if err != nil {
 			t.Fatalf("%s does not decode: %v", name, err)
@@ -133,8 +136,15 @@ func TestTheIcons(t *testing.T) {
 		}
 	}
 
-	if bytes.Equal(maskingIcon, unmaskedIcon) {
-		t.Error("the two icons are the same image, so the menu bar would never change")
+	// All three distinct, pairwise. Two that matched would be a state the menu bar
+	// could never show — and the pair most at risk is masking against partial, which
+	// differ by half of one square.
+	for a, one := range icons {
+		for b, other := range icons {
+			if a < b && bytes.Equal(one, other) {
+				t.Errorf("%s and %s are the same image, so the menu bar could not tell them apart", a, b)
+			}
+		}
 	}
 }
 
@@ -314,5 +324,363 @@ func TestTheCaveatTravelsWithTheLine(t *testing.T) {
 	}
 	if got := proxy.CaveatFor("gemini"); got != "" {
 		t.Errorf("a provider with no entry at all carries a caveat: %q", got)
+	}
+}
+
+// healthWithGroups is what an agent serving the catalogue answers, cut down to the
+// two families a test needs to reason about.
+func healthWithGroups(off ...string) proxy.Health {
+	isOff := func(code string) bool {
+		for _, c := range off {
+			if c == code {
+				return true
+			}
+		}
+		return false
+	}
+
+	return proxy.Health{
+		Version: "1.4.2", Locales: []string{"fr"}, Substitution: "token",
+		AvailableLocales: []string{"fr", "gb", "us"},
+		Masking:          map[bool]string{true: "partial", false: "full"}[len(off) > 0],
+		Groups: []proxy.HealthGroup{
+			{Code: "personal", Label: "Personal details", Categories: []proxy.HealthCategory{
+				{Code: "EMAIL", Label: "Email address", Off: isOff("EMAIL")},
+				{Code: "PHONE", Label: "Telephone", Off: isOff("PHONE")},
+			}},
+			{Code: "technical", Label: "Technical identifiers", Categories: []proxy.HealthCategory{
+				{Code: "IP_ADDRESS", Label: "IP address", Off: isOff("IP_ADDRESS")},
+			}},
+			{Code: "secrets", Label: "Secrets and keys", Categories: []proxy.HealthCategory{
+				{Code: "SECRET_ANTHROPIC_KEY", Label: "Anthropic key", Locked: true},
+				{Code: "SECRET_OPENAI_KEY", Label: "OpenAI key", Locked: true},
+			}},
+		},
+	}
+}
+
+// The menu offers what the agent published, and nothing else. A menu built from its
+// own copy of the catalogue would go on offering a switch a rebuilt agent had
+// stopped honouring.
+func TestTheSwitchesAreTheAgentsOwn(t *testing.T) {
+	d := render(proxy.Status{Addr: "127.0.0.1:8787", Answering: true, Health: healthWithGroups()})
+
+	if len(d.switches) != 3 {
+		t.Fatalf("drew %d families, want 3", len(d.switches))
+	}
+	if got := d.switches[0].label; got != "Personal details" {
+		t.Errorf("the first family is %q", got)
+	}
+	if got := len(d.switches[0].members); got != 2 {
+		t.Errorf("the first family holds %d switches, want 2", got)
+	}
+
+	// A family of nothing but credentials is locked, and never reads as switched
+	// off — an unticked lock would say those values are not being masked.
+	secrets := d.switches[2]
+	if !secrets.locked {
+		t.Error("the credential family is not locked")
+	}
+	if secrets.off {
+		t.Error("the credential family reads as switched off")
+	}
+	if got := secrets.title(); got != "Secrets and keys — 2, locked" {
+		t.Errorf("the locked title is %q", got)
+	}
+}
+
+// An agent that is not answering offers nothing: a menu whose clicks reach nothing
+// is worse than a menu with no clicks.
+func TestNoSwitchesWhenTheAgentIsAbsent(t *testing.T) {
+	d := render(proxy.Status{Addr: "127.0.0.1:8787"})
+	if d.switches != nil {
+		t.Errorf("drew %d families for an agent that is not there", len(d.switches))
+	}
+}
+
+// The toolkit has no mixed tick, so a partly-off family says so in its title. Drawn
+// simply unticked, it would claim nothing in the family was being masked.
+func TestAPartlyOffFamilySaysSoInItsTitle(t *testing.T) {
+	tests := map[string]struct {
+		off   []string
+		want  string
+		group int
+	}{
+		"nothing off":    {off: nil, want: "Personal details", group: 0},
+		"one of two off": {off: []string{"EMAIL"}, want: "Personal details — 1 of 2 off", group: 0},
+		"every member off": {off: []string{"EMAIL", "PHONE"},
+			want: "Personal details — all 2 off", group: 0},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			d := render(proxy.Status{Addr: "a", Answering: true, Health: healthWithGroups(tt.off...)})
+			group := d.switches[tt.group]
+
+			if got := group.title(); got != tt.want {
+				t.Errorf("title is %q, want %q", got, tt.want)
+			}
+			// The group's own tick is only cleared when every member is off, which is
+			// what the title above is compensating for.
+			wantOff := len(tt.off) == 2
+			if group.off != wantOff {
+				t.Errorf("the family reads off=%v, want %v", group.off, wantOff)
+			}
+		})
+	}
+}
+
+// A click sends the whole set, so the set has to be readable from what is drawn.
+func TestTheDrawnMenuCarriesTheWholeSet(t *testing.T) {
+	d := render(proxy.Status{Addr: "a", Answering: true,
+		Health: healthWithGroups("EMAIL", "IP_ADDRESS")})
+
+	got := d.offCodes()
+	if len(got) != 2 || got[0] != "EMAIL" || got[1] != "IP_ADDRESS" {
+		t.Errorf("the drawn menu reports %v switched off", got)
+	}
+}
+
+// The third icon, and the words beside it. An agent with a category switched off is
+// masking, so the masking icon would be the green light over the values that are not
+// being replaced.
+func TestAPartlyMaskingAgentGetsItsOwnIcon(t *testing.T) {
+	full := render(proxy.Status{Addr: "a", Answering: true, Health: healthWithGroups()})
+	partial := render(proxy.Status{Addr: "a", Answering: true, Health: healthWithGroups("EMAIL")})
+
+	if !bytes.Equal(full.icon, maskingIcon) {
+		t.Error("an agent applying its whole catalogue does not get the masking icon")
+	}
+	if !bytes.Equal(partial.icon, partialIcon) {
+		t.Error("an agent with a category switched off does not get the partial icon")
+	}
+
+	if !strings.Contains(partial.lines[0], "1 category in clear") {
+		t.Errorf("the verdict line is %q", partial.lines[0])
+	}
+	// Named, not counted: the count is already in the verdict, and the name is what
+	// tells somebody whether the category they care about is the one that is off.
+	if !strings.Contains(partial.lines[2], "Email address") {
+		t.Errorf("the state lines do not name what is in clear: %q", partial.lines[2])
+	}
+}
+
+// A click sends the whole set, and what a click means is decided here rather than
+// inside the toolkit adapter — which is the rule this package is built on.
+func TestClickingACategorySendsTheWholeSet(t *testing.T) {
+	d := render(proxy.Status{Addr: "a", Answering: true, Health: healthWithGroups("IP_ADDRESS")})
+
+	// Switching one on leaves the other off.
+	if got := d.withCategoryToggled("IP_ADDRESS"); len(got) != 0 {
+		t.Errorf("unticking the only off category sent %v, want nothing off", got)
+	}
+	got := d.withCategoryToggled("EMAIL")
+	if len(got) != 2 || got[0] != "EMAIL" || got[1] != "IP_ADDRESS" {
+		t.Errorf("sent %v, want both off", got)
+	}
+}
+
+// All or nothing for a family: a click on a partly-off one turns the rest off too.
+// Reviving them would make one click undo several deliberate ones.
+func TestClickingAFamilyIsAllOrNothing(t *testing.T) {
+	tests := map[string]struct {
+		off  []string
+		want []string
+	}{
+		"nothing off turns the family off": {
+			off: nil, want: []string{"EMAIL", "PHONE"},
+		},
+		"partly off turns the rest off too": {
+			off: []string{"EMAIL"}, want: []string{"EMAIL", "PHONE"},
+		},
+		"all off turns the family back on": {
+			off: []string{"EMAIL", "PHONE"}, want: nil,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			d := render(proxy.Status{Addr: "a", Answering: true, Health: healthWithGroups(tt.off...)})
+			got := d.withGroupToggled("personal")
+
+			if len(got) != len(tt.want) {
+				t.Fatalf("sent %v, want %v", got, tt.want)
+			}
+			for i := range tt.want {
+				if got[i] != tt.want[i] {
+					t.Errorf("sent %v, want %v", got, tt.want)
+				}
+			}
+		})
+	}
+}
+
+// A locked member is left out of the set a family click sends. Included, the agent
+// would refuse the whole request and the click would do nothing at all.
+func TestClickingALockedFamilySendsNothingItWouldRefuse(t *testing.T) {
+	d := render(proxy.Status{Addr: "a", Answering: true, Health: healthWithGroups()})
+
+	if got := d.withGroupToggled("secrets"); len(got) != 0 {
+		t.Errorf("clicking the credential family sent %v, which the agent refuses", got)
+	}
+}
+
+// The plan is where the slot arithmetic lives, so a test can read what the menu
+// would draw — including what the last slot says when there are more families than
+// slots.
+func TestThePlanFillsTheSlots(t *testing.T) {
+	d := render(proxy.Status{Addr: "a", Answering: true, Health: healthWithGroups("EMAIL")})
+
+	plans := planSwitches(d, 8, 12)
+	if len(plans) != 8 {
+		t.Fatalf("planned %d slots, want the whole pool", len(plans))
+	}
+
+	// Three families, so three visible and five hidden.
+	visible := 0
+	for _, p := range plans {
+		if p.visible {
+			visible++
+		}
+	}
+	if visible != 3 {
+		t.Errorf("%d slots are visible, want 3", visible)
+	}
+
+	personal := plans[0]
+	if personal.title != "Personal details — 1 of 2 off" || !personal.enabled {
+		t.Errorf("the first family is %+v", personal)
+	}
+	if personal.members[0].code != "EMAIL" || personal.members[0].checked {
+		t.Errorf("the switched-off category is drawn as %+v", personal.members[0])
+	}
+	if !personal.members[1].checked {
+		t.Errorf("the category still masked is drawn as %+v", personal.members[1])
+	}
+	if personal.members[2].visible {
+		t.Error("an unused category slot is visible")
+	}
+
+	// A locked family: ticked, not clickable, and no rows under it.
+	secrets := plans[2]
+	if secrets.enabled || !secrets.checked {
+		t.Errorf("the credential family is %+v, want ticked and not clickable", secrets)
+	}
+	if len(secrets.members) != 0 {
+		t.Errorf("the credential family drew %d rows, want none", len(secrets.members))
+	}
+}
+
+// Past the pool the last slot says how many are missing. Dropping them quietly would
+// have somebody conclude the agent does not have them.
+func TestThePlanNamesWhatDoesNotFit(t *testing.T) {
+	d := render(proxy.Status{Addr: "a", Answering: true, Health: healthWithGroups()})
+
+	// A pool of two for three families: one drawn, one saying two are missing.
+	plans := planSwitches(d, 2, 12)
+	if !plans[0].visible || plans[0].code != "personal" {
+		t.Errorf("the first slot is %+v", plans[0])
+	}
+	if !plans[1].visible {
+		t.Fatal("the overflow slot is hidden, so two families vanished silently")
+	}
+	if !strings.Contains(plans[1].title, "2 more") {
+		t.Errorf("the overflow slot says %q, want the count that did not fit", plans[1].title)
+	}
+	if plans[1].code != "" {
+		t.Error("the overflow slot stands for a family, so clicking it would switch one off")
+	}
+}
+
+// A tick per mode rather than one item that cycles: a cycling item cannot say what
+// it is about to become, and the live one is not clickable because clicking it would
+// send the state it is already in.
+func TestTheModeRowsShowTheChoiceAndTheState(t *testing.T) {
+	d := render(proxy.Status{Addr: "a", Answering: true, Health: healthWithGroups()})
+
+	rows := planModes(d)
+	if len(rows) != 2 {
+		t.Fatalf("drew %d modes, want 2", len(rows))
+	}
+
+	live, other := rows[0], rows[1]
+	if live.code != "token" || !live.checked || live.enabled {
+		t.Errorf("the live mode is %+v, want ticked and not clickable", live)
+	}
+	if other.code != "fake" || other.checked || !other.enabled {
+		t.Errorf("the other mode is %+v, want unticked and clickable", other)
+	}
+	// The title says what the mode does, not only its name: neither word says which
+	// one puts a value nobody can check in front of a caller.
+	if !strings.Contains(other.title, "cannot be told from a real value") {
+		t.Errorf("the fake row does not say what it costs: %q", other.title)
+	}
+}
+
+// One row per locale the build has, not per loaded one: a list of what is already on
+// has nothing to turn on.
+func TestTheLocaleRowsOfferEveryCountryTheBuildHas(t *testing.T) {
+	d := render(proxy.Status{Addr: "a", Answering: true, Health: healthWithGroups()})
+
+	rows := planLocales(d)
+	if len(rows) != 3 {
+		t.Fatalf("drew %d locales, want the three the build has", len(rows))
+	}
+	if rows[0].code != "fr" || !rows[0].checked {
+		t.Errorf("the loaded locale is %+v", rows[0])
+	}
+	for _, row := range rows[1:] {
+		if row.checked {
+			t.Errorf("locale %q is ticked and is not loaded", row.code)
+		}
+		// Every row stays clickable, including the last loaded one: an agent with no
+		// locale at all is a valid state and the one it starts in.
+		if !row.enabled {
+			t.Errorf("locale %q cannot be clicked", row.code)
+		}
+	}
+}
+
+func TestClickingALocaleReplacesTheSelection(t *testing.T) {
+	d := render(proxy.Status{Addr: "a", Answering: true, Health: healthWithGroups()})
+
+	if got := d.withLocaleToggled("gb"); len(got) != 2 || got[0] != "fr" || got[1] != "gb" {
+		t.Errorf("adding gb sent %v", got)
+	}
+	// Switching the last one off is reachable, and sends an empty selection rather
+	// than nil — which a caller could read as "no change".
+	got := d.withLocaleToggled("fr")
+	if got == nil {
+		t.Fatal("switching off the last locale sent nil")
+	}
+	if len(got) != 0 {
+		t.Errorf("switching off the only locale sent %v", got)
+	}
+}
+
+// A click carries the other two parts of the state unchanged, because the route
+// replaces the state rather than patching it.
+func TestAClickCarriesTheWholeState(t *testing.T) {
+	d := render(proxy.Status{Addr: "a", Answering: true, Health: healthWithGroups("EMAIL")})
+
+	// Changing the mode leaves the categories and the locales alone.
+	want := d.policyWith(nil, "fake", nil)
+	if want.Substitution != "fake" {
+		t.Errorf("the mode was not applied: %+v", want)
+	}
+	if len(want.Off) != 1 || want.Off[0] != "EMAIL" {
+		t.Errorf("the switched-off categories were lost: %v", want.Off)
+	}
+	if len(want.Locales) != 1 || want.Locales[0] != "fr" {
+		t.Errorf("the locales were lost: %v", want.Locales)
+	}
+
+	// And changing a category leaves the mode alone.
+	want = d.policyWith(d.withCategoryToggled("EMAIL"), "", nil)
+	if want.Substitution != "token" {
+		t.Errorf("the mode was lost: %+v", want)
+	}
+	if len(want.Off) != 0 {
+		t.Errorf("the category was not switched back on: %v", want.Off)
 	}
 }

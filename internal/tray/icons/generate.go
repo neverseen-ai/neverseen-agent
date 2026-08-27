@@ -57,20 +57,36 @@ const (
 )
 
 func main() {
-	if err := write("masking.png", glyph(true)); err != nil {
-		log.Fatal(err)
-	}
-	if err := write("unmasked.png", glyph(false)); err != nil {
-		log.Fatal(err)
+	for name, state := range map[string]state{
+		"masking.png":  stateMasking,
+		"partial.png":  statePartial,
+		"unmasked.png": stateUnmasked,
+	} {
+		if err := write(name, glyph(state)); err != nil {
+			log.Fatal(err)
+		}
 	}
 }
 
-// glyph renders the mark, with the right-hand square outlined when the agent is
-// masking and filled when it is not.
+// state is how much of the catalogue is being applied, in the three answers the
+// agent gives.
+type state int
+
+const (
+	// stateMasking is every category the configuration loaded.
+	stateMasking state = iota
+	// statePartial is masking with categories switched off.
+	statePartial
+	// stateUnmasked is not masking at all: stopped, or no locale loaded.
+	stateUnmasked
+)
+
+// glyph renders the mark in one of the three states.
 //
 // The state is carried by the mark's own vocabulary rather than by a badge over it:
-// the left square is a value in clear, the right one is that value replaced, so
-// "both filled" says exactly and only what is true — nothing is being replaced.
+// the left square is a value in clear, the right one is that value replaced. So the
+// right square outlined means "being replaced", filled means "not", and half filled
+// means "some of it is" — each one says exactly and only what is true.
 //
 // A strike through the mark was the obvious alternative and it was tried. At the
 // sixteen points this is actually seen it is eight pixels of diagonal over a glyph
@@ -78,11 +94,21 @@ func main() {
 // settled anywhere but a real menu bar. Filled against outlined is the strongest
 // contrast available at that size and needs no sub-pixel luck.
 //
-// Two icons and not three, either. What matters is whether values are being
-// replaced — proxy.Status.Masking — and an agent that is up with no locale selected
-// belongs with the one that is down, because both mean the traffic leaves in clear.
-// Which of the two it is goes in the menu, where there is room to say it in words.
-func glyph(masking bool) *image.NRGBA {
+// # Why there are three now, when the reasoning here said two
+//
+// It said two because what mattered was whether values were being replaced, and an
+// agent up with no locale selected belonged with one that was down: both mean the
+// traffic leaves in clear. That reasoning still holds and those two are still one
+// picture.
+//
+// What changed is that a category can now be switched off from the menu. Such an
+// agent is masking — most of the catalogue, and the credentials always — while the
+// thing somebody switched off goes out in clear. Neither existing icon can say that:
+// the masking one is the green light over the values that are not being replaced,
+// and the unmasked one is a lie about the twenty-odd categories that are. The
+// half-filled square is the third answer, and it exists for the same reason the
+// status route distinguishes answering from masking.
+func glyph(s state) *image.NRGBA {
 	out := image.NewNRGBA(image.Rect(0, 0, pixels, pixels))
 
 	// One scale for both axes, so the glyph is not stretched, and a margin of a
@@ -105,7 +131,7 @@ func glyph(masking bool) *image.NRGBA {
 					// The centre of this sub-sample, in the mark's own units.
 					x := originX + (float64(px)*samples+float64(sx)+0.5)*step
 					y := originY + (float64(py)*samples+float64(sy)+0.5)*step
-					if inked(x, y, masking) {
+					if inked(x, y, s) {
 						covered++
 					}
 				}
@@ -123,7 +149,7 @@ func glyph(masking bool) *image.NRGBA {
 }
 
 // inked reports whether a point in the mark's space is part of the glyph.
-func inked(x, y float64, masking bool) bool {
+func inked(x, y float64, s state) bool {
 	// The divider, shortened to the squares it separates: the SVG runs it from 4.5
 	// to 19.5 because it has a plate to span.
 	if toSegment(x, y, 12, 7.25, 12, 16.75) <= 1.5/2 {
@@ -135,12 +161,24 @@ func inked(x, y float64, masking bool) bool {
 	}
 
 	// The same square on the right: outlined at stroke-width 1.6 while that value
-	// is being replaced, filled when it is not.
-	right := roundedRect(x, y, 13.75, 9.25, 5.5, 5.5, 1.25)
-	if masking {
-		return math.Abs(right) <= 1.6/2
+	// is being replaced, filled when it is not, and half filled when some of the
+	// catalogue is switched off.
+	const rightLeft, rightWidth = 13.75, 5.5
+	right := roundedRect(x, y, rightLeft, 9.25, rightWidth, 5.5, 1.25)
+	outline := math.Abs(right) <= 1.6/2
+
+	switch s {
+	case stateMasking:
+		return outline
+	case statePartial:
+		// The outline, plus the left half of what it encloses. Half rather than a
+		// smaller inner square: at this size an inner shape is three pixels with a
+		// one-pixel gap, which is a blur, while a straight edge down the middle of
+		// a square survives being drawn at sixteen points on any Mac.
+		return outline || (right <= 0 && x <= rightLeft+rightWidth/2)
+	default:
+		return right <= 1.6/2
 	}
-	return right <= 1.6/2
 }
 
 // roundedRect is the signed distance from a point to a rounded rectangle:

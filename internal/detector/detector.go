@@ -46,14 +46,21 @@ type Match struct {
 // are shared on purpose — two requests in flight on one session must not mint
 // the same index for different values.
 type Detector struct {
-	patterns []pii.Pattern
-	config   Config
+	config Config
 
 	// allow is config.AllowList in the comparable form, precomputed once.
 	allow map[string]bool
 
-	// fakes are the stand-ins this deployment's locales resolve to, once.
-	fakes pii.FakeSet
+	// policy is everything an operator can change while the agent runs: the loaded
+	// catalogue, the substitution mode and the switched-off categories. Shared with
+	// any detector WithSubstitution derives from this one — see policy.go.
+	policy *policy
+
+	// subOverride pins the substitution mode of a derived detector, ignoring the
+	// live one. Only the test page sets it, and only because that page's whole job
+	// is to render one text in both modes at once: reading the live mode there
+	// would render the same column twice.
+	subOverride *Substitution
 
 	mu       sync.RWMutex
 	counters map[string]*atomic.Int64 // token prefix -> highest index handed out
@@ -67,42 +74,41 @@ type Detector struct {
 // here rather than behind a flag, because "disabling a country must never
 // disable email detection" is an invariant, and a flag is a way to get it wrong.
 func New(cfg Config) *Detector {
-	locales := pii.LocalePatterns(cfg.Locales)
-	intl, secrets := pii.InternationalPatterns(), pii.SecretPatterns()
-
-	patterns := make([]pii.Pattern, 0, len(locales)+len(intl)+len(secrets))
-	patterns = append(patterns, locales...)
-	patterns = append(patterns, intl...)
-	patterns = append(patterns, secrets...)
-
 	allow := make(map[string]bool, len(cfg.AllowList))
 	for v := range cfg.AllowList {
 		allow[normalizeListValue(v)] = true
 	}
 
-	return &Detector{
-		patterns: patterns,
+	d := &Detector{
 		config:   cfg,
 		allow:    allow,
-		fakes:    pii.NewFakeSet(cfg.Locales),
+		policy:   &policy{},
 		counters: make(map[string]*atomic.Int64),
 	}
+	d.policy.cat.Store(newCatalogue(cfg.Locales))
+	d.policy.sub.Store(int32(cfg.Substitution))
+	return d
 }
 
 // Locales reports the country sets this detector loaded, for the status a
 // supervised agent reports about itself.
-func (d *Detector) Locales() []string { return d.config.Locales }
+func (d *Detector) Locales() []string { return d.catalogue().locales }
 
 // Substitution reports how this detector renders a masked value, for the same
 // status line.
-func (d *Detector) Substitution() Substitution { return d.config.Substitution }
+func (d *Detector) Substitution() Substitution {
+	if d.subOverride != nil {
+		return *d.subOverride
+	}
+	return Substitution(d.policy.sub.Load())
+}
 
 // Sample returns text exercising every category this detector can find, in every
 // notation its patterns accept.
 //
 // It lives here rather than beside whatever displays it, because the answer
 // depends on the configuration and the detector is what holds it.
-func (d *Detector) Sample() string { return pii.Sample(d.config.Locales) }
+func (d *Detector) Sample() string { return pii.Sample(d.catalogue().locales) }
 
 // WithSubstitution returns a detector holding the same catalogue and lists,
 // rendering its replacements in the given mode.
@@ -117,9 +123,21 @@ func (d *Detector) Sample() string { return pii.Sample(d.config.Locales) }
 // load and [EMAIL_7] on the next, so a comparison nobody could read — and it
 // would spend the real indices on a page that stores nothing.
 func (d *Detector) WithSubstitution(mode Substitution) *Detector {
-	cfg := d.config
-	cfg.Substitution = mode
-	return New(cfg)
+	// The same policy, not a copy of it, so the derived detector follows every
+	// locale change and every switched-off category as they happen. The test page
+	// renders both modes through two of these, and a copy would have that page show
+	// a configuration the agent had stopped applying — while the page exists to say
+	// what the agent does to a text.
+	//
+	// Its own counters, as before: the page mints indices nobody stores, and sharing
+	// the agent's would advance the numbering of a real session on every reload.
+	return &Detector{
+		config:      d.config,
+		allow:       d.allow,
+		policy:      d.policy,
+		subOverride: &mode,
+		counters:    make(map[string]*atomic.Int64),
+	}
 }
 
 // Scan returns the sensitive values in text, in reading order, with overlaps
@@ -137,10 +155,17 @@ func (d *Detector) Scan(text string) []Match {
 func (d *Detector) candidates(text string) []Match {
 	var out []Match
 
-	for _, p := range d.patterns {
+	for _, p := range d.catalogue().patterns {
 		for _, span := range patternSpans(p, text) {
 			value := text[span[0]:span[1]]
 
+			if !d.masks(p.Category) {
+				// Before the checksum and before the score, because a category
+				// switched off is not a weak match: it is a category this agent
+				// has been told not to look at, and running its checksum to throw
+				// the answer away is work on the hottest loop in the agent.
+				continue
+			}
 			if d.allowed(value) {
 				continue
 			}

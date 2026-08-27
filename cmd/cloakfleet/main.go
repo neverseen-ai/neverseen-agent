@@ -137,14 +137,20 @@ func run(args []string, stdin io.Reader, stdout io.Writer) error {
 // It reads no environment of its own — proxy.ListenAddress owns that question, as
 // the same rule requires everywhere else in this command.
 //
-// The exit code is non-zero unless the agent is actually masking. Answering is not
-// enough: an agent with no locale selected is up and recognises almost nothing,
-// and a check that called that healthy would be the check somebody trusted while
-// their traffic went out in clear.
+// The exit code is zero only when the agent is applying its whole catalogue.
+// Answering is not enough, and neither is masking: an agent with no locale selected
+// is up and recognises almost nothing, and an agent with a category switched off is
+// masking everything except the one thing somebody switched off. A check that called
+// either of those healthy would be the check somebody trusted while their traffic
+// went out in clear.
+//
+// So the code follows Level rather than Masking, and the middle state is the reason
+// it had to: zero has to mean "everything this configuration loaded is being
+// replaced", or a script cannot use it for anything.
 func runStatus(stdout io.Writer) error {
 	status := proxy.Query(context.Background(), proxy.ListenAddress(), 2*time.Second)
 	status.Write(stdout)
-	if !status.Masking() {
+	if status.Level() != detector.LevelFull {
 		return errQuiet
 	}
 	return nil

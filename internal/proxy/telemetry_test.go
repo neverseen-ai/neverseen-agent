@@ -14,6 +14,7 @@ import (
 	"github.com/cloakfleet/cloakfleet/internal/detector"
 	"github.com/cloakfleet/cloakfleet/internal/telemetry"
 	"github.com/cloakfleet/cloakfleet/internal/vault"
+	"github.com/cloakfleet/cloakfleet/pkg/pii"
 	contract "github.com/cloakfleet/cloakfleet/pkg/telemetry"
 )
 
@@ -227,5 +228,40 @@ func TestBackendConfiguredMeansAReporter(t *testing.T) {
 	}
 	if agent.Reporter == nil {
 		t.Error("no reporter was built although a backend is configured")
+	}
+}
+
+// A supervision backend has to be able to see that an agent is masking less than it
+// was configured to. Without these two fields a fleet view reading only Locales
+// would show an agent as configured and green while it sent email addresses to a
+// provider in clear.
+func TestTheReportedStateCarriesWhatIsSwitchedOff(t *testing.T) {
+	up := newUpstream(t, echoJSON)
+	det := detector.New(detector.Config{Locales: []string{"fr"}})
+	v, err := vault.New(vault.NewMemory(), nil, vault.DefaultTTL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv, err := New(Config{Providers: []Provider{{Code: "anthropic", BaseURL: up.server.URL}}}, det, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := srv.State(); got.Masking != "full" || got.SwitchedOff != nil {
+		t.Errorf("a whole catalogue reports masking=%q switched_off=%v", got.Masking, got.SwitchedOff)
+	}
+
+	if err := det.Disable([]pii.Category{pii.CatIPAddr, pii.CatDOB}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Read at the moment of the report rather than cached at start-up, which is the
+	// only field in State that changes while the process runs.
+	state := srv.State()
+	if state.Masking != "partial" {
+		t.Errorf("masking=%q, want partial", state.Masking)
+	}
+	if len(state.SwitchedOff) != 2 || state.SwitchedOff[0] != "DOB" || state.SwitchedOff[1] != "IP_ADDRESS" {
+		t.Errorf("switched_off=%v, want the two categories in catalogue order", state.SwitchedOff)
 	}
 }

@@ -28,9 +28,11 @@ import (
 	"os/exec"
 	"runtime"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
+	"github.com/cloakfleet/cloakfleet/internal/detector"
 	"github.com/cloakfleet/cloakfleet/internal/proxy"
 )
 
@@ -75,6 +77,96 @@ type display struct {
 	tooltip   string
 	lines     []string
 	providers []string
+
+	// substitution is the live mode, and modes are every mode this build offers, so
+	// the menu can draw a choice rather than a state.
+	substitution string
+	modes        []string
+
+	// locales is one row per locale the build has, with whether it is loaded.
+	locales []localeRow
+
+	// switches is the catalogue as the menu draws it: every group in the order the
+	// agent listed them, each with its categories. Built from what the agent
+	// serves rather than from pkg/pii, so a menu cannot go on offering a switch a
+	// rebuilt agent stopped honouring.
+	switches []switchGroup
+}
+
+// localeRow is one country pattern set the build has, and whether it is loaded.
+type localeRow struct {
+	code string
+	on   bool
+}
+
+// switchGroup is one family of categories in the menu.
+type switchGroup struct {
+	code  string
+	label string
+
+	// off is whether every switchable member is switched off, which is what the
+	// group's own tick shows. The toolkit has no mixed state — Check and Uncheck
+	// and nothing between — so a partly-off group says so in its title instead;
+	// see title.
+	off bool
+
+	// locked is whether nothing in this group may be switched. A locked group is
+	// one dim line rather than a submenu: twenty API keys nobody may switch off is
+	// twenty rows of nothing to do.
+	locked bool
+
+	members []switchCategory
+}
+
+// switchCategory is one switch.
+type switchCategory struct {
+	code   string
+	label  string
+	off    bool
+	locked bool
+}
+
+// title is what the group's menu entry says.
+//
+// The count of what is off lives here because fyne.io/systray offers Check and
+// Uncheck and nothing between: a group with two of its nine categories off cannot
+// show a third tick state, and a group drawn simply unticked would say "nothing
+// here is masked" about seven categories that are.
+func (g switchGroup) title() string {
+	switch {
+	case g.locked:
+		return fmt.Sprintf("%s — %d, locked", g.label, len(g.members))
+	case g.off:
+		return fmt.Sprintf("%s — all %d off", g.label, len(g.members))
+	}
+
+	off := 0
+	for _, m := range g.members {
+		if m.off {
+			off++
+		}
+	}
+	if off > 0 {
+		return fmt.Sprintf("%s — %d of %d off", g.label, off, len(g.members))
+	}
+	return g.label
+}
+
+// offCodes lists every category currently switched off, across every group.
+//
+// The whole set, because that is what the agent is sent: a toggle would be a
+// read-modify-write, and two surfaces looking at one agent can interleave the two
+// halves into a set neither asked for.
+func (d display) offCodes() []string {
+	var out []string
+	for _, g := range d.switches {
+		for _, m := range g.members {
+			if m.off {
+				out = append(out, m.code)
+			}
+		}
+	}
+	return out
 }
 
 // view is what the menu bar can be told. The real one wraps fyne.io/systray; a
@@ -93,9 +185,18 @@ type view interface {
 func render(s proxy.Status) display {
 	verdict := "Not masking — traffic is leaving in clear"
 	icon := unmaskedIcon
-	if s.Masking() {
+
+	switch s.Level() {
+	case detector.LevelFull:
 		verdict = "Masking"
 		icon = maskingIcon
+	case detector.LevelPartial:
+		// The third state, and the reason it exists: this agent is masking, so a
+		// two-state icon would show the masking picture while the categories
+		// somebody switched off went out in clear.
+		off := s.SwitchedOff()
+		verdict = fmt.Sprintf("Masking, with %d categor%s in clear", len(off), plural(len(off), "y", "ies"))
+		icon = partialIcon
 	}
 
 	var lines []string
@@ -115,15 +216,27 @@ func render(s proxy.Status) display {
 			"The agent is answering on " + s.Addr,
 			"No country pattern set is loaded",
 			"Only identifiers and credentials are recognised",
-			"Version " + or(s.Version, "unknown"),
+			"Version " + orUnknown(s.Version),
 		}
+	case s.Level() == detector.LevelPartial:
+		// Named rather than counted, because the count is already in the verdict
+		// line above and a name is what tells somebody whether the category they
+		// care about is one of them.
+		lines = []string{
+			verdict,
+			"On " + s.Addr,
+			"In clear: " + strings.Join(s.SwitchedOff(), ", "),
+			"Substitution: " + orUnknown(s.Substitution),
+			"Version " + orUnknown(s.Version),
+		}
+
 	default:
 		lines = []string{
 			verdict,
 			"On " + s.Addr,
 			"Locales: " + strings.Join(s.Locales, ", "),
-			"Substitution: " + or(s.Substitution, "unknown"),
-			"Version " + or(s.Version, "unknown"),
+			"Substitution: " + orUnknown(s.Substitution),
+			"Version " + orUnknown(s.Version),
 		}
 	}
 
@@ -137,8 +250,127 @@ func render(s proxy.Status) display {
 		// offering a provider a deployment had pointed elsewhere, and an agent that
 		// is not answering serves nothing — the submenu empties with it rather than
 		// handing out lines that lead nowhere.
-		providers: s.Providers,
+		providers:    s.Providers,
+		substitution: s.Substitution,
+		modes:        proxy.SubstitutionModes(),
+		locales:      localesOf(s),
+		switches:     switchesOf(s),
 	}
+}
+
+// localesOf is one row per locale the build has, ticked when it is loaded.
+//
+// Every locale the build has rather than only the loaded ones, because the menu is
+// offering a choice: a list of what is already on has nothing to turn on. Drawn from
+// what the agent published so the menu cannot suggest a locale the agent would
+// refuse.
+func localesOf(s proxy.Status) []localeRow {
+	if !s.Answering {
+		return nil
+	}
+
+	on := make(map[string]bool, len(s.Locales))
+	for _, code := range s.Locales {
+		on[code] = true
+	}
+
+	out := make([]localeRow, 0, len(s.AvailableLocales))
+	for _, code := range s.AvailableLocales {
+		out = append(out, localeRow{code: code, on: on[code]})
+	}
+	return out
+}
+
+// policyWith is the whole state to send, with one part replaced.
+//
+// Built from what the menu is currently drawing, which is what the agent last
+// reported: the route replaces the state rather than patching it, so a click has to
+// carry the other two parts unchanged.
+func (d display) policyWith(off []string, substitution string, locales []string) proxy.Policy {
+	want := proxy.Policy{Off: d.offCodes(), Substitution: d.substitution}
+	for _, l := range d.locales {
+		if l.on {
+			want.Locales = append(want.Locales, l.code)
+		}
+	}
+
+	if off != nil {
+		want.Off = off
+	}
+	if substitution != "" {
+		want.Substitution = substitution
+	}
+	if locales != nil {
+		want.Locales = locales
+	}
+	return want
+}
+
+// withLocaleToggled is the locale selection to send when one row is clicked.
+func (d display) withLocaleToggled(code string) []string {
+	var out []string
+	for _, l := range d.locales {
+		switch {
+		case l.code == code && !l.on:
+			out = append(out, l.code)
+		case l.code == code:
+			// Left out: this is the one being switched off.
+		case l.on:
+			out = append(out, l.code)
+		}
+	}
+	// Never nil, so "no locale at all" is a selection the agent is actually sent
+	// rather than a nil the caller might read as "no change".
+	if out == nil {
+		out = []string{}
+	}
+	return out
+}
+
+// switchesOf turns what the agent published into the rows the menu draws.
+//
+// A locked group keeps its members even though no row is drawn for them, because
+// the count in its title is the honest thing to show: "Secrets and keys — 20,
+// locked" says what is protected, where an empty line would look like a group the
+// agent had stopped having.
+func switchesOf(s proxy.Status) []switchGroup {
+	if !s.Answering {
+		// Nothing to offer about an agent that is not there, and offering it anyway
+		// would be a menu whose clicks reach nothing.
+		return nil
+	}
+
+	var out []switchGroup
+	for _, g := range s.Groups {
+		group := switchGroup{code: g.Code, label: g.Label, locked: true, off: true}
+
+		for _, c := range g.Categories {
+			group.members = append(group.members, switchCategory{
+				code: c.Code, label: c.Label, off: c.Off, locked: c.Locked,
+			})
+			if !c.Locked {
+				group.locked = false
+				if !c.Off {
+					group.off = false
+				}
+			}
+		}
+
+		// A group of nothing but locked categories is locked, and its "off" flag is
+		// meaningless — cleared so a locked group never reads as switched off.
+		if group.locked {
+			group.off = false
+		}
+		out = append(out, group)
+	}
+	return out
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }
 
 // watch applies what ask reports, until the context is done.
@@ -190,9 +422,14 @@ func same(a, b display) bool {
 		slices.Equal(a.providers, b.providers)
 }
 
-func or(value, fallback string) string {
+// orUnknown is what a state line says about a field the agent did not fill in.
+//
+// One fallback rather than a parameter, because every caller here means the same
+// thing by an empty value: the agent answered and this field was not in it. A menu
+// line reading "Version " with nothing after it looks like a bug in the menu.
+func orUnknown(value string) string {
 	if strings.TrimSpace(value) == "" {
-		return fallback
+		return "unknown"
 	}
 	return value
 }
@@ -251,4 +488,213 @@ func ask(addr string) proxy.Status {
 	ctx, cancel := context.WithTimeout(context.Background(), askTimeout)
 	defer cancel()
 	return proxy.Query(ctx, addr, askTimeout)
+}
+
+// What follows is the switch menu's logic, kept out of the toolkit adapter.
+//
+// That separation is the rule this package is built on: a menu bar cannot be
+// asserted on in CI, so everything that *decides* lives where a test reaches it and
+// the adapter applies results. Written the other way — the overflow arithmetic, the
+// all-or-nothing group rule and the set computation inside the systray calls — this
+// feature's behaviour would only ever have run on somebody's screen.
+
+// withCategoryToggled is the set to send when one category is clicked.
+func (d display) withCategoryToggled(code string) []string {
+	off := d.offSet()
+	if off[code] {
+		delete(off, code)
+	} else {
+		off[code] = true
+	}
+	return sortedKeys(off)
+}
+
+// withGroupToggled is the set to send when a whole family is clicked.
+//
+// All or nothing: a click on a partly-off family turns the rest off too, rather
+// than reviving what somebody switched off one at a time. Reviving them makes one
+// click undo several deliberate ones, which is the surprising direction.
+//
+// Locked members are left alone, because the agent refuses them: including one
+// would have the whole request rejected and the click do nothing at all.
+func (d display) withGroupToggled(code string) []string {
+	off := d.offSet()
+
+	for _, g := range d.switches {
+		if g.code != code {
+			continue
+		}
+
+		allOff := true
+		for _, m := range g.members {
+			if !m.locked && !m.off {
+				allOff = false
+			}
+		}
+		for _, m := range g.members {
+			switch {
+			case m.locked:
+			case allOff:
+				delete(off, m.code)
+			default:
+				off[m.code] = true
+			}
+		}
+	}
+	return sortedKeys(off)
+}
+
+func (d display) offSet() map[string]bool {
+	off := map[string]bool{}
+	for _, code := range d.offCodes() {
+		off[code] = true
+	}
+	return off
+}
+
+func sortedKeys(set map[string]bool) []string {
+	out := make([]string, 0, len(set))
+	for k := range set {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// entryPlan is one menu entry as the adapter should set it.
+//
+// A plan rather than a sequence of calls, so the arithmetic that decides which slot
+// holds what — and what the last slot says when there are more families than slots
+// — is a value a test can read.
+type entryPlan struct {
+	code    string
+	title   string
+	visible bool
+	enabled bool
+	checked bool
+
+	// members are the category entries under a family entry. A family with none
+	// visible shows the "never switched off from here" line instead.
+	members []entryPlan
+}
+
+// planSwitches lays the catalogue out over a fixed pool of entries.
+//
+// The pool is fixed because the toolkit builds a menu once and cannot add an entry
+// later, which is the same reason the provider pool exists. Past the pool the last
+// slot says how many families are missing rather than dropping them: a menu that
+// silently omitted two would have somebody conclude the agent does not have them.
+func planSwitches(d display, maxGroups, maxCats int) []entryPlan {
+	plans := make([]entryPlan, maxGroups)
+
+	shown := min(len(d.switches), maxGroups)
+	overflow := len(d.switches) - maxGroups
+	if overflow > 0 {
+		shown = maxGroups - 1
+	}
+
+	for i := range plans {
+		switch {
+		case i < shown:
+			plans[i] = planGroup(d.switches[i], maxCats)
+		case i == shown && overflow > 0:
+			plans[i] = entryPlan{
+				title:   fmt.Sprintf("…and %d more — see cloakfleet status", overflow+1),
+				visible: true,
+			}
+		}
+	}
+	return plans
+}
+
+// planGroup is one family and its switches.
+func planGroup(g switchGroup, maxCats int) entryPlan {
+	plan := entryPlan{
+		code:    g.code,
+		title:   g.title(),
+		visible: true,
+		enabled: !g.locked,
+		// A locked family is ticked and cannot be unticked: everything in it is
+		// being masked, and an unticked lock would say the opposite.
+		checked: g.locked || !g.off,
+	}
+
+	if g.locked {
+		// No rows under it. Twenty API keys nobody may switch off is twenty rows of
+		// nothing to do, and a submenu that opened onto them would read as an
+		// invitation.
+		return plan
+	}
+
+	plan.members = make([]entryPlan, maxCats)
+	for i := range plan.members {
+		if i >= len(g.members) {
+			continue
+		}
+		m := g.members[i]
+		plan.members[i] = entryPlan{
+			code:    m.code,
+			title:   m.label,
+			visible: true,
+			enabled: !m.locked,
+			checked: !m.off,
+		}
+	}
+	return plan
+}
+
+// planModes is one row per substitution mode, ticked for the live one.
+//
+// A tick per mode rather than one item that cycles, because the toolkit has no radio
+// group and a cycling item cannot say what it is about to become: "Substitution:
+// token" is a state, and clicking it to get fake is a guess. Two ticked rows say
+// both the state and the choice.
+func planModes(d display) []entryPlan {
+	out := make([]entryPlan, 0, len(d.modes))
+	for _, mode := range d.modes {
+		out = append(out, entryPlan{
+			code:    mode,
+			title:   modeTitle(mode),
+			visible: true,
+			// The live one is not clickable: clicking it would send the state it is
+			// already in, and a menu row that does nothing is a row somebody clicks
+			// twice wondering what broke.
+			enabled: mode != d.substitution,
+			checked: mode == d.substitution,
+		})
+	}
+	return out
+}
+
+// modeTitle says what the mode does rather than only naming it. "token" and "fake"
+// are the words the configuration uses and they have to stay, but neither says which
+// one puts a value nobody can check in front of a caller.
+func modeTitle(mode string) string {
+	switch mode {
+	case "fake":
+		return "fake — reads as prose, and cannot be told from a real value"
+	case "token":
+		return "token — [EMAIL_1], obvious in an answer"
+	default:
+		return mode
+	}
+}
+
+// planLocales is one row per locale the build has, ticked when it is loaded.
+//
+// Every one of them stays clickable, including the last one loaded: an agent with no
+// locale at all is a valid state and the one it starts in, so a menu that refused to
+// reach it would be hiding a state the agent can be in.
+func planLocales(d display) []entryPlan {
+	out := make([]entryPlan, 0, len(d.locales))
+	for _, l := range d.locales {
+		out = append(out, entryPlan{
+			code:    l.code,
+			title:   l.code,
+			visible: true,
+			enabled: true,
+			checked: l.on,
+		})
+	}
+	return out
 }

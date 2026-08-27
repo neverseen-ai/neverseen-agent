@@ -30,6 +30,55 @@ type Health struct {
 	Locales      []string `json:"locales"`
 	Substitution string   `json:"substitution"`
 	Providers    []string `json:"providers"`
+
+	// Masking is how much of the catalogue is being applied: "full", "partial" or
+	// "none". A string rather than the Level, because this crosses a wire and a
+	// number would have the two sides agreeing about 1 while disagreeing about
+	// what 1 means.
+	Masking string `json:"masking"`
+
+	// AvailableLocales are the country pattern sets this build has, in load order,
+	// whether or not they are loaded.
+	//
+	// Served rather than read from pkg/pii by the caller, for the reason Groups is:
+	// a menu built from its own copy would offer a locale an older agent does not
+	// have, and the click would fail with "no locale" from a name the menu itself
+	// suggested. Load order because it is a decision — it settles which country
+	// claims a value both could read — and a list somebody ticks in a different
+	// order than the agent applies them in is a list that lies about the result.
+	AvailableLocales []string `json:"available_locales,omitempty"`
+
+	// Groups is the catalogue as a list somebody can be shown: every group in
+	// display order with its categories, each carrying whether it is switched off
+	// and whether it may be.
+	//
+	// Served rather than read from pkg/pii by the caller, even though the menu bar
+	// could import the catalogue directly. The agent is the one applying it: a
+	// menu built from its own copy would go on offering a category after a rebuilt
+	// agent stopped having it, and the picture would disagree with the traffic.
+	Groups []HealthGroup `json:"groups,omitempty"`
+}
+
+// HealthGroup is one family of categories, as a surface needs to draw it.
+type HealthGroup struct {
+	Code       string           `json:"code"`
+	Label      string           `json:"label"`
+	Categories []HealthCategory `json:"categories"`
+}
+
+// HealthCategory is one switch.
+type HealthCategory struct {
+	Code  string `json:"code"`
+	Label string `json:"label"`
+
+	// Off is whether this category is currently not being masked.
+	Off bool `json:"off,omitempty"`
+
+	// Locked is whether it may be switched off at all. Sent rather than derived
+	// from the code's "SECRET_" prefix, because that prefix is a naming convention
+	// and this is a rule — and a surface guessing at it would draw a switch the
+	// agent refuses to honour.
+	Locked bool `json:"locked,omitempty"`
 }
 
 // Status is what a local caller can learn about the agent, including the case
@@ -44,7 +93,7 @@ type Status struct {
 	Health
 }
 
-// Masking reports whether the agent is doing the job it exists for.
+// Masking reports whether the agent is doing the job it exists for at all.
 //
 // Answering is not the question, which is why this is a separate one. An agent
 // with no locale selected is up, healthy, and recognises almost nothing — the
@@ -52,6 +101,69 @@ type Status struct {
 // same distinction is why the supervision contract reports State rather than a
 // heartbeat alone.
 func (s Status) Masking() bool { return s.Answering && len(s.Locales) > 0 }
+
+// Level reports how much of the catalogue is being applied, which is a different
+// question from Masking and the one an icon and an exit code have to follow.
+//
+// Three answers because two were not enough once a category could be switched
+// off: such an agent is masking, so Masking is true, and reporting that alone
+// would be the green light over the values that are not being replaced. It is the
+// answering/masking distinction one level further in.
+//
+// Read from what the agent said rather than recomputed from Groups: the agent is
+// the one applying the catalogue, and a caller deciding for itself is a second
+// answer to the question this route exists to answer.
+func (s Status) Level() detector.Level {
+	if !s.Masking() {
+		return detector.LevelNone
+	}
+	switch s.Health.Masking {
+	case detector.LevelPartial.String():
+		return detector.LevelPartial
+	case detector.LevelFull.String():
+		return detector.LevelFull
+	default:
+		// An agent that answered without the field: an older build, or a body that
+		// parsed only partly. Derived from what it did carry rather than assumed —
+		// a build with no policy route cannot have a category switched off, so
+		// "full" is a fact about that build rather than an invention, and a body
+		// that carried groups is read from those.
+		if len(s.SwitchedOff()) > 0 {
+			return detector.LevelPartial
+		}
+		return detector.LevelFull
+	}
+}
+
+// SwitchedOff names the categories the agent is not masking, in words, in the order
+// the catalogue lists them. For a person reading a report.
+func (s Status) SwitchedOff() []string { return s.switchedOff(false) }
+
+// SwitchedOffCodes is the same list as the codes a request carries. For anything
+// that has to send the set back.
+//
+// Two methods rather than one returning both, because the two are for different
+// readers and a caller that mixed them would print "EMAIL" at somebody or send
+// "Email address" to the agent — and the second fails with "no category named",
+// which reads as a bug in the agent.
+func (s Status) SwitchedOffCodes() []string { return s.switchedOff(true) }
+
+func (s Status) switchedOff(codes bool) []string {
+	var out []string
+	for _, g := range s.Groups {
+		for _, c := range g.Categories {
+			if !c.Off {
+				continue
+			}
+			if codes {
+				out = append(out, c.Code)
+			} else {
+				out = append(out, c.Label)
+			}
+		}
+	}
+	return out
+}
 
 // Query asks the agent about itself.
 //
@@ -112,6 +224,17 @@ func (s Status) Write(w io.Writer) {
 		fmt.Fprintf(w, "No country pattern set is loaded, so only the locale-independent\n")
 		fmt.Fprintf(w, "identifiers and credentials are recognised. Set %s.\n\n", detector.EnvLocale)
 
+	case s.Level() == detector.LevelPartial:
+		off := s.SwitchedOff()
+		fmt.Fprintf(w, "cloakfleet is masking on %s, with %d categor%s switched off.\n\n",
+			s.Addr, len(off), plural(len(off), "y", "ies"))
+		// Named, not counted. "Two categories are off" sends somebody looking; the
+		// names are what tells them whether the one they care about is among them.
+		for _, name := range off {
+			fmt.Fprintf(w, "  in clear       %s\n", name)
+		}
+		fmt.Fprint(w, "\n")
+
 	default:
 		fmt.Fprintf(w, "cloakfleet is masking on %s.\n\n", s.Addr)
 	}
@@ -121,6 +244,18 @@ func (s Status) Write(w io.Writer) {
 	fmt.Fprintf(w, "  substitution   %s\n", or(s.Substitution, "unknown"))
 	fmt.Fprintf(w, "  providers      %s\n", or(strings.Join(s.Providers, ", "), "none"))
 	fmt.Fprintf(w, "\nhttp://%s/test shows what would be masked, in this configuration.\n", s.Addr)
+}
+
+// plural is the one-or-many ending of a word. Three packages carry their own copy of
+// this, which is the right amount of duplication for five lines: a shared package
+// for it would be a dependency between the request path, the menu bar and the
+// command, all three of which are deliberately kept from importing each other's
+// concerns.
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }
 
 func or(value, fallback string) string {

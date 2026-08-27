@@ -29,6 +29,8 @@ var allowedStrings = map[string]string{
 	"state.locales[]":             "country codes from the agent's own registry",
 	"state.providers[]":           "upstream codes from the agent's own list",
 	"state.addresses[]":           "the machine's own IP addresses — personal data, and the one field here that is; see the field's comment",
+	"state.masking":               "how much of the catalogue is applied: full, partial or none",
+	"state.switched_off[]":        "category names from the agent's own catalogue, never a value — the same strings counters.masked already keys on",
 	"buckets[].counters.masked{}": "category names from the agent's own catalogue, never a value",
 	"buckets[].counters.models{}": "the model id the provider reported, which is a product name",
 }
@@ -147,6 +149,15 @@ func TestHeartbeatWireFormat(t *testing.T) {
 			// catch. One v4 and one v6, both from documentation ranges (RFC 5737,
 			// RFC 3849), so nothing here is a real machine anywhere.
 			Addresses: []string{"192.0.2.47", "2001:db8::47"},
+
+			// Both present for the same reason as the addresses above: they are
+			// omitempty, so an example that left them out would be two fields
+			// neither repository ever tested on the wire. And "partial" is the state
+			// worth pinning — "full" would leave switched_off empty, so the plural
+			// half of this pair would go untested exactly as it does when the whole
+			// field is missing.
+			Masking:     "partial",
+			SwitchedOff: []string{"IP_ADDRESS", "MONGO_ID"},
 		},
 		// Two buckets, not one. A batch of one would be a golden in which the
 		// plural case — the whole reason the message is a batch — never appears,

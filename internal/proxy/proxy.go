@@ -28,6 +28,7 @@ import (
 	"github.com/cloakfleet/cloakfleet/internal/detector"
 	"github.com/cloakfleet/cloakfleet/internal/telemetry"
 	"github.com/cloakfleet/cloakfleet/internal/vault"
+	"github.com/cloakfleet/cloakfleet/pkg/pii"
 )
 
 // Config is what the proxy needs beyond a detector and a vault.
@@ -49,6 +50,11 @@ type Config struct {
 	// created anyway: counting costs a mutex and the request path then has one
 	// shape rather than two, with no branch that only runs where nobody looked.
 	Recorder *telemetry.Recorder
+
+	// ControlKey authenticates the route that changes what is masked. Empty means
+	// that route refuses everything, which is what an agent that could not read
+	// its key must do.
+	ControlKey string
 }
 
 // Server is the agent's HTTP front.
@@ -68,6 +74,11 @@ type Server struct {
 	// startedAt is when this process began serving, so a supervision backend can
 	// show uptime and spot an agent restarting in a loop.
 	startedAt time.Time
+
+	// controlKey authenticates the one route that changes what this agent masks.
+	// Empty means that route refuses everything, which is the safe direction — see
+	// policy.go.
+	controlKey string
 }
 
 // New builds the server.
@@ -90,14 +101,15 @@ func New(cfg Config, det *detector.Detector, v *vault.Vault) (*Server, error) {
 	}
 
 	s := &Server{
-		det:       det,
-		vault:     v,
-		log:       logger,
-		recorder:  recorder,
-		audit:     newAuditor(cfg.Audit),
-		providers: providers,
-		routes:    make(map[string]*httputil.ReverseProxy, len(providers)),
-		startedAt: time.Now(),
+		det:        det,
+		vault:      v,
+		log:        logger,
+		recorder:   recorder,
+		audit:      newAuditor(cfg.Audit),
+		providers:  providers,
+		routes:     make(map[string]*httputil.ReverseProxy, len(providers)),
+		startedAt:  time.Now(),
+		controlKey: cfg.ControlKey,
 	}
 
 	for _, p := range providers {
@@ -143,12 +155,13 @@ func (s *Server) reverseProxy(base *url.URL) *httputil.ReverseProxy {
 // reservedRoutes are the paths the agent answers itself. A provider may not take
 // one of these codes: "/healthz" would reach the agent while "/healthz/v1/…"
 // reached the provider, which is a routing table nobody could reason about.
-var reservedRoutes = []string{"healthz", "test"}
+var reservedRoutes = []string{"healthz", "test", "policy"}
 
 // Handler returns the agent's routes.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.health)
+	mux.HandleFunc("/policy", s.handlePolicy)
 	mux.HandleFunc("/test", s.handleTest)
 	mux.HandleFunc("/", s.forward)
 	return mux
@@ -156,15 +169,89 @@ func (s *Server) Handler() http.Handler {
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(s.healthNow())
+}
+
+// healthNow is what the agent says about itself at this moment.
+//
+// One function, called by the route and by the reply to a policy change, so a
+// surface that has just switched a category off is told the state in the same
+// shape it reads on every poll. Two answers to "what are you doing" is how a menu
+// comes to disagree with the traffic.
+func (s *Server) healthNow() Health {
 	// Marshalled from the type a local caller decodes, in this same package, so
 	// the route cannot grow a field on one side only.
-	_ = json.NewEncoder(w).Encode(Health{
+	return Health{
 		Status:       "ok",
 		Version:      Version,
 		Locales:      s.det.Locales(),
 		Substitution: s.det.Substitution().String(),
 		Providers:    s.Providers(),
-	})
+		Masking:      s.det.Masking().String(),
+
+		// From the registry rather than from the configuration: this is what the
+		// build can load, not what it has loaded, and it is the list a surface
+		// offering a choice has to draw.
+		AvailableLocales: pii.LocaleCodes(),
+		Groups:           s.catalogue(),
+	}
+}
+
+// catalogue is the whole catalogue as a surface needs to draw it: groups in
+// display order, each with its categories, each carrying whether it is off and
+// whether it may be.
+//
+// Served by the agent rather than read from pkg/pii by the caller, even though the
+// menu bar could import the catalogue directly. The agent is the one applying it,
+// so a menu built from its own copy would go on offering a category after a
+// rebuilt agent stopped having one — and the picture would disagree with the
+// traffic, which is the whole failure the single /healthz type exists to prevent.
+func (s *Server) catalogue() []HealthGroup {
+	off := make(map[pii.Category]bool)
+	for _, cat := range s.det.Disabled() {
+		off[cat] = true
+	}
+
+	// Only what this agent can actually find. With one locale loaded the catalogue
+	// holds categories whose patterns are not in the detector at all, and a switch
+	// for one of those would tell somebody the agent is masking a value it cannot
+	// recognise — the opposite of what a list of switches is for.
+	inPlay := make(map[pii.Category]bool)
+	for _, cat := range s.det.Categories() {
+		inPlay[cat] = true
+	}
+
+	var out []HealthGroup
+	for _, g := range pii.Groups() {
+		var cats []pii.Category
+		for _, cat := range pii.CategoriesInGroup(g) {
+			if inPlay[cat] {
+				cats = append(cats, cat)
+			}
+		}
+		// A family whose every category is out of play is not drawn: an empty
+		// heading reads as a group the agent lost rather than one its locales never
+		// loaded.
+		if len(cats) == 0 {
+			continue
+		}
+
+		group := HealthGroup{
+			Code:       string(g),
+			Label:      pii.GroupLabel(g),
+			Categories: make([]HealthCategory, 0, len(cats)),
+		}
+		for _, cat := range cats {
+			group.Categories = append(group.Categories, HealthCategory{
+				Code:   string(cat),
+				Label:  pii.Label(cat),
+				Off:    off[cat],
+				Locked: !pii.Switchable(cat),
+			})
+		}
+		out = append(out, group)
+	}
+	return out
 }
 
 // forward is the whole request path: pick the upstream, mask the body, remember

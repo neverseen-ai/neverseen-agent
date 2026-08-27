@@ -14,6 +14,7 @@ import (
 	"github.com/cloakfleet/cloakfleet/internal/detector"
 	"github.com/cloakfleet/cloakfleet/internal/telemetry"
 	"github.com/cloakfleet/cloakfleet/internal/vault"
+	"github.com/cloakfleet/cloakfleet/pkg/pii"
 	contract "github.com/cloakfleet/cloakfleet/pkg/telemetry"
 )
 
@@ -91,6 +92,11 @@ type Options struct {
 	// Audit is where every value replaced or restored is written, in clear. Nil
 	// everywhere but the audit command.
 	Audit io.Writer
+
+	// ControlKeyFile overrides where the local control secret is kept. Empty means
+	// the documented default, which is the ordinary case; a test sets it so a run
+	// never touches the operator's own key.
+	ControlKeyFile string
 }
 
 // FromEnv assembles everything the agent needs to serve: the detector, the
@@ -118,12 +124,29 @@ func FromEnv(logger *slog.Logger, opts Options) (*Agent, error) {
 		return nil, err
 	}
 
+	// A key that cannot be read or written leaves the route refusing everything
+	// rather than stopping the agent. The agent's job is masking, and refusing to
+	// start because a menu will not be able to switch a category off is the
+	// supervision mistake in another costume — the thing that adjusts the control
+	// must never be able to stop it.
+	controlKeyFile := opts.ControlKeyFile
+	if controlKeyFile == "" {
+		controlKeyFile = DefaultControlKeyFile
+	}
+	controlKey, err := loadControlKey(controlKeyFile)
+	if err != nil {
+		logger.Warn("no control key, so nothing may change what this agent masks",
+			"file", controlKeyFile, "error", err)
+		controlKey = ""
+	}
+
 	recorder := telemetry.NewRecorder(time.Now())
 	srv, err := New(Config{
-		Providers: providers,
-		Logger:    logger,
-		Recorder:  recorder,
-		Audit:     opts.Audit,
+		Providers:  providers,
+		Logger:     logger,
+		Recorder:   recorder,
+		Audit:      opts.Audit,
+		ControlKey: controlKey,
 	}, det, v)
 	if err != nil {
 		return nil, err
@@ -197,7 +220,32 @@ func (s *Server) State() contract.State {
 		// between networks and a cached address would name where the machine was
 		// when it booted.
 		Addresses: localAddresses(),
+
+		// Read at each heartbeat for a stronger version of the same reason: this
+		// changes while the process runs, which nothing else in State does. Cached
+		// at start-up, a supervision backend would show every agent as applying its
+		// whole catalogue no matter what anybody switched off — and it is the one
+		// field here whose whole purpose is to say otherwise.
+		Masking:     s.det.Masking().String(),
+		SwitchedOff: switchedOffCodes(s.det.Disabled()),
 	}
+}
+
+// switchedOffCodes is the disabled set as the contract carries it.
+//
+// Category names, which the counters already key on, so this adds no new kind of
+// string to the heartbeat — and nil for an agent with nothing switched off, so the
+// field stays absent rather than shipping an empty array to every backend on every
+// report.
+func switchedOffCodes(cats []pii.Category) []string {
+	if len(cats) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(cats))
+	for _, cat := range cats {
+		out = append(out, string(cat))
+	}
+	return out
 }
 
 // Version is the agent build, stamped by the command at start-up.
