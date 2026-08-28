@@ -21,8 +21,11 @@ const noSentenceTail = `,.;:!?)\]}>`
 
 // quoteChars are the delimiters a pasted value sits inside and therefore cannot
 // contain: a value that ran through them swallowed the closing quote and, in
-// JSON, the rest of the object with it.
-const quoteChars = "\\s\"'`"
+// JSON, the rest of the object with it. The backslash is here for the same
+// reason: a value masked inside a JSON string ("PASSWORD=secret\"") runs to the
+// closing \" and takes the escaping backslash with it, so the token replaces
+// `secret\` and leaves `\"` as a bare `"` — malformed JSON the provider rejects.
+const quoteChars = "\\s\"'`\\\\"
 
 var (
 	// --- vendor prefixes ---------------------------------------------------

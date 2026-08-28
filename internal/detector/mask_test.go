@@ -1,6 +1,7 @@
 package detector
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -280,5 +281,33 @@ func TestUnmaskLeavesUnknownTokensAlone(t *testing.T) {
 	if got := Unmask(text, map[string]string{"[EMAIL_9]": "claire@example.fr"}); got !=
 		"the answer mentions claire@example.fr and [NIR_4]" {
 		t.Errorf("Unmask did not expand exactly the known token: %q", got)
+	}
+}
+
+// A secret masked inside a JSON string must not eat the escaping backslash of the
+// quote that closes that string. A tool call's arguments are JSON encoded inside
+// a JSON body, so "PASSWORD=secret\"" runs the value to the \" that ends it. A
+// value class that admitted the backslash masked `secret\` and left `\"` as a
+// bare `"`, turning the arguments into JSON the provider rejects with a 400.
+func TestMaskKeepsJSONEscapingIntact(t *testing.T) {
+	d := New(Config{})
+
+	// The decoded arguments of an exec_command tool call: a shell command that
+	// echoes a password, JSON-escaped once because it sits in a JSON string.
+	args := `{"cmd": "echo \"PASSWORD=Sup3rS3cr3tValue123\""}`
+	if !json.Valid([]byte(args)) {
+		t.Fatalf("the test input is not valid JSON to begin with")
+	}
+
+	masked, _, replaced := d.MaskOnce(args)
+
+	if replaced == 0 {
+		t.Fatalf("the password was not masked at all:\n%s", masked)
+	}
+	if strings.Contains(masked, "Sup3rS3cr3tValue123") {
+		t.Errorf("the secret survived in clear:\n%s", masked)
+	}
+	if !json.Valid([]byte(masked)) {
+		t.Errorf("masking broke the JSON escaping:\n%s", masked)
 	}
 }
