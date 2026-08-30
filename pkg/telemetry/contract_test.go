@@ -255,3 +255,52 @@ func TestHeartbeatWireFormat(t *testing.T) {
 		}
 	}
 }
+
+// The pair the whole contract rests on: the agent signs, the backend verifies, and
+// signing lives here precisely so there is one implementation rather than two.
+//
+// Untested until now, which is the wrong state for a signature check — a
+// VerifySignature that returned true for everything would pass every other test in
+// this tree and make the header decorative, and one that returned false for
+// everything would reject every heartbeat with each side convinced it was right.
+// Both halves are asserted here, because either alone is meaningless.
+func TestSignAndVerify(t *testing.T) {
+	key := []byte("a key that is not a real one")
+	body := []byte(`{"schema":1,"agent_id":"agent-1"}`)
+
+	signature := Sign(key, body)
+	if signature == "" {
+		t.Fatal("Sign produced nothing")
+	}
+	if !VerifySignature(key, body, signature) {
+		t.Error("a signature this package produced does not verify under the same key")
+	}
+
+	// Deterministic, because the agent signs and the backend verifies in two
+	// processes: a signature that varied per call could never be checked.
+	if again := Sign(key, body); again != signature {
+		t.Errorf("signing the same body twice gave %q then %q", signature, again)
+	}
+
+	for name, tc := range map[string]struct {
+		key       []byte
+		body      []byte
+		signature string
+	}{
+		// The one that matters: without it, one workstation could file reports as
+		// another simply by naming its agent id.
+		"another agent's key":         {[]byte("a different key"), body, signature},
+		"a body that changed":         {key, append(body, ' '), signature},
+		"a signature that is not hex": {key, body, "not hex"},
+		// Truncated rather than wrong: hmac.Equal has to refuse a short digest
+		// rather than compare the prefix it was given.
+		"a truncated signature": {key, body, signature[:len(signature)-2]},
+		"no signature at all":   {key, body, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if VerifySignature(tc.key, tc.body, tc.signature) {
+				t.Error("verified, so the header is not binding anything")
+			}
+		})
+	}
+}

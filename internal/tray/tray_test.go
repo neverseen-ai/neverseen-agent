@@ -784,3 +784,77 @@ func perturb(v reflect.Value) bool {
 		return false
 	}
 }
+
+// One row per secret level, ticked for the live one — the same shape as the modes,
+// because the toolkit has no radio group and a cycling item cannot say what it is
+// about to become.
+//
+// These rows are the surface the stale comparison hid: no state line carries the
+// level, so a level changed anywhere else was invisible here until same() started
+// reading the whole display. Drawing them right is the other half of that fix.
+func TestTheLevelRowsShowTheChoiceAndTheState(t *testing.T) {
+	health := healthWithGroups()
+	health.SecretLevel = "medium"
+	d := render(proxy.Status{Addr: "a", Answering: true, Health: health})
+
+	rows := planLevels(d)
+	if len(rows) != 3 {
+		t.Fatalf("drew %d levels, want weak, medium and strong", len(rows))
+	}
+
+	// Weakest first, so a row read top to bottom goes from most masking to least.
+	var codes []string
+	for _, r := range rows {
+		codes = append(codes, r.code)
+	}
+	if want := []string{"weak", "medium", "strong"}; !slices.Equal(codes, want) {
+		t.Errorf("the levels are drawn %v, want %v", codes, want)
+	}
+
+	for _, r := range rows {
+		live := r.code == "medium"
+		// The live one is not clickable: clicking it would send the state it is
+		// already in, and a row that does nothing is a row somebody clicks twice
+		// wondering what broke.
+		if r.checked != live || r.enabled == live {
+			t.Errorf("the %q row is %+v, want checked=%v and enabled=%v",
+				r.code, r, live, !live)
+		}
+	}
+
+	// The titles say what each level costs rather than only naming it. "Weak" and
+	// "strong" are the configuration's words and have to stay, but neither says
+	// which one replaces the identifiers in the code somebody is asking about.
+	if !strings.Contains(rows[0].title, "masks code too") {
+		t.Errorf("the weak row does not say what it costs: %q", rows[0].title)
+	}
+	if !strings.Contains(rows[2].title, "keeps code readable") {
+		t.Errorf("the strong row does not say what it buys: %q", rows[2].title)
+	}
+}
+
+// A click on a level sends the whole state with only the level replaced.
+//
+// The route replaces the state rather than patching it, so a click that carried
+// only its own change would wipe the locale selection — the request that turns an
+// agent into one masking almost nothing while reporting success.
+func TestClickingALevelCarriesTheRestUnchanged(t *testing.T) {
+	health := healthWithGroups("EMAIL")
+	health.SecretLevel = "weak"
+	d := render(proxy.Status{Addr: "a", Answering: true, Health: health})
+
+	want := d.policyWith(nil, "", nil, "strong")
+
+	if want.SecretLevel != "strong" {
+		t.Errorf("the level sent is %q, want strong", want.SecretLevel)
+	}
+	if want.Substitution != "token" {
+		t.Errorf("the substitution mode was not carried through: %q", want.Substitution)
+	}
+	if !slices.Equal(want.Locales, []string{"fr"}) {
+		t.Errorf("the locale selection was not carried through: %v", want.Locales)
+	}
+	if !slices.Equal(want.Off, []string{"EMAIL"}) {
+		t.Errorf("the switched-off set was not carried through: %v", want.Off)
+	}
+}

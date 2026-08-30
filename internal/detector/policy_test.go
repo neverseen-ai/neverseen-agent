@@ -389,3 +389,77 @@ func TestTheCatalogueIsSafeUnderConcurrency(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// The level moves while the agent runs, exactly as the substitution mode does, and
+// nothing minted is affected: the level decides whether a value is a match at all,
+// so it applies from the next scan and leaves every mapping already made alone.
+func TestSetSecretLevelAppliesFromTheNextScan(t *testing.T) {
+	d := New(Config{})
+
+	// The zero value is weak, which is what the agent did before the level existed:
+	// a setting nobody has touched must not quietly mask less than it used to.
+	if got := d.SecretLevel(); got != pii.StrengthWeak {
+		t.Errorf("a fresh detector starts at %v, want weak", got)
+	}
+
+	const text = `password: reset-my-account-now-please`
+	weak := len(d.Scan(text))
+
+	d.SetSecretLevel(pii.StrengthStrong)
+	if got := d.SecretLevel(); got != pii.StrengthStrong {
+		t.Fatalf("the level is %v after being set to strong", got)
+	}
+	if strong := len(d.Scan(text)); strong > weak {
+		t.Errorf("strong found %d values where weak found %d: the scale runs the wrong way",
+			strong, weak)
+	}
+
+	// Back down again, because a level that could only be tightened would be a menu
+	// with a one-way door in it.
+	d.SetSecretLevel(pii.StrengthWeak)
+	if got := len(d.Scan(text)); got != weak {
+		t.Errorf("returning to weak found %d values, want the original %d", got, weak)
+	}
+}
+
+// The levels this build offers, served from here rather than spelled out by each
+// surface: a menu offering a level the agent does not have would fail on a name the
+// menu itself suggested.
+func TestSecretLevelsAreOfferedWeakestFirst(t *testing.T) {
+	levels := SecretLevels()
+
+	// Weakest first is the order the scale runs in, so a row somebody reads top to
+	// bottom goes from most masking to least.
+	want := []string{"weak", "medium", "strong"}
+	if len(levels) != len(want) {
+		t.Fatalf("this build offers %v, want %v", levels, want)
+	}
+	for i, level := range levels {
+		if level != want[i] {
+			t.Errorf("level %d is %q, want %q", i, level, want[i])
+		}
+		// Every offered name has to be one ParseSecretLevel takes back, or a click
+		// fails on a name this list produced.
+		if _, err := ParseSecretLevel(level); err != nil {
+			t.Errorf("this build offers %q and refuses it: %v", level, err)
+		}
+	}
+}
+
+// The mode's name on the wire, which is what every surface compares against.
+func TestSubstitutionNames(t *testing.T) {
+	for mode, want := range map[Substitution]string{
+		SubstitutionToken: "token",
+		SubstitutionFake:  "fake",
+	} {
+		if got := mode.String(); got != want {
+			t.Errorf("mode %d names itself %q, want %q", mode, got, want)
+		}
+		// Round trip, for the reason the levels do it: a name a surface draws and
+		// the agent refuses is a click that fails on the agent's own word.
+		back, err := ParseSubstitution(want)
+		if err != nil || back != mode {
+			t.Errorf("%q parsed back to %v (%v), want %v", want, back, err, mode)
+		}
+	}
+}

@@ -246,3 +246,50 @@ func testKey(t *testing.T) []byte {
 	}
 	return key
 }
+
+// Forget is what a change of substitution mode costs, and the cost has to be real.
+//
+// The mapping is consulted before the mode is, so a value already seen keeps the
+// shape it was first given. That is what lets a conversation straddling the change
+// round-trip — and it is also why a click on "fake" changed nothing anybody could
+// observe until this existed: on a workstation where nothing sends a session header,
+// one unnamed session carries every value the agent has handled since it started.
+//
+// So the trade is that replacements minted before the change stop being restored.
+// Asserted rather than described, because a Forget that quietly kept a session would
+// put the control back to appearing not to work.
+func TestForgetDropsEveryMapping(t *testing.T) {
+	store := NewMemory()
+	v, err := New(store, nil, DefaultTTL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := v.Save("s1", map[string]string{"[EMAIL_1]": "claire@example.fr"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := v.Save("s2", map[string]string{"[IBAN_1]": "FR1420041010050500013M02606"}); err != nil {
+		t.Fatal(err)
+	}
+
+	v.Forget()
+
+	// Every session, not only the one that was current: the mode is one setting for
+	// the whole agent, and a purge that spared a session would leave that
+	// conversation minting the old shape.
+	for _, session := range []string{"s1", "s2"} {
+		if got := v.Load(session); len(got) != 0 {
+			t.Errorf("%s survived Forget: %v", session, got)
+		}
+	}
+
+	// Still usable afterwards. Forget replaces the map rather than nilling it, so
+	// the next exchange mints into a live store rather than panicking on the first
+	// write.
+	if err := v.Save("s1", map[string]string{"[EMAIL_2]": "paul@example.fr"}); err != nil {
+		t.Fatalf("the vault was unusable after Forget: %v", err)
+	}
+	if got := v.Load("s1"); len(got) != 1 {
+		t.Errorf("a value minted after Forget was not stored: %v", got)
+	}
+}

@@ -133,3 +133,57 @@ func TestWriteOpensOnTheHeadline(t *testing.T) {
 		})
 	}
 }
+
+// PolicyOf turns what a surface is looking at into what it has to send, and the
+// switched-off set has to cross as codes.
+//
+// The two lists are for different readers: SwitchedOff names categories in words for
+// a person, SwitchedOffCodes gives the codes a request carries. A caller that mixed
+// them would send "Email address" to the agent, which fails with "no category named"
+// — an error that reads as a bug in the agent rather than in the caller.
+func TestPolicyOfCarriesCodesNotLabels(t *testing.T) {
+	status := Status{Addr: "127.0.0.1:8787", Answering: true, Health: Health{
+		Locales: []string{"fr", "gb"}, Substitution: "fake", SecretLevel: "strong",
+		Masking: "partial",
+		Groups: []HealthGroup{{Code: "technical", Label: "Technical identifiers",
+			Categories: []HealthCategory{
+				{Code: "IP_ADDRESS", Label: "IP address", Off: true},
+				{Code: "MONGO_ID", Label: "Database identifier"},
+			}}},
+	}}
+
+	want := PolicyOf(status)
+
+	if len(want.Off) != 1 || want.Off[0] != "IP_ADDRESS" {
+		t.Errorf("the set to send is %v, want the code IP_ADDRESS", want.Off)
+	}
+	if names := status.SwitchedOff(); len(names) != 1 || names[0] != "IP address" {
+		t.Errorf("the names for a person are %v, want the label", names)
+	}
+
+	// The other three parts travel unchanged, because the route replaces the state
+	// rather than patching it: a caller that dropped one would silently move the
+	// agent somewhere nobody asked for.
+	if want.Substitution != "fake" || want.SecretLevel != "strong" {
+		t.Errorf("the mode and level did not survive: %+v", want)
+	}
+	if len(want.Locales) != 2 {
+		t.Errorf("the locale selection did not survive: %v", want.Locales)
+	}
+}
+
+// The modes and levels this build offers, served rather than spelled out by each
+// surface. A menu offering a name the agent does not have would fail on a name the
+// menu itself suggested.
+func TestTheOfferedNamesAreOnesTheAgentTakes(t *testing.T) {
+	for _, mode := range SubstitutionModes() {
+		if _, err := detector.ParseSubstitution(mode); err != nil {
+			t.Errorf("this build offers the mode %q and refuses it: %v", mode, err)
+		}
+	}
+	for _, level := range SecretLevels() {
+		if _, err := detector.ParseSecretLevel(level); err != nil {
+			t.Errorf("this build offers the level %q and refuses it: %v", level, err)
+		}
+	}
+}

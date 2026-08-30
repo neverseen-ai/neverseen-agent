@@ -134,3 +134,58 @@ func exportsIn(text string) bool {
 	}
 	return false
 }
+
+// PointAt is the line somebody pastes into a shell, and it is the one place that
+// decides what that line looks like per provider.
+//
+// Tested here rather than only through the menu bar that displays it: shellTools is
+// the single owner of the variable, the command and the caveat, and a guessed pair
+// fails after somebody has already pasted it and believed it. The three shapes are
+// three deliberate answers — a command to run where there is one everybody means, an
+// export where only the variable is standard, and the bare URL where neither is.
+func TestPointAtIsTheLineForOneShell(t *testing.T) {
+	const addr = "127.0.0.1:9999"
+
+	for name, tc := range map[string]struct{ code, want string }{
+		// A prefixed assignment rather than an export: it applies to that one run
+		// and leaves the shell as it was, and it is what somebody asking for "the
+		// command" means — a line to paste and press return on.
+		"a provider with a known CLI": {"anthropic",
+			"ANTHROPIC_BASE_URL=http://" + addr + "/anthropic claude"},
+		"a provider whose CLI is the other one": {"openai",
+			"OPENAI_BASE_URL=http://" + addr + "/openai codex"},
+		// No agreed variable name, so a guess would be an instruction that does
+		// nothing. The URL is what an operator can actually act on.
+		"a provider with no standard variable": {"gemini", "http://" + addr + "/gemini"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := PointAt(tc.code, addr); got != tc.want {
+				t.Errorf("PointAt(%q) = %q, want %q", tc.code, got, tc.want)
+			}
+		})
+	}
+
+	// The default address rather than a line pointing at nothing: every other local
+	// caller here falls back the same way, and a line naming no host is one somebody
+	// pastes and then has to debug.
+	if got := PointAt("anthropic", ""); !strings.Contains(got, DefaultListen) {
+		t.Errorf("PointAt with no address gave %q, which does not name %s", got, DefaultListen)
+	}
+}
+
+// Every code the table offers a line for has a variable behind it.
+//
+// The failure this catches is the one the table exists to prevent: a code listed by
+// ToolCodes with no variable would print "export =http://…", which is a line that
+// silently does nothing in a profile while looking like it worked.
+func TestEveryOfferedToolHasAVariable(t *testing.T) {
+	for _, code := range ToolCodes() {
+		if shellTools[code].Variable == "" {
+			t.Errorf("%s is offered a line but has no environment variable behind it", code)
+		}
+		if line := PointAt(code, DefaultListen); !strings.Contains(line, shellTools[code].Variable) {
+			t.Errorf("the line for %s does not carry %s: %q",
+				code, shellTools[code].Variable, line)
+		}
+	}
+}

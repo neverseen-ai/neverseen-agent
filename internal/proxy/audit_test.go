@@ -653,3 +653,65 @@ func TestASessionCannotEscapeTheTraceDirectory(t *testing.T) {
 		t.Errorf("the file name carries a path: %s", names[0])
 	}
 }
+
+// The command prints where traces go, and it reads that from the assembled agent
+// rather than from the flag that asked for it.
+//
+// The chain is Agent.TraceDir → auditor.traceDir → tracer.Dir, and every step of it
+// is nil-safe because the ordinary agent has no auditor and no tracer at all. What
+// it must report for that agent is "", not a path — the banner says "nothing is
+// written to a file" on the strength of this answer, and a banner that reassures
+// somebody about a file it is at that moment filling is worse than no banner.
+func TestTheAgentReportsWhereItWrites(t *testing.T) {
+	up := newUpstream(t, echoJSON)
+
+	t.Run("no tracer at all", func(t *testing.T) {
+		srv := newServer(t, up, nil, nil)
+		agent := &Agent{Server: srv}
+
+		if got := agent.TraceDir(); got != "" {
+			t.Errorf("an agent writing nothing reports %q, want the empty string", got)
+		}
+	})
+
+	t.Run("a tracer with a directory", func(t *testing.T) {
+		dir := filepath.Join(t.TempDir(), "traces")
+		traces, err := newTracer(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		agent := &Agent{Server: newServer(t, up, nil, traces)}
+
+		// The resolved path, so an operator reads where the files actually are
+		// rather than the argument they typed.
+		if got := agent.TraceDir(); got != dir {
+			t.Errorf("the agent reports %q, want %q", got, dir)
+		}
+	})
+
+	// Nothing asked for means no tracer is built, which is what keeps the ordinary
+	// agent from carrying trace state that is merely switched off.
+	if traces, err := newTracer(""); err != nil || traces != nil {
+		t.Errorf("an empty directory built a tracer (%v, %v)", traces, err)
+	}
+}
+
+// newServer assembles a server the way the tests above need it, without an address.
+func newServer(t *testing.T, up *upstream, console io.Writer, traces *tracer) *Server {
+	t.Helper()
+
+	det := detector.New(detector.Config{Locales: []string{"fr"}})
+	v, err := vault.New(vault.NewMemory(), nil, vault.DefaultTTL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv, err := New(Config{
+		Providers: []Provider{{Code: "anthropic", BaseURL: up.server.URL}},
+		Audit:     console,
+		Traces:    traces,
+	}, det, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return srv
+}
