@@ -90,8 +90,9 @@ These are not style preferences. Each one is a failure that already happened, mo
   that is down must never stop the masking.
 - **The agent holds no API keys.** The caller's credential is forwarded untouched
   (`internal/proxy/provider.go:20-24`).
-- **Counts, never content**, everywhere except `cloakfleet audit` — the one deliberate
-  exception, one operator at their own keyboard on their own data.
+- **Counts, never content**, everywhere except `cloakfleet proxy -a` (a screen) and
+  `-v` (a file under `traces/`) — the two deliberate exceptions, for one operator at
+  their own keyboard on their own data. Neither belongs in a service definition.
 - **British spelling** in comments and prose; the linter is configured for it.
 - **Conventional Commits** (`feat:`, `fix:`, `docs:`, `test:`, `refactor:`).
 - **Comments say *why*** and name the failure a rule prevents. A comment restating the

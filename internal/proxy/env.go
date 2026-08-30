@@ -48,16 +48,6 @@ const (
 // DefaultIdentityFile is where an agent keeps the identity a backend issued it.
 const DefaultIdentityFile = "~/.cloakfleet/agent.json"
 
-// DefaultAuditListen is where `cloakfleet audit` listens.
-//
-// A port of its own, and not a preference: an audit run is meant to sit beside a
-// workstation's ordinary agent — the one the shell profile and the menu bar are
-// already pointed at — rather than to replace it for the length of the run. On
-// the same port the two would race for the socket, and whichever lost would
-// leave the operator reading an empty console while their traffic went through
-// the other one.
-const DefaultAuditListen = "127.0.0.1:33333"
-
 // DefaultListen binds the loopback interface only.
 //
 // Not a default to override lightly. The agent trusts whoever reaches it — it
@@ -79,11 +69,11 @@ type Agent struct {
 // Options are what the command decides about an agent, as opposed to what the
 // environment does.
 //
-// It exists so `cloakfleet audit` can differ from `cloakfleet proxy` in the two
-// ways it has to — a port of its own and a console to reveal on — without a
-// second assembly of the pipeline, which is the divergence this project's one
-// entrypoint rule exists to prevent, and without a command reading an
-// environment variable, which is the other rule.
+// It exists so `-a` and `-v` can change what the agent reveals without a second
+// assembly of the pipeline — the divergence this project's one entrypoint rule exists
+// to prevent — and without a command reading an environment variable, which is the
+// other rule. The flags are parsed where flags belong, in the command, and arrive
+// here as options.
 type Options struct {
 	// Listen overrides the configured address. Empty means the environment
 	// decides, which is the ordinary case.
@@ -97,7 +87,23 @@ type Options struct {
 	// the documented default, which is the ordinary case; a test sets it so a run
 	// never touches the operator's own key.
 	ControlKeyFile string
+
+	// TraceDir records both bodies of every exchange into this directory, one file
+	// per exchange. Empty — the ordinary case — records nothing at all.
+	//
+	// A directory rather than a boolean, so the one thing this agent writes in clear
+	// says in the option where it goes. Only `cloakfleet proxy -v` sets it.
+	TraceDir string
 }
+
+// TraceDir reports where this agent writes both bodies of every exchange, or "" when
+// it writes none.
+//
+// From the assembled agent rather than from the flag that asked for it, for the reason
+// the audit instructions read the locales from the server: what the command prints has
+// to be what the agent is doing, and a directory that could not be created is a
+// difference somebody has to see.
+func (a *Agent) TraceDir() string { return a.Server.audit.traceDir() }
 
 // FromEnv assembles everything the agent needs to serve: the detector, the
 // session vault, the server over them, and a reporter when one is configured.
@@ -140,12 +146,21 @@ func FromEnv(logger *slog.Logger, opts Options) (*Agent, error) {
 		controlKey = ""
 	}
 
+	// Before anything is printed and before the server exists, so an operator who
+	// cannot write where they asked is told at start-up rather than after the traffic
+	// they wanted to look at has gone past.
+	traces, err := newTracer(opts.TraceDir)
+	if err != nil {
+		return nil, err
+	}
+
 	recorder := telemetry.NewRecorder(time.Now())
 	srv, err := New(Config{
 		Providers:  providers,
 		Logger:     logger,
 		Recorder:   recorder,
 		Audit:      opts.Audit,
+		Traces:     traces,
 		ControlKey: controlKey,
 	}, det, v)
 	if err != nil {

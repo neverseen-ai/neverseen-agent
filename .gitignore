@@ -10,3 +10,8 @@ coverage.html
 # not part of the tree — and it is a real model's answer to a real prompt, so it
 # is not something to commit by reflex.
 e2e-artefacts/
+
+# What `cloakfleet audit -v` writes: both bodies of every exchange it saw, in
+# clear. Evidence of one run and nothing else — and unlike the artefacts above,
+# these hold somebody's real data, so committing one is a leak rather than noise.
+traces/

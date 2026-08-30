@@ -15,7 +15,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -40,9 +39,11 @@ var version = "dev"
 const usage = `cloakfleet — mask sensitive values before they reach a model.
 
 Usage:
-  cloakfleet proxy         run the agent: mask what goes out, restore what comes back
-  cloakfleet audit         run it in the foreground on port %s, printing every
-                           value it replaces and restores, in clear
+  cloakfleet proxy [-a] [-v]
+                           run the agent: mask what goes out, restore what comes
+                           back. -a prints every value it replaces and restores,
+                           in clear; -v writes both bodies of every exchange to
+                           ./%s. Neither belongs in a service definition
   cloakfleet scan [file]   report the sensitive values in a file, or in stdin
   cloakfleet status        report whether the agent is masking, and what
   cloakfleet mask          list what is masked, and switch a category or a family
@@ -113,9 +114,7 @@ func run(args []string, stdin io.Reader, stdout io.Writer) error {
 
 	switch cmd := args[0]; cmd {
 	case "proxy":
-		return serve(stdout, proxy.Options{})
-	case "audit":
-		return runAudit(stdout)
+		return runProxy(args[1:], stdout)
 	case "scan":
 		return runScan(args[1:], stdin, stdout)
 	case "status":
@@ -166,7 +165,7 @@ func runStatus(stdout io.Writer) error {
 func printUsage(w io.Writer) {
 	listen := "http://" + proxy.DefaultListen
 	fmt.Fprintf(w, usage,
-		auditPort(),
+		defaultTraceDir,
 		listen, listen, listen,
 		detector.EnvLocale, strings.Join(pii.LocaleCodes(), ", "),
 		detector.EnvAllowList,
@@ -185,43 +184,84 @@ func printUsage(w io.Writer) {
 // The graceful stop is not politeness: a request cut off mid-flight has been
 // masked and stored but never answered, so the caller loses the turn and the
 // mapping keeps values nothing will ask for again.
-// runAudit runs the agent in the foreground with the console revealing what it
-// replaced, and prints the command to point a tool at it from another terminal.
+// runProxy serves, optionally revealing what it replaced and recording it.
 //
-// It is the same pipeline as `proxy` — the same detector, the same vault, the same
-// substitution mode — because an audit of a different pipeline audits nothing.
-// The only two differences are the port and the console, and both are Options
-// rather than a second assembly.
-func runAudit(stdout io.Writer) error {
-	// Built before anything is printed, so a configuration error is reported
-	// instead of a screenful of instructions for an agent that never starts.
+// One command rather than two, and that is a change from what came before: there
+// used to be a separate `audit` command, on a port of its own, so that printing a
+// value in clear was a *mode* somebody entered rather than a setting on the agent.
+// The flags are simpler for the operator — the agent they are already pointed at is
+// the one they watch — and the cost has to be stated where it can be read.
+//
+// # What the flags cost, and where they must not go
+//
+// -a prints values in clear to standard output. Under `cloakfleet proxy` in a
+// terminal that is one operator looking at their own data, which is the situation the
+// whole reveal was designed for. In a service definition it is something else: the
+// installer redirects this agent's output to ~/.cloakfleet/agent.log, so -a in a
+// plist writes everybody's prompts, in clear, to a file, for as long as the service
+// runs. Neither flag belongs in one, and the banner below says so on every start.
+//
+// The pipeline is otherwise identical either way — the same detector, the same vault,
+// the same substitution mode — because an audit of a different pipeline audits
+// nothing.
+func runProxy(args []string, stdout io.Writer) error {
+	fs := flag.NewFlagSet("proxy", flag.ContinueOnError)
+	fs.SetOutput(stdout)
+	reveal := fs.Bool("a", false,
+		"print every value replaced and restored, in clear")
+	verbose := fs.Bool("v", false,
+		"write both bodies of every exchange to a file under "+defaultTraceDir)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	opts := proxy.Options{}
+	if *reveal {
+		opts.Audit = stdout
+	}
+	// A trace is the only thing this agent writes to disk that holds a value in
+	// clear: the log carries counts, the heartbeat carries no content, and -a stops
+	// with the terminal it printed to. A file outlives the run, so it takes its own
+	// flag rather than coming along with -a.
+	if *verbose {
+		opts.TraceDir = defaultTraceDir
+	}
+
 	logger := slog.New(slog.NewTextHandler(stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	proxy.Version = version
 
-	agent, err := proxy.FromEnv(logger, proxy.Options{
-		Listen: proxy.DefaultAuditListen,
-		Audit:  stdout,
-	})
+	agent, err := proxy.FromEnv(logger, opts)
 	if err != nil {
 		return err
 	}
 
-	printAuditInstructions(stdout, agent)
+	if *reveal || *verbose {
+		printRevealBanner(stdout, agent, *reveal)
+	}
 	return serveAgent(logger, agent)
 }
 
-// printAuditInstructions says what to run elsewhere, and what this terminal is
-// about to show.
+// defaultTraceDir is where -v writes, relative to wherever the command was run.
+//
+// Relative on purpose: an operator runs this in the directory they are working in and
+// then reads the files there, and a path under the home directory would have them
+// hunting for output they asked for thirty seconds ago. It is in .gitignore for the
+// same reason e2e-artefacts is — the files hold real values in clear and are evidence
+// of one run, not part of any tree.
+const defaultTraceDir = "traces"
+
+// printRevealBanner says what this terminal is about to show, and what must not be
+// done with it.
 //
 // The state comes from the assembled agent rather than from the environment, for
 // the reason `status` reports what is being applied rather than that the process
 // is up: an agent with no locale selected is perfectly healthy and recognises
 // almost nothing, and an audit console that stayed silent would read as "nothing
 // sensitive in my data" instead of "nothing configured to look for it".
-func printAuditInstructions(w io.Writer, agent *proxy.Agent) {
+func printRevealBanner(w io.Writer, agent *proxy.Agent, reveal bool) {
 	state := agent.Server.State()
 
-	fmt.Fprintf(w, "\ncloakfleet audit — the agent in the foreground, on %s.\n\n", agent.Addr)
+	fmt.Fprintf(w, "\ncloakfleet — the agent in the foreground, on %s.\n\n", agent.Addr)
 
 	locales := "none"
 	if len(state.Locales) > 0 {
@@ -247,45 +287,54 @@ func printAuditInstructions(w io.Writer, agent *proxy.Agent) {
 		}
 	}
 
-	fmt.Fprint(w, "\nEvery value this agent replaces on the way out and restores on the way back\n")
-	fmt.Fprint(w, "is printed below, in clear:\n\n")
-	fmt.Fprint(w, "  MASK pierre.paul@example.com TO [EMAIL_1]\n")
-	fmt.Fprint(w, "  UNMASK [EMAIL_1] TO pierre.paul@example.com\n\n")
+	// Only promised when -a was given. With -v alone nothing is printed per exchange,
+	// and a banner announcing lines that never arrive would have somebody watching a
+	// console for traffic that was going to a file all along.
+	if reveal {
+		fmt.Fprint(w, "\nEvery value this agent replaces on the way out and restores on the way back\n")
+		fmt.Fprint(w, "is printed below, in clear:\n\n")
+		fmt.Fprint(w, "  MASK pierre.paul@example.com TO [EMAIL_1]\n")
+		fmt.Fprint(w, "  UNMASK [EMAIL_1] TO pierre.paul@example.com\n\n")
+	}
+
+	// Said either way. The bodies are what reveal a value the catalogue never
+	// recognised — it appears identically in both halves — and a console that simply
+	// stopped carrying them would leave an operator believing the MASK lines are the
+	// whole story.
+	if dir := agent.TraceDir(); dir != "" {
+		fmt.Fprintf(w, "Both bodies of every exchange are written to %s/, one file per\n", dir)
+		fmt.Fprint(w, "exchange. Read the two halves against each other: a value present in both\n")
+		fmt.Fprint(w, "is one nothing recognised, which no count can tell you.\n\n")
+	} else {
+		fmt.Fprint(w, "The bodies themselves are not shown — on screen they scroll the lines above\n")
+		fmt.Fprintf(w, "away. Add -v to write both halves of every exchange to %s/, which is\n", defaultTraceDir)
+		fmt.Fprint(w, "how you see a value nothing recognised.\n\n")
+	}
+
+	// The hazard the flags carry, said on every start rather than left in the
+	// documentation: under a service definition this output is a log file, and a
+	// reveal that outlives the terminal is everybody's prompts on disk in clear.
+	fmt.Fprint(w, "Neither -a nor -v belongs in a service definition: the installer sends this\n")
+	fmt.Fprint(w, "agent's output to a log file, and a reveal there keeps every prompt in clear\n")
+	fmt.Fprint(w, "for as long as the service runs.\n")
 
 	// Said plainly, because it is the one place in this agent where a real value
 	// is written out: the log carries counts, the heartbeat carries no content at
-	// all, and this mode is the deliberate exception for one operator looking at
-	// their own data. It goes to this terminal only, and stops with it.
-	fmt.Fprint(w, "That is this mode only, on this terminal, for your own data — nothing is\n")
-	fmt.Fprint(w, "written to a file and nothing of it is ever reported to a backend.\n")
+	// all, and these flags are the deliberate exception for one operator looking at
+	// their own data.
+	//
+	// What it says about a file depends on -v, and that dependence is the point. The
+	// sentence used to be "nothing is written to a file" unconditionally, which -v
+	// made false — and a banner that reassures somebody about a file it is at that
+	// moment filling is worse than no banner.
+	if agent.TraceDir() != "" {
+		fmt.Fprint(w, "Nothing of this reaches a backend: the heartbeat carries no content at all.\n")
+		fmt.Fprint(w, "The files above are the exception, and they are yours to delete.\n")
+	} else {
+		fmt.Fprint(w, "That is this terminal only, for your own data — nothing is written to a file\n")
+		fmt.Fprint(w, "and nothing of it is ever reported to a backend.\n")
+	}
 	fmt.Fprint(w, "Ctrl-C stops the agent.\n\n")
-}
-
-// auditPort is the port DefaultAuditListen names, for the usage text.
-//
-// Derived rather than written out, so the two cannot disagree about where the
-// command a person is told to run actually listens.
-func auditPort() string {
-	if _, port, err := net.SplitHostPort(proxy.DefaultAuditListen); err == nil {
-		return port
-	}
-	return proxy.DefaultAuditListen
-}
-
-func serve(stdout io.Writer, opts proxy.Options) error {
-	logger := slog.New(slog.NewTextHandler(stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
-
-	// Stamped before anything is assembled, because the agent reports it about
-	// itself and a supervision dashboard showing "dev" for every workstation is
-	// a fleet nobody can audit.
-	proxy.Version = version
-
-	agent, err := proxy.FromEnv(logger, opts)
-	if err != nil {
-		return err
-	}
-
-	return serveAgent(logger, agent)
 }
 
 // serveAgent is the serving half, shared by `proxy` and `audit` so the two cannot
@@ -325,6 +374,7 @@ func serveAgent(logger *slog.Logger, agent *proxy.Agent) error {
 			"address", agent.Addr,
 			"providers", strings.Join(agent.Server.Providers(), ","),
 			"supervised", agent.Reporter != nil)
+
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errs <- err
 		}

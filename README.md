@@ -47,9 +47,9 @@ token column and tells you whether the text round-trips exactly.
 
 Nothing on it is sent anywhere, stored, or written to the session vault.
 
-### Watching a real exchange: `cloakfleet audit`
+### Watching a real exchange: `cloakfleet proxy -a -v`
 
-The test page answers what *would* happen to a text. `cloakfleet audit` answers
+The test page answers what *would* happen to a text. Two flags on the agent answer
 what happened to a request your tool actually sent: it runs the agent in the
 foreground on its own port and prints, for every exchange, the body it received
 from the tool, the body it sent to the provider, and every value it replaced on
@@ -57,17 +57,17 @@ the way out and restored on the way back — coloured, when it is writing to a
 terminal.
 
 ```console
-$ CLOAKFLEET_PII_LOCALE=fr cloakfleet audit
+$ CLOAKFLEET_PII_LOCALE=fr cloakfleet proxy -a -v
 
-cloakfleet audit — the agent in the foreground, on 127.0.0.1:33333.
+cloakfleet — the agent in the foreground, on 127.0.0.1:8787.
 
   locales:      fr
   substitution: token
 
 In another terminal, run your tool through it:
 
-  ANTHROPIC_BASE_URL=http://127.0.0.1:33333/anthropic claude
-  OPENAI_BASE_URL=http://127.0.0.1:33333/openai codex
+  ANTHROPIC_BASE_URL=http://127.0.0.1:8787/anthropic claude
+  OPENAI_BASE_URL=http://127.0.0.1:8787/openai codex
   # codex ignores this if ~/.codex/config.toml sets model_provider, or if you pass --profile
 …
 ── IN   from the tool · session=default · 84 B ────────────────────────────────
@@ -94,13 +94,12 @@ count reports that.
 
 It is the same pipeline as `cloakfleet proxy` — the same catalogue, the same
 substitution mode, the same vault — so what you watch is what the agent does.
-Two things differ, both on purpose. It listens on **33333**, so it sits beside
-the agent your shell and menu bar are already pointed at instead of fighting it
-for the socket. And it is the one place in this agent where a real value is
-written out: the log carries counts, the heartbeat carries no content at all,
-and this console carries values because "is my address actually being replaced"
-cannot be answered by a number. It goes to that terminal only — nothing is
-written to a file, and nothing of it is ever reported to a backend.
+Two things differ from a plain run, both on purpose. `-a` is the one place in this
+agent where a real value is written to a screen, and `-v` the one place one is written
+to disk: the log carries counts, the heartbeat carries no content at all. And neither
+belongs in a service definition — the installer sends this agent's output to a log
+file, so `-a` there would keep every prompt in clear for as long as the service runs.
+The banner says so on every start.
 
 A value is named once as it is replaced, and once as it is restored, rather than
 once per occurrence: a system prompt resent every turn would otherwise bury the
@@ -116,7 +115,7 @@ safe is that a credential never gets a stand-in — every secret category is
 replaced by a bracket token by design — so the value-matching path can never
 expand one into a live secret.
 
-Colour is on only when the console is a terminal, so `cloakfleet audit | tee
+Colour is on only when the console is a terminal, so `cloakfleet proxy -a | tee
 audit.log` gives plain text you can grep for a value rather than escape
 sequences through the middle of it.
 

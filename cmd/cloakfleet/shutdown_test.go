@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cloakfleet/cloakfleet/internal/proxy"
 	"github.com/cloakfleet/cloakfleet/pkg/telemetry"
 )
 
@@ -75,7 +74,7 @@ func TestTheLastWindowIsFiledBeforeTheCommandReturns(t *testing.T) {
 	t.Setenv("CLOAKFLEET_IDENTITY_FILE", filepath.Join(t.TempDir(), "agent.json"))
 
 	returned := make(chan error, 1)
-	go func() { returned <- serve(io.Discard, proxy.Options{}) }()
+	go func() { returned <- runProxy(nil, io.Discard) }()
 
 	// Waited for so the signal below cannot arrive before signal.NotifyContext has
 	// registered — an unhandled SIGTERM would kill the test binary itself.

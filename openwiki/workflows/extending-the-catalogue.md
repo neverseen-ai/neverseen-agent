@@ -111,7 +111,7 @@ missing rather than dropping them quietly.
 1. **One constant, in the package that owns the setting** — `internal/detector/config.go` for
    detection, `internal/proxy/env.go` for the proxy. **Never read an environment variable in
    `cmd/`**; a command that needs to differ from another passes `proxy.Options` instead, which
-   is how `cloakfleet audit` gets its port and its console.
+   is how `-a` and `-v` reach the pipeline.
 2. **Document it in `.env.example`.** `TestDocumentedEnvironmentMatchesTheCode` fails in both
    directions — a variable the code reads and the file does not mention, and one the file
    documents and no code reads.

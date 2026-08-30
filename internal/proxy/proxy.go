@@ -42,9 +42,15 @@ type Config struct {
 	Logger *slog.Logger
 
 	// Audit receives one line per value replaced or restored, values in clear.
-	// Nil — the ordinary case — means no audit output at all. Only `cloakfleet
-	// audit` sets it; see audit.go for why this one surface may see content.
+	// Nil — the ordinary case — means nothing is printed at all. Only `cloakfleet
+	// proxy -a` sets it; see audit.go for why this one surface may see content.
 	Audit io.Writer
+
+	// Traces, when set, records both bodies of every exchange into a directory, one
+	// file per exchange. Nil everywhere but `cloakfleet proxy -v` — see trace.go for
+	// why the only thing this agent writes to disk in clear takes a flag on a
+	// foreground command and nothing else.
+	Traces *tracer
 
 	// Recorder accumulates what a supervised agent reports. Nil means one is
 	// created anyway: counting costs a mutex and the request path then has one
@@ -105,7 +111,7 @@ func New(cfg Config, det *detector.Detector, v *vault.Vault) (*Server, error) {
 		vault:      v,
 		log:        logger,
 		recorder:   recorder,
-		audit:      newAuditor(cfg.Audit),
+		audit:      newAuditor(cfg.Audit, cfg.Traces),
 		providers:  providers,
 		routes:     make(map[string]*httputil.ReverseProxy, len(providers)),
 		startedAt:  time.Now(),

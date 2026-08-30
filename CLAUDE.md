@@ -80,18 +80,33 @@ area: the reasoning is what stops a tempting simplification being reintroduced.
 
 - **`/test` is a real tool, not a demo.** It renders one text in both
   substitution modes, using the deployment's own detector.
-- **`cloakfleet audit` is the one surface that prints a real value, and it is a
-  mode rather than a setting** — no environment variable turns it on, only
-  `proxy.Options.Audit`, passed by the command that assembled the agent. It is
-  the same pipeline through `FromEnv`: an audit of a second assembly audits
-  nothing. It listens on 33333 so it sits beside the ordinary agent instead of
-  racing it for the socket.
-- **It prints both bodies, marked, because the MASK lines cannot report what the
-  catalogue never saw.** What is unmarked in both bodies is the finding. Blue is
-  a value in clear, red a replacement, everywhere. The outbound half is marked
-  **from the pass**, not from the shape of a token, and written as one block
-  under one lock. Bodies are printed whole — a ceiling was tried and taken back
-  out.
+- **`cloakfleet proxy -a` prints every value replaced and restored; `-v` writes
+  both bodies of every exchange to `traces/`.** Two independent flags on the one
+  command: `-a` alone keeps nothing, `-v` alone records and prints nothing, and
+  `newAuditor` builds an auditor for either — requiring a console to record a
+  trace would have made the quiet half silently do nothing.
+- **These replaced a separate `audit` command, and the guarantee it carried is
+  gone.** As a command, printing in clear was a *mode* somebody entered, on a
+  port of its own. As a flag it can go in a service definition — and the
+  installer sends this agent's output to `~/.cloakfleet/agent.log`, so `-a`
+  there keeps every prompt in clear for as long as the service runs. The banner
+  says so on every start, because documentation is not where somebody reads it.
+- **The console carries no body**, and that is why nothing marks one any more:
+  on screen the bodies scroll the MASK lines away, and a file must carry no
+  escape sequences — they make it unsearchable for the value itself. The
+  body-marking apparatus went with them rather than being left as a painter
+  nothing calls.
+- **A trace is the only thing this agent writes to disk holding a value in
+  clear.** Directory 0700, file 0600, the same treatment the control key gets. A
+  session comes from a header the caller controls, so it is sanitised before it
+  reaches a filename. One file per exchange, timestamp-first so `ls` is
+  chronological, with a sequence number because several requests share a second.
+  Bodies are written whole — a ceiling would be the trace choosing which part of
+  the traffic is worth keeping, and the part it cut is where an unrecognised
+  value would be.
+- **The finding still lives, one step further away**: the two bodies in the file,
+  read against each other. A value present in both is one the catalogue never
+  recognised, and `diff` says it better than any highlighting did.
 - **Everywhere else: counts and category names, never content.** The heartbeat
   carries no content at all.
 - **Three levels, not two, and each surface follows the right one.**
@@ -200,6 +215,12 @@ area: the reasoning is what stops a tempting simplification being reintroduced.
 ## Conventions
 
 - Conventional Commits (`feat:`, `fix:`, `docs:`, `test:`, `refactor:`).
+- **Everything written down is in English** — comments, commit messages, and every
+  documentation file wherever it lives (`openwiki/`, `docs/`, a README, a note
+  beside the code). A conversation may happen in another language; what lands in
+  the tree does not. Two languages in one tree means a reader who can follow half
+  of it, and a page nobody updates because it is not in the language the commit
+  was thought in.
 - **British spelling** in comments and prose — the linter is configured for it.
 - Comments say *why*, and name the failure a rule prevents. A comment that
   restates the code is noise.

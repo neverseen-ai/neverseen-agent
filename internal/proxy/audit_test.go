@@ -8,7 +8,10 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -64,6 +67,59 @@ func newAuditingAgent(t *testing.T, up *upstream, locales []string) (*httptest.S
 	agent := httptest.NewServer(srv.Handler())
 	t.Cleanup(agent.Close)
 	return agent, console
+}
+
+// newTracingAgent is the same pipeline with both flags: a console and a trace
+// directory. The directory is the test's own, so a run never writes into a tree.
+func newTracingAgent(t *testing.T, up *upstream, locales []string) (*httptest.Server, *safeBuffer, string) {
+	t.Helper()
+
+	dir := filepath.Join(t.TempDir(), "traces")
+	traces, err := newTracer(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	console := &safeBuffer{}
+	det := detector.New(detector.Config{Locales: locales})
+	v, err := vault.New(vault.NewMemory(), nil, vault.DefaultTTL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	srv, err := New(Config{
+		Providers: []Provider{{Code: "anthropic", BaseURL: up.server.URL}},
+		Audit:     console,
+		Traces:    traces,
+	}, det, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	agent := httptest.NewServer(srv.Handler())
+	t.Cleanup(agent.Close)
+	return agent, console, dir
+}
+
+// traceFiles returns the traces written so far, oldest first, as text.
+func traceFiles(t *testing.T, dir string) []string {
+	t.Helper()
+
+	names, err := filepath.Glob(filepath.Join(dir, "*.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sort.Strings(names)
+
+	out := make([]string, 0, len(names))
+	for _, name := range names {
+		raw, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, string(raw))
+	}
+	return out
 }
 
 // auditLines returns the MASK and UNMASK pairs the console reported, in order.
@@ -217,86 +273,6 @@ func TestWithoutAConsoleNoValueIsWritten(t *testing.T) {
 	}
 }
 
-// Both bodies, in wire order: what the tool sent, then what left for the
-// provider. It is the reading the MASK line cannot give on its own — a value the
-// catalogue never recognised appears in both, and that absence is the finding.
-func TestAuditShowsTheBodyReceivedAndTheBodySent(t *testing.T) {
-	up := newUpstream(t, echoJSON)
-	agent, console := newAuditingAgent(t, up, []string{"fr"})
-
-	const email = "pierre.paul@example.com"
-	const missed = "matricule interne ZZ-4471"
-	body := fmt.Sprintf(`{"prompt":"write to %s about %s"}`, email, missed)
-	post(t, agent, "/anthropic/v1/messages", "bodies", body)
-
-	got := console.String()
-	token := auditLines(t, console, "MASK")[0][1]
-
-	// The received half carries the value in clear, the sent half carries the
-	// token and not the value. Asserted on position, because a console that
-	// printed them the other way round would read as a leak.
-	in := strings.Index(got, "IN   from the tool")
-	out := strings.Index(got, "OUT  to anthropic")
-	if in < 0 || out < 0 || out < in {
-		t.Fatalf("the two halves are not both there, in order:\n%s", got)
-	}
-	received := got[in:out]
-
-	// The sent half is the rule and the body under it, nothing after: the UNMASK
-	// line of the same exchange carries the value in clear by design, and reading
-	// it as part of the outbound body would make this test pass on a leak.
-	//
-	// Cut at that line rather than after two lines of output: a JSON body is
-	// printed indented, so the body is as many lines as it has fields and a
-	// two-line window would assert on an opening brace.
-	sent := got[out:]
-	if end := strings.Index(sent, "UNMASK"); end >= 0 {
-		sent = sent[:end]
-	}
-
-	if !strings.Contains(received, email) || !strings.Contains(received, missed) {
-		t.Errorf("the received half does not carry what the tool sent:\n%s", received)
-	}
-	if strings.Contains(sent, email) {
-		t.Errorf("the sent half carries the value in clear:\n%s", sent)
-	}
-	if !strings.Contains(sent, token) {
-		t.Errorf("the sent half does not carry %s:\n%s", token, sent)
-	}
-	// And the value the catalogue did not recognise is visible in both, which is
-	// the whole reason for printing the bodies rather than the counts.
-	if !strings.Contains(sent, missed) {
-		t.Errorf("an unrecognised value is not shown leaving the machine:\n%s", sent)
-	}
-}
-
-// A body is printed whole, however long. A ceiling would be the console choosing
-// which part of the traffic is worth looking at, and the part it cut is exactly
-// where a value nothing recognised would be.
-func TestAuditPrintsALongBodyWhole(t *testing.T) {
-	up := newUpstream(t, echoJSON)
-	agent, console := newAuditingAgent(t, up, []string{"fr"})
-
-	const email = "pierre.paul@example.com"
-	const needle = "matricule interne ZZ-4471"
-	filler := strings.Repeat("x", 64*1024)
-	post(t, agent, "/anthropic/v1/messages", "long",
-		fmt.Sprintf(`{"prompt":"%s %s write to %s"}`, filler, needle, email))
-
-	got := console.String()
-	if !strings.Contains(got, filler) {
-		t.Error("a 64 kB body did not reach the console whole")
-	}
-	// Twice: once as it arrived, once as it left. What is at the far end of a
-	// long body is the case a ceiling would have hidden.
-	if n := strings.Count(got, needle); n != 2 {
-		t.Errorf("the tail of the body appears %d times, want it in both halves", n)
-	}
-	if masked := auditLines(t, console, "MASK"); len(masked) != 1 || masked[0][0] != email {
-		t.Errorf("MASK lines = %v, want the value found past the filler", masked)
-	}
-}
-
 // Colour is for a screen. Redirected to a file or a pipe — which is what anybody
 // keeping an audit trail does — escape sequences through the middle of a value
 // would make it unsearchable for the value itself.
@@ -312,149 +288,29 @@ func TestTheConsoleIsPlainWhenItIsNotATerminal(t *testing.T) {
 	}
 }
 
-// And with a terminal it paints, in the same two colours the bodies mark: a value
-// in clear blue, a replacement red. One colour, one meaning, whole console.
+// And with a terminal it paints: a value in clear blue, a replacement red. One
+// colour, one meaning, on both lines — the MASK line and the UNMASK line are the
+// whole of what the console now says about content, so the two must not come to
+// disagree about which half is which.
 func TestTheConsolePaintsATerminal(t *testing.T) {
 	a := &auditor{w: io.Discard, colour: true}
 
-	line := a.line(ansiYellow, "MASK",
+	masked := a.line(ansiYellow, "MASK",
 		a.paint(ansiBlue, "pierre.paul@example.com"), a.paint(ansiRed, "[EMAIL_1]"))
-	if !strings.Contains(line, ansiBlue+"pierre.paul@example.com") {
-		t.Errorf("the value in clear is not marked as one: %q", line)
+	if !strings.Contains(masked, ansiBlue+"pierre.paul@example.com") {
+		t.Errorf("the value in clear is not marked as one: %q", masked)
 	}
-	if !strings.Contains(line, ansiRed+"[EMAIL_1]") {
-		t.Errorf("the replacement is not marked as one: %q", line)
-	}
-
-	// The same colour a body marks it with, asserted together so a change to one
-	// cannot quietly leave the console saying "value" two ways.
-	if body := a.bodyIn("pierre.paul@example.com", [][2]string{
-		{"pierre.paul@example.com", "[EMAIL_1]"},
-	}); !strings.Contains(body, ansiBlue) {
-		t.Errorf("the line and the body disagree about a value in clear: %q", body)
-	}
-	if body := a.bodyOut("[EMAIL_1]", nil); !strings.Contains(body, ansiRed) {
-		t.Errorf("the line and the body disagree about a replacement: %q", body)
-	}
-}
-
-// The two halves are read against each other, so each marks what is about to
-// change hands: the values on their way out, and the replacements on their way
-// back. What is unmarked in both is what the catalogue never saw.
-func TestTheBodiesMarkWhatChangesHands(t *testing.T) {
-	a := &auditor{w: io.Discard, colour: true}
-
-	const email = "pierre.paul@example.com"
-	const missed = "ZZ-4471"
-	replaced := [][2]string{{email, "[EMAIL_1]"}}
-
-	in := a.bodyIn(`{"prompt":"write to `+email+` about `+missed+`"}`, replaced)
-	if !strings.Contains(in, ansiBlue+email) {
-		t.Errorf("the value about to be replaced is not marked: %q", in)
-	}
-	if strings.Contains(in, ansiBlue+missed) {
-		t.Errorf("a value nothing recognised was marked: %q", in)
+	if !strings.Contains(masked, ansiRed+"[EMAIL_1]") {
+		t.Errorf("the replacement is not marked as one: %q", masked)
 	}
 
-	out := a.bodyOut(`{"prompt":"write to [EMAIL_1] about `+missed+`"}`, replaced)
-	if !strings.Contains(out, ansiRed+"[EMAIL_1]") {
-		t.Errorf("the replacement about to be turned back is not marked: %q", out)
-	}
-	if strings.Contains(out, ansiRed+missed) {
-		t.Errorf("a value nothing recognised was marked: %q", out)
-	}
-
-	// And neither marks anything without a terminal, or a log file kept from this
-	// console could not be grepped for the value itself.
-	plain := &auditor{w: io.Discard}
-	if got := plain.bodyIn(email, replaced) + plain.bodyOut("[EMAIL_1]", replaced); strings.Contains(got, "\033[") {
-		t.Errorf("the bodies were painted for a buffer: %q", got)
-	}
-}
-
-// A value that happens to be a substring of a longer one in another field is
-// marked inside its own occurrence, not inside the escape of the other: longest
-// first is what keeps the sequence whole.
-func TestTheLongerValueIsMarkedFirst(t *testing.T) {
-	a := &auditor{w: io.Discard, colour: true}
-
-	got := a.bodyIn(`{"a":"06 12 34 56 78","b":"06 12"}`, [][2]string{
-		{"06 12", "[PHONE_2]"},
-		{"06 12 34 56 78", "[PHONE_1]"},
-	})
-	if !strings.Contains(got, ansiBlue+"06 12 34 56 78"+ansiReset) {
-		t.Errorf("the longer value was broken up: %q", got)
-	}
-}
-
-// A stand-in is not a bracket token, and marking the outbound body by shape left
-// fake mode with nothing marked in the half where it matters most: "1 rue de
-// l'Exemple, 99000 Villeneuve" reads as prose. What was substituted comes from
-// the pass that substituted it.
-func TestTheOutboundBodyMarksAStandInAsWellAsAToken(t *testing.T) {
-	a := &auditor{w: io.Discard, colour: true}
-
-	const stand = "1 rue de l'Exemple, 99000 Villeneuve"
-	replaced := [][2]string{{"10 rue jean jaures, 29200 BREST", stand}}
-
-	got := a.bodyOut(`{"prompt":"habite `+stand+`, et voir [EMAIL_1]"}`, replaced)
-	if !strings.Contains(got, ansiRed+stand+ansiReset) {
-		t.Errorf("the stand-in is not marked: %q", got)
-	}
-	// And a token minted on an earlier turn, which this pass never saw, is still
-	// marked: a conversation resends its history.
-	if !strings.Contains(got, ansiRed+"[EMAIL_1]"+ansiReset) {
-		t.Errorf("a token from an earlier turn is not marked: %q", got)
-	}
-	// Painted once, not once inside itself.
-	if strings.Contains(got, ansiRed+ansiRed) {
-		t.Errorf("a marking was nested: %q", got)
-	}
-}
-
-// The same thing through the whole agent in fake mode, because the console
-// showing a stand-in unmarked was reported on a running agent, not on a unit.
-func TestAuditInFakeModeMarksWhatLeft(t *testing.T) {
-	up := newUpstream(t, echoJSON)
-
-	console := &safeBuffer{}
-	det := detector.New(detector.Config{
-		Locales:      []string{"fr"},
-		Substitution: detector.SubstitutionFake,
-	})
-	v, err := vault.New(vault.NewMemory(), nil, vault.DefaultTTL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	srv, err := New(Config{
-		Providers: []Provider{{Code: "anthropic", BaseURL: up.server.URL}},
-		Audit:     console,
-	}, det, v)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// A terminal, so the marking runs: it is the marking that regressed, and a
-	// plain console would pass whatever the palette did.
-	srv.audit.colour = true
-
-	agent := httptest.NewServer(srv.Handler())
-	t.Cleanup(agent.Close)
-
-	post(t, agent, "/anthropic/v1/messages", "fake",
-		`{"prompt":"habite 10 rue jean jaures, 29200 BREST"}`)
-
-	masked := auditLines(t, console, "MASK")
-	if len(masked) == 0 {
-		t.Fatalf("nothing was masked:\n%s", console.String())
-	}
-	stand := masked[0][1]
-	if strings.Contains(stand, "[") {
-		t.Fatalf("fake mode produced a token, not a stand-in: %q", stand)
-	}
-
-	out := console.String()[strings.Index(console.String(), "OUT  to anthropic"):]
-	if !strings.Contains(out, ansiRed+stand) {
-		t.Errorf("the stand-in that left is not marked:\n%s", out)
+	// The way back, in the same two colours: the replacement red and the value blue,
+	// whichever side of the exchange they are on.
+	restored := a.line(ansiGreen, "UNMASK",
+		a.paint(ansiRed, "[EMAIL_1]"), a.paint(ansiBlue, "pierre.paul@example.com"))
+	if !strings.Contains(restored, ansiRed+"[EMAIL_1]") ||
+		!strings.Contains(restored, ansiBlue+"pierre.paul@example.com") {
+		t.Errorf("the two lines disagree about which half is a value: %q", restored)
 	}
 }
 
@@ -540,67 +396,260 @@ func TestFakeModeRoundTripsThroughTheAgent(t *testing.T) {
 	})
 }
 
-// A JSON body is laid out over several lines, because a coding tool sends one
-// line of tens of kilobytes and "which field was that value in" is a question the
-// console exists to answer.
+// The console carries the transformations and no body.
 //
-// What it asserts is the property that makes indenting safe rather than the
-// layout itself: every byte of every value survives it, so the marking still
-// finds a value by its own text and the console still shows what was sent.
-func TestAuditIndentsAJSONBody(t *testing.T) {
+// Both halves used to be printed, and on screen they scroll the MASK lines away: a
+// coding tool resends tens of kilobytes of system prompt every turn, and those lines
+// are what an operator is watching.
+func TestTheConsoleCarriesNoBody(t *testing.T) {
 	up := newUpstream(t, echoJSON)
 	agent, console := newAuditingAgent(t, up, []string{"fr"})
 
 	const email = "pierre.paul@example.com"
-	const missed = "ZZ-4471"
-	post(t, agent, "/anthropic/v1/messages", "indent",
-		fmt.Sprintf(`{"model":"claude","prompt":"write to %s about %s"}`, email, missed))
+	const missed = "matricule ZZ-4471"
+	post(t, agent, "/anthropic/v1/messages", "bodies",
+		fmt.Sprintf(`{"prompt":"write to %s about %s"}`, email, missed))
 
 	got := console.String()
 
-	// Laid out: the two keys are on lines of their own, which one line of JSON
-	// cannot manage.
-	if !strings.Contains(got, "\n  \"model\": \"claude\"") {
-		t.Errorf("the body was not indented:\n%s", got)
+	// The value is named once as it is masked, and that is all: the body it came
+	// from is not on screen.
+	if !strings.Contains(got, "MASK "+email) {
+		t.Errorf("the console does not report the value it replaced:\n%s", got)
 	}
-	// And nothing inside a string moved: the value in clear, the value nothing
-	// recognised, and the token all still appear verbatim.
-	if !strings.Contains(got, email) || strings.Count(got, missed) < 2 {
-		t.Errorf("indenting lost a value that was sent:\n%s", got)
+	if strings.Contains(got, missed) {
+		t.Errorf("the console still carries a body:\n%s", got)
 	}
-	if token := auditLines(t, console, "MASK")[0][1]; !strings.Contains(got, token) {
-		t.Errorf("the replacement is not in the indented body:\n%s", got)
+	if strings.Contains(got, `{"prompt"`) {
+		t.Errorf("the console still carries a body:\n%s", got)
+	}
+	// The rules stay, because the size and the session are how an exchange scrolling
+	// past is accounted for at a glance.
+	if !strings.Contains(got, "IN   from the tool") || !strings.Contains(got, "OUT  to anthropic") {
+		t.Errorf("the console lost the rules that bracket an exchange:\n%s", got)
 	}
 }
 
-// A body that is not JSON is printed exactly as it arrived. A partially indented
-// document would be the console inventing a shape for something it could not
-// read.
-func TestAuditLeavesANonJSONBodyAsItArrived(t *testing.T) {
+// With -v both bodies go to a file, which is where the finding lives that no count
+// carries: a value present in both halves is one the catalogue never recognised.
+func TestATraceHoldsBothBodies(t *testing.T) {
 	up := newUpstream(t, echoJSON)
-	agent, console := newAuditingAgent(t, up, []string{"fr"})
+	agent, console, dir := newTracingAgent(t, up, []string{"fr"})
+
+	const email = "pierre.paul@example.com"
+	const missed = "matricule ZZ-4471"
+	post(t, agent, "/anthropic/v1/messages", "trace",
+		fmt.Sprintf(`{"prompt":"write to %s about %s"}`, email, missed))
+
+	files := traceFiles(t, dir)
+	if len(files) != 1 {
+		t.Fatalf("wrote %d traces, want 1", len(files))
+	}
+	trace := files[0]
+
+	token := auditLines(t, console, "MASK")[0][1]
+
+	// The received half carries the value in clear, the sent half the token and not
+	// the value. Asserted on position, because a file that held them the other way
+	// round would read as a leak.
+	in := strings.Index(trace, "IN   from the tool")
+	out := strings.Index(trace, "OUT  to anthropic")
+	if in < 0 || out < 0 || out < in {
+		t.Fatalf("the two halves are not both there, in order:\n%s", trace)
+	}
+	if !strings.Contains(trace[in:out], email) {
+		t.Errorf("the received half does not carry what the tool sent:\n%s", trace)
+	}
+	if strings.Contains(trace[out:], email) {
+		t.Errorf("the sent half carries the value in clear:\n%s", trace)
+	}
+	if !strings.Contains(trace[out:], token) {
+		t.Errorf("the sent half does not carry %s:\n%s", token, trace)
+	}
+	// And the value nothing recognised is in both, which is the whole reason for
+	// writing the bodies rather than the counts.
+	if n := strings.Count(trace, missed); n != 2 {
+		t.Errorf("an unrecognised value appears %d times, want it in both halves:\n%s", n, trace)
+	}
+
+	// The console names the file, so the two are not something to correlate by hand.
+	if !strings.Contains(console.String(), "bodies in ") {
+		t.Errorf("the console does not say where the bodies went:\n%s", console.String())
+	}
+}
+
+// A body is written whole, however long. A ceiling would be the trace choosing which
+// part of the traffic is worth keeping, and the part it cut is exactly where a value
+// nothing recognised would be.
+func TestATraceHoldsALongBodyWhole(t *testing.T) {
+	up := newUpstream(t, echoJSON)
+	agent, _, dir := newTracingAgent(t, up, []string{"fr"})
+
+	const needle = "matricule ZZ-4471"
+	filler := strings.Repeat("x", 64*1024)
+	post(t, agent, "/anthropic/v1/messages", "long",
+		fmt.Sprintf(`{"prompt":"%s %s write to pierre.paul@example.com"}`, filler, needle))
+
+	trace := traceFiles(t, dir)[0]
+	if !strings.Contains(trace, filler) {
+		t.Error("a 64 kB body did not reach the trace whole")
+	}
+	if n := strings.Count(trace, needle); n != 2 {
+		t.Errorf("the tail of the body appears %d times, want it in both halves", n)
+	}
+}
+
+// A JSON body is indented, so the two halves line up field by field and a diff points
+// at the field rather than at one enormous line. Every byte of every value survives
+// it, which is what makes indenting safe to do to evidence.
+func TestATraceIndentsAJSONBody(t *testing.T) {
+	up := newUpstream(t, echoJSON)
+	agent, _, dir := newTracingAgent(t, up, []string{"fr"})
+
+	post(t, agent, "/anthropic/v1/messages", "indent",
+		`{"model":"claude","prompt":"write to pierre.paul@example.com about ZZ-4471"}`)
+
+	trace := traceFiles(t, dir)[0]
+	if !strings.Contains(trace, "\n  \"model\": \"claude\"") {
+		t.Errorf("the body was not indented:\n%s", trace)
+	}
+	if !strings.Contains(trace, "pierre.paul@example.com") || strings.Count(trace, "ZZ-4471") < 2 {
+		t.Errorf("indenting lost a value that was sent:\n%s", trace)
+	}
+}
+
+// A body that is not JSON is written exactly as it arrived. A partially indented
+// document would be the file inventing a shape for something it could not read.
+func TestATraceLeavesANonJSONBodyAsItArrived(t *testing.T) {
+	up := newUpstream(t, echoJSON)
+	agent, _, dir := newTracingAgent(t, up, []string{"fr"})
 
 	const body = "écris à pierre.paul@example.com, {ceci n'est pas du JSON"
 	post(t, agent, "/anthropic/v1/messages", "flat", body)
 
-	if got := console.String(); !strings.Contains(got, body) {
-		t.Errorf("a flat body was not printed as it arrived:\n%s", got)
+	if trace := traceFiles(t, dir)[0]; !strings.Contains(trace, body) {
+		t.Errorf("a flat body was not written as it arrived:\n%s", trace)
 	}
 }
 
-// The size on the rule is the size of the body that went over the wire, not of
-// the indented form printed under it. A figure that counted the whitespace this
-// console added would have an operator reconciling a request against bytes
-// nothing ever sent.
-func TestTheRuleReportsTheSizeSent(t *testing.T) {
+// The sizes in the header are the bytes that went over the wire, not the indented
+// form under them. A figure counting the whitespace this file added would have an
+// operator reconciling a request against bytes nothing ever sent.
+func TestATraceReportsTheSizesSent(t *testing.T) {
 	up := newUpstream(t, echoJSON)
-	agent, console := newAuditingAgent(t, up, []string{"fr"})
+	agent, _, dir := newTracingAgent(t, up, []string{"fr"})
 
 	body := `{"model":"claude","prompt":"write to pierre.paul@example.com"}`
 	post(t, agent, "/anthropic/v1/messages", "size", body)
 
-	want := fmt.Sprintf("%d B", len(body))
-	if got := console.String(); !strings.Contains(got, want) {
-		t.Errorf("the inbound rule does not report %s:\n%s", want, got)
+	trace := traceFiles(t, dir)[0]
+	if want := fmt.Sprintf("in:       %d bytes", len(body)); !strings.Contains(trace, want) {
+		t.Errorf("the header does not report %q:\n%s", want, trace)
+	}
+}
+
+// One file per exchange, ordered, and never one overwriting another — two requests in
+// the same second would otherwise lose exactly the exchange being looked for.
+func TestEachExchangeGetsItsOwnTrace(t *testing.T) {
+	up := newUpstream(t, echoJSON)
+	agent, _, dir := newTracingAgent(t, up, []string{"fr"})
+
+	for i := range 3 {
+		post(t, agent, "/anthropic/v1/messages", "seq",
+			fmt.Sprintf(`{"prompt":"exchange number %d"}`, i))
+	}
+
+	files := traceFiles(t, dir)
+	if len(files) != 3 {
+		t.Fatalf("wrote %d traces for 3 exchanges", len(files))
+	}
+	for i, trace := range files {
+		if want := fmt.Sprintf("exchange number %d", i); !strings.Contains(trace, want) {
+			t.Errorf("trace %d does not hold %q — the order or the naming is wrong", i, want)
+		}
+	}
+}
+
+// -v with no -a records and prints nothing. Requiring a console to write a trace
+// would have made the quiet half of the two flags silently do nothing.
+func TestTracingWithoutAConsole(t *testing.T) {
+	up := newUpstream(t, echoJSON)
+	dir := filepath.Join(t.TempDir(), "traces")
+	traces, err := newTracer(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	det := detector.New(detector.Config{Locales: []string{"fr"}})
+	v, err := vault.New(vault.NewMemory(), nil, vault.DefaultTTL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv, err := New(Config{
+		Providers: []Provider{{Code: "anthropic", BaseURL: up.server.URL}},
+		Traces:    traces,
+	}, det, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent := httptest.NewServer(srv.Handler())
+	t.Cleanup(agent.Close)
+
+	post(t, agent, "/anthropic/v1/messages", "quiet",
+		`{"prompt":"write to pierre.paul@example.com"}`)
+
+	trace := traceFiles(t, dir)[0]
+	if !strings.Contains(trace, "pierre.paul@example.com") {
+		t.Errorf("nothing was recorded without a console:\n%s", trace)
+	}
+	// The MASK line is in the file, because the file is the only record of this run.
+	if !strings.Contains(trace, "MASK pierre.paul@example.com TO ") {
+		t.Errorf("the trace does not record the transformation:\n%s", trace)
+	}
+}
+
+// A trace holds somebody's data in clear, so it is readable by its owner and nobody
+// else — the same treatment the control key gets.
+func TestATraceIsPrivate(t *testing.T) {
+	up := newUpstream(t, echoJSON)
+	agent, _, dir := newTracingAgent(t, up, []string{"fr"})
+
+	post(t, agent, "/anthropic/v1/messages", "perm", `{"prompt":"pierre.paul@example.com"}`)
+
+	if info, err := os.Stat(dir); err != nil {
+		t.Fatal(err)
+	} else if perm := info.Mode().Perm(); perm != 0o700 {
+		t.Errorf("the trace directory is %o, want 700", perm)
+	}
+
+	names, err := filepath.Glob(filepath.Join(dir, "*.txt"))
+	if err != nil || len(names) == 0 {
+		t.Fatalf("no trace to check: %v", err)
+	}
+	if info, err := os.Stat(names[0]); err != nil {
+		t.Fatal(err)
+	} else if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Errorf("the trace file is %o, want 600", perm)
+	}
+}
+
+// A session comes from a header the caller controls, so it must not decide where a
+// file goes.
+func TestASessionCannotEscapeTheTraceDirectory(t *testing.T) {
+	up := newUpstream(t, echoJSON)
+	agent, _, dir := newTracingAgent(t, up, []string{"fr"})
+
+	post(t, agent, "/anthropic/v1/messages", "../../escaped",
+		`{"prompt":"pierre.paul@example.com"}`)
+
+	names, err := filepath.Glob(filepath.Join(dir, "*.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(names) != 1 {
+		t.Fatalf("the trace did not land in the directory: %v", names)
+	}
+	if strings.Contains(filepath.Base(names[0]), "/") || strings.Contains(names[0], "..") {
+		t.Errorf("the file name carries a path: %s", names[0])
 	}
 }

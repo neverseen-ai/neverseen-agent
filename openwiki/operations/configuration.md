@@ -43,8 +43,8 @@ and any buckets not yet delivered. `install.sh --uninstall` deliberately leaves 
 
 ```
 cloakfleet proxy         run the agent: mask what goes out, restore what comes back
-cloakfleet audit         run it in the foreground on 33333, printing every value
-                         it replaces and restores, in clear
+cloakfleet proxy -a      also print every value it replaces and restores, in clear
+cloakfleet proxy -v      also write both bodies of every exchange to ./traces
 cloakfleet scan [file]   report the sensitive values in a file, or in stdin
 cloakfleet status        report whether the agent is masking, and what
 cloakfleet mask          list what is masked, and switch a category or family off
@@ -178,98 +178,120 @@ whole input, and a page accepting a POST should not accept a megabyte of adversa
 
 It is also how the two body-shape bugs and the locale stand-in bug were found.
 
-## `cloakfleet audit` — the one surface that prints a real value
+## `-a` and `-v`: the one place a real value is printed or kept
 
-Everywhere else the rule holds without exception: the log carries counts and category names,
-the heartbeat carries no content at all. Those are read by somebody **other than** the person
-whose data it is — a dashboard, a support ticket, a log shipper — so a value reaching one of
-them has left the machine as surely as if it had gone to the model.
+Everywhere else the rule holds without exception: the log carries counts and category
+names, the heartbeat carries no content at all. Those are read by somebody **other
+than** the person whose data it is — a dashboard, a support ticket, a log shipper — so
+a value reaching one of them has left the machine as surely as if it had gone to the
+model.
 
-The audit console is the opposite situation: **one operator, at their own keyboard, on their
-own data**, asking "is my address actually being replaced" — which no count answers, and
-which reading a masked body in one window and guessing at the other is how the two shape bugs
-got in.
+These two flags are the opposite situation: **one operator, at their own keyboard, on
+their own data**, asking "is my address actually being replaced" — which no count
+answers.
 
-**It is a mode rather than a setting.** There is no environment variable that turns it on
-under `cloakfleet proxy`; only the command that assembled the agent passes a writer
-(`proxy.Options.Audit`), and it passes its own terminal (`runAudit`, `main.go:180`).
-`Options` exists precisely so `audit` can differ from `proxy` in the two ways it has to — a
-port of its own and a console to reveal on — **without a second assembly of the pipeline**,
-which is the one-entrypoint rule, and **without a command reading an environment variable**,
-which is the other one. It is the same pipeline through `FromEnv`: an audit of a second
-assembly audits nothing.
+```
+cloakfleet proxy -a    print every value replaced on the way out and restored on the way back
+cloakfleet proxy -v    write both bodies of every exchange to ./traces, one file per exchange
+```
 
-**Port 33333** (`proxy.DefaultAuditListen`), so it sits beside the agent the shell profile and
-the menu bar are already pointed at, instead of racing it for the socket and leaving the
-operator watching an empty console while their traffic goes through the other one.
+**They are independent.** `-a` alone prints and keeps nothing; `-v` alone records and
+prints nothing, which is what somebody wants when they mean to read the traffic
+afterwards rather than watch it go past. `newAuditor` builds an auditor for either —
+requiring a console writer to record a trace would have made the quiet half silently
+do nothing.
 
-`printAuditInstructions` (`main.go:200`) prints the locales and substitution mode read from
-the **assembled agent**, and warns explicitly when nothing will be masked because no locale is
-loaded — an empty console would otherwise read as "nothing sensitive in my data" instead of
-"nothing configured to look for it" (`TestAuditWarnsWhenNothingWouldBeMasked`). It hands over
-the command to run in another terminal for each tool, **with its caveat**
-(`TestAuditPrintsTheCommandToRunElsewhere`, `TestTheCaveatTravelsWithTheLine`).
+### What replacing the `audit` command cost
 
-### What the console prints, and why both bodies
+There used to be a `cloakfleet audit` command on a port of its own (33333), and being
+a *command* was the guarantee: printing a value in clear was a mode somebody entered,
+and no environment variable could turn it on under the background service.
 
-**It prints both bodies, marked, because the MASK lines cannot report what the catalogue never
-saw.** What is unmarked in both bodies is the finding — `matricule ZZ-4471` present in the body
-that left means nothing recognised it, and no count can carry that.
+A flag can go in a service definition. The installer sends this agent's output to
+`~/.cloakfleet/agent.log`, so `-a` in a launchd plist writes every prompt, in clear,
+to a file, for as long as the service runs. **Neither flag belongs in one**, and the
+banner says so on every start rather than leaving it in this page.
 
-Colour: **blue is a value in clear, red is a replacement**, in the bodies and in the
-MASK/UNMASK lines alike — one colour, one meaning, or the eye has to re-learn the palette per
-line. Colour is decided by asking the writer whether it is a terminal (`isTerminal`,
-`audit.go:63`), not by reading `NO_COLOR`: that is the environment rule, and redirecting the
-console to a file is already what somebody setting it would be doing
-(`TestTheConsoleIsPlainWhenItIsNotATerminal`, `TestTheConsolePaintsATerminal`).
+### The console carries the transformations, not the bodies
 
-Mechanics that are each a fixed bug:
+`-a` prints the two rules that bracket an exchange — the session and the size, so
+something scrolling past can be accounted for — and one line per value:
 
-- **The inbound marking looks for the value rather than using the scan's offsets**, because
-  the body is masked field by field through a JSON decoder and a match's position belongs to a
-  decoded string, not to the raw document. A value carrying an escape is therefore printed
-  unmarked, and its MASK line still names it.
-- **It is one forward walk taking the longest match at each position** (`mark`,
-  `audit.go:245`), not a replacement per value: painting a shorter value inside one already
-  painted leaves an inner reset that ends the outer colour early, so the rest of the longer
-  value came out unmarked (`TestTheLongerValueIsMarkedFirst`).
-- **The outbound half is marked from the pass, not from the shape of a token.** In `fake` mode
-  a replacement is a stand-in that reads as prose, and a console looking for brackets marked
-  nothing at all in the half where it matters most, on a running agent
-  (`TestAuditInFakeModeMarksWhatLeft`). Tokens are marked **as well**, for the turn after: a
-  conversation resends its history, so the body leaving on turn two carries tokens minted on
-  turn one that the current pass never saw (`TestTheOutboundBodyMarksAStandInAsWellAsAToken`).
-- **The MASK/UNMASK line takes its two halves already painted by the caller that knows which
-  is which** — sniffing "does it look like a token" coloured a stand-in as a value in clear,
-  the exact opposite of what it is.
-- **The outbound half is written as one block under one lock** (`auditor.request`,
-  `audit.go:108`), reveals collected rather than streamed: two tools talking to the agent at
-  once would otherwise interleave their bodies, and a body read half from one exchange and half
-  from another is the reading an audit must never allow.
-- **A JSON body is indented, with `json.Indent`, and anything else is printed as it
-  arrived.** `json.Indent` inserts whitespace between tokens and touches nothing
-  inside a string, so every byte of every value is still the byte that was sent —
-  which is what lets the marking go on finding a value by its own text. A decode and
-  re-encode would rewrite escapes, reorder keys and drop duplicates, three ways for
-  the console to disagree with the wire. The size on the rule is measured on the body
-  as it arrived, never on the indented form. The two halves line up field by field
-  because the pipeline preserves key order — see
-  [Request path](../architecture/request-path.md#a-body-is-a-json-document-masked-value-by-value);
-  that defect was invisible while both bodies were one line, and indenting is what
-  surfaced it. One limit remains: a system prompt is one JSON string with its newlines
-  escaped, so it is still one enormous line, and unescaping it would stop the console
-  showing the bytes that were sent.
-- **Bodies are printed whole**, and a ceiling was tried and taken back out: a coding tool
-  resends tens of kilobytes every turn so it scrolls, but the clipped part is exactly where an
-  unrecognised value would be, and a console that chose which half of the traffic to show
-  would answer the question the command exists for with "some of it"
-  (`TestAuditPrintsALongBodyWhole`).
-- **A value is named once as it is minted and once per response as it is restored**, not once
-  per occurrence: a system prompt resent every turn would bury the exchange being watched
-  (`Pass.Reveal`, `internal/detector/mask.go:56`).
+```
+── IN   from the tool · session=default · 110 B ──────────────────────────────
+MASK pierre.paul@example.com TO [EMAIL_1]
+MASK 06 12 34 56 78 TO [PHONE_1]
+── OUT  to anthropic · session=default · 91 B ────────────────────────────────
+     bodies in traces/20260828T081721-0001-default-anthropic.txt
+```
 
-Without a console, no value is written anywhere (`TestWithoutAConsoleNoValueIsWritten`); the
-auditor's methods are nil-safe so the request path calls them without a branch.
+Blue is a value in clear, red a replacement, on the MASK line and the UNMASK line
+alike — one colour, one meaning, or the eye has to re-learn the palette per line.
+Colour is decided by asking the writer whether it is a terminal (`isTerminal`), not by
+reading `NO_COLOR`: that is the environment rule, and redirecting to a file is already
+what somebody setting it would be doing.
+
+**The bodies are not on screen**, because a coding tool resends tens of kilobytes of
+system prompt every turn and they scroll the MASK lines away — and those lines are what
+an operator is watching. The body-marking that used to make them readable went with
+them rather than being left as a painter nothing calls.
+
+A value is named **once as it is minted** and once per response as it is restored, not
+once per occurrence: a system prompt resent every turn would bury the exchange being
+watched (`Pass.Reveal`).
+
+### The trace file
+
+One file per exchange, holding the header, the transformations, and both bodies:
+
+```
+session:  default          ── IN   from the tool ──────────────
+provider: anthropic        {
+in:       110 bytes          "prompt": "écris à pierre.paul@example.com, matricule ZZ-4471"
+out:      91 bytes         }
+replaced: 2 value(s)
+                           ── OUT  to anthropic ───────────────
+MASK pierre.paul@…           "prompt": "écris à [EMAIL_1], matricule ZZ-4471"
+```
+
+**The finding lives here now.** `matricule ZZ-4471` appears identically in both halves,
+so nothing recognised it and it went to the provider in clear — which no count reports.
+`diff` says it better than the colour marking did, and a file must carry no escape
+sequences anyway: they make it unsearchable for the value itself.
+
+Mechanics, each one a decision:
+
+- **A trace is the only thing this agent writes to disk that holds a value in clear.**
+  Directory `0700`, file `0600` — the same treatment the control key gets, because both
+  are things only their owner may read.
+- **The directory is relative to where the command was run.** An operator reads the
+  files where they are working; a path under the home directory would have them hunting
+  for output they asked for thirty seconds ago. `traces/` is in `.gitignore`, for a
+  stronger reason than `e2e-artefacts/`: these hold somebody's real data, so committing
+  one is a leak rather than noise.
+- **It is created at start-up**, so somebody who cannot write where they asked is told
+  before the traffic they wanted to look at has gone past.
+- **A session comes from a header the caller controls**, so it is sanitised before it
+  reaches a filename — otherwise `X-Session-Id: ../../etc` decides where a file goes.
+- **Timestamp first, then a sequence number**: `ls` is chronological, which is how
+  somebody looks for the exchange they just made, and a coding tool sends several
+  requests in the same second — a timestamp alone would have them overwrite each other,
+  losing exactly the exchange being looked for.
+- **A JSON body is indented with `json.Indent`**, which inserts whitespace between
+  tokens and touches nothing inside a string, so every byte of every value is still the
+  byte that was sent. A decode and re-encode would rewrite escapes, reorder keys and
+  drop duplicates. The sizes in the header are measured on the body as it arrived.
+- **Bodies are written whole.** A ceiling would be the trace choosing which part of the
+  traffic is worth keeping, and the part it cut is exactly where an unrecognised value
+  would be.
+- **A trace that cannot be written says so and the agent carries on**, the rule the
+  telemetry already follows: the thing that records the control must never be able to
+  take it down.
+
+One limit remains: a system prompt is one JSON string with its newlines escaped, so
+after indenting it is still one enormous line. Turning those `\n` into real newlines
+would read far better and would stop the file holding the bytes that were sent, which
+is the one property a trace cannot trade away.
 
 ## See also
 

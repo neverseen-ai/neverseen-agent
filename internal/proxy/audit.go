@@ -1,16 +1,11 @@
 package proxy
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
-	"sort"
 	"strings"
 	"sync"
-
-	"github.com/cloakfleet/cloakfleet/pkg/pii"
 )
 
 // The audit console is the one place in this agent where a real value is written
@@ -23,16 +18,17 @@ import (
 // and a value that reaches one of them has left the machine as surely as if it
 // had gone to the model.
 //
-// `cloakfleet audit` is the opposite situation: one operator, at their own
-// keyboard, running the agent in the foreground of their own terminal on their
-// own data, to answer "is my address actually being replaced". That question
-// cannot be answered by a count, and answering it by reading a masked body in one
-// window and guessing at the other is how the shape bugs got in.
+// `cloakfleet proxy -a` is the opposite situation: one operator, at their own
+// keyboard, running the agent in the foreground of their own terminal on their own
+// data, to answer "is my address actually being replaced". That question cannot be
+// answered by a count, and answering it by reading a masked body in one window and
+// guessing at the other is how the shape bugs got in.
 //
-// So it is a mode, not a setting: nothing writes here unless the audit command
-// built the agent, there is no environment variable that turns it on under
-// `cloakfleet proxy`, and the output goes to the terminal that asked for it
-// rather than to a logger somebody may have pointed at a file.
+// It is a flag rather than an environment variable, and the difference matters less
+// than it did: this used to be a command of its own, which meant no configuration
+// could turn it on under the background service. A flag can go in a service
+// definition, where this agent's output is a log file — so the command's banner warns
+// about exactly that on every start, because a rule nobody reads is not a rule.
 type auditor struct {
 	// mu because two requests in flight write to one terminal, and because what
 	// it writes is a block of several lines: interleaved halves of two exchanges
@@ -40,19 +36,41 @@ type auditor struct {
 	mu sync.Mutex
 	w  io.Writer
 
-	// colour is off unless the writer is a terminal, so `cloakfleet audit | tee
+	// colour is off unless the writer is a terminal, so `cloakfleet proxy -a | tee
 	// audit.log` and a test both get plain text rather than escape sequences
 	// through the middle of a value.
 	colour bool
+
+	// traces is nil unless somebody asked for the bodies to be recorded. Its
+	// methods are nil-safe, so the request path calls them without a branch.
+	traces *tracer
 }
 
-// newAuditor returns nil when no writer is given, so the ordinary agent carries
-// no audit state at all rather than one that is switched off.
-func newAuditor(w io.Writer) *auditor {
-	if w == nil {
+// newAuditor returns nil when neither -a nor -v was asked for, so the ordinary agent
+// carries no audit state at all rather than one that is switched off.
+//
+// Either alone is enough to build one, and that is worth being explicit about: the two
+// flags are independent. -v with no -a records both bodies to files and prints nothing,
+// which is what somebody wants when they mean to read the traffic afterwards rather
+// than watch it go past; -a with no -v prints the transformations and keeps nothing.
+// Requiring a console writer to record a trace would have made the quiet half of that
+// silently do nothing.
+func newAuditor(w io.Writer, traces *tracer) *auditor {
+	if w == nil && traces == nil {
 		return nil
 	}
-	return &auditor{w: w, colour: isTerminal(w)}
+	return &auditor{w: w, colour: isTerminal(w), traces: traces}
+}
+
+// writes reports whether anything is printed to a console at all.
+func (a *auditor) writes() bool { return a != nil && a.w != nil }
+
+// traceDir reports where this console's bodies are written, or "" for none.
+func (a *auditor) traceDir() string {
+	if a == nil {
+		return ""
+	}
+	return a.traces.Dir()
 }
 
 // isTerminal reports whether writing here reaches a screen.
@@ -112,15 +130,36 @@ func (a *auditor) request(session, provider, received, sent string, replaced [][
 		return
 	}
 
+	// Written before anything is printed, so the console can name the file it went
+	// to — and so a -v run with no console still records, which is half of what the
+	// two flags are for.
+	path, err := a.traces.write(session, provider, received, sent, replaced)
+	if !a.writes() {
+		return
+	}
+
 	var b strings.Builder
 	b.WriteString(a.rule("IN   from the tool", session, received))
-	b.WriteString(a.bodyIn(received, replaced))
 	for _, pair := range replaced {
 		b.WriteString(a.line(ansiYellow, "MASK",
 			a.paint(ansiBlue, pair[0]), a.paint(ansiRed, pair[1])))
 	}
 	b.WriteString(a.rule("OUT  to "+provider, session, sent))
-	b.WriteString(a.bodyOut(sent, replaced))
+
+	// The bodies go to a file, or nowhere. On screen they scroll the MASK lines
+	// away — a coding tool resends tens of kilobytes of system prompt every turn —
+	// and those lines are what an operator is watching. The file is where the two
+	// halves are read against each other, which is the finding no count carries: a
+	// value present in both is one the catalogue never recognised.
+	switch {
+	case err != nil:
+		// Said and carried on. A trace that could not be written must not stop the
+		// masking — the rule the telemetry already follows, that the thing which
+		// records the control must never be able to take it down.
+		b.WriteString(a.line(ansiRed, "TRACE", "not written", err.Error()))
+	case path != "":
+		b.WriteString(a.paint(ansiDim, "     bodies in "+path) + "\n")
+	}
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -136,7 +175,7 @@ func (a *auditor) request(session, provider, received, sent string, replaced [][
 // The argument order is the wire order — what came back, then what the caller
 // reads — so the two halves of an exchange read as a round trip.
 func (a *auditor) unmasked(replacement, original string) {
-	if a == nil {
+	if !a.writes() {
 		return
 	}
 	a.mu.Lock()
@@ -178,152 +217,18 @@ func (a *auditor) rule(label, session, body string) string {
 	return a.paint(ansiDim, head) + "\n"
 }
 
-// A body is printed whole, however long.
+// The console holds no body, and that is why nothing here marks one.
 //
-// Whole, and that is the operator's call rather than a default: a coding tool
-// resends tens of kilobytes of system prompt every turn, so this scrolls — but a
-// ceiling would be the console deciding which part of the traffic is worth
-// looking at, and the part it cut is exactly where an unrecognised value would
-// be. The MASK and UNMASK lines are the record of what was transformed; the
-// bodies are the record of what was sent, and half of one answers nothing.
+// Both halves used to be printed with the values about to change hands painted, so
+// that what was *unmarked* in both was the finding. That reading now lives in the
+// trace file, where the two bodies sit one after the other and a diff says the same
+// thing without a colour — which a file must not carry anyway, since escapes through
+// the middle of a value make it unsearchable for the value itself.
 //
-// Each half marks what is about to change hands, so the two can be read against
-// each other: in the body that arrived, the values that will be replaced; in the
-// body that left, the replacements that will be turned back. Whatever is
-// unmarked in both is what the catalogue never saw — which is the finding a count
-// cannot carry.
-
-// Both halves are marked by looking for the text itself rather than by byte
-// offsets from the scan: the body is masked field by field through a JSON
-// decoder, so a match's position is a position in a decoded string and means
-// nothing in the raw document. A value carrying an escape — a quote, a newline —
-// is therefore not marked, and that is the honest limit of this: it is still
-// printed whole, and its MASK line still names it.
-//
-// bodyIn marks the values that were replaced; bodyOut marks what replaced them.
-// Both walk the text once through mark, below.
-func (a *auditor) bodyIn(text string, replaced [][2]string) string {
-	return terminated(a.mark(indented(text), ansiBlue, sideOf(replaced, 0), false))
-}
-
-// indented lays a JSON body out over several lines, and leaves anything else
-// exactly as it arrived.
-//
-// json.Indent rather than a decode and a re-encode, and that is the whole reason
-// this is safe to do to a body somebody is reading as evidence: it inserts
-// whitespace between tokens and touches nothing inside a string, so every byte of
-// every value is still the byte that was sent. That is what lets mark go on
-// finding a value by its own text, and what keeps this from being a body the
-// provider never saw. A decode and re-encode would rewrite an angle bracket into
-// its numeric escape, reorder object keys and silently drop a duplicate one —
-// three ways for the console to disagree with the wire about what left the
-// machine.
-//
-// It is applied whether or not the output is a terminal, unlike colour: a body
-// redirected to a file is read by the same person for the same reason, and
-// nothing downstream parses this.
-//
-// The size on the rule above is measured on the body as it arrived, so no figure
-// here reports bytes that never went anywhere.
-//
-// What this does not fix is worth naming rather than leaving to be discovered: a
-// coding tool's system prompt is one JSON string of tens of kilobytes with its
-// newlines escaped, and after indenting it is still one enormous line. Turning
-// those "\n" into real newlines would read far better and would stop the console
-// showing the bytes that were sent, which is the one property an audit cannot
-// trade away.
-func indented(body string) string {
-	var out bytes.Buffer
-	if err := json.Indent(&out, []byte(body), "", "  "); err != nil {
-		// Not JSON, or not valid JSON. Either way the body is printed as it
-		// arrived: a partially indented document would be the console inventing a
-		// shape for something it could not read.
-		return body
-	}
-	return out.String()
-}
-
-// bodyOut marks the replacements, from the pass that made them rather than from
-// their shape.
-//
-// From the pass, because a replacement is not always a bracket token: in fake
-// mode it is a stand-in that reads as prose — "1 rue de l'Exemple, 99000
-// Villeneuve" — and a console looking for brackets marked nothing at all in the
-// half where it matters most. What was substituted is a fact this exchange
-// already knows.
-//
-// Tokens are marked as well as those, for the turn after: a conversation resends
-// its history, so the body leaving on turn two carries tokens minted on turn one,
-// which this pass never saw and the vault will still expand.
-func (a *auditor) bodyOut(text string, replaced [][2]string) string {
-	return terminated(a.mark(indented(text), ansiRed, sideOf(replaced, 1), true))
-}
-
-// sideOf pulls one half of the pairs out, skipping empties so mark cannot match
-// an empty string at every position.
-func sideOf(pairs [][2]string, side int) []string {
-	out := make([]string, 0, len(pairs))
-	for _, pair := range pairs {
-		if pair[side] != "" {
-			out = append(out, pair[side])
-		}
-	}
-	return out
-}
-
-// mark paints, in one forward walk, whatever is longest at each position: one of
-// the literals, or a bracket token when tokens is set.
-//
-// One walk rather than a replacement per literal, and that is not tidiness.
-// Replacing them in turn paints a shorter value *inside* one already painted — a
-// phone number inside the address containing it — and the inner reset ends the
-// outer colour early, so the rest of the longer value comes out unmarked. Taking
-// the longest match at each position, once, cannot do that. It is also why the
-// token pass cannot simply run afterwards: a painted token still looks like a
-// token, and would be painted again inside itself.
-func (a *auditor) mark(text, colour string, literals []string, tokens bool) string {
-	if !a.colour || (len(literals) == 0 && !tokens) {
-		return text
-	}
-
-	// Longest first, so the loop below can stop at its first hit.
-	sorted := append([]string(nil), literals...)
-	sort.Slice(sorted, func(i, j int) bool { return len(sorted[i]) > len(sorted[j]) })
-
-	var b strings.Builder
-	b.Grow(len(text))
-	for i := 0; i < len(text); {
-		matched := ""
-		for _, literal := range sorted {
-			if strings.HasPrefix(text[i:], literal) {
-				matched = literal
-				break
-			}
-		}
-		if tokens {
-			if token := pii.TokenAt(text[i:]); len(token) > len(matched) {
-				matched = token
-			}
-		}
-		if matched == "" {
-			b.WriteByte(text[i])
-			i++
-			continue
-		}
-		b.WriteString(a.paint(colour, matched))
-		i += len(matched)
-	}
-	return b.String()
-}
-
-// terminated ends a body with a newline, so the rule that follows starts its own
-// line whatever the body was.
-func terminated(text string) string {
-	if strings.HasSuffix(text, "\n") {
-		return text
-	}
-	return text + "\n"
-}
+// So the marking went with the bodies, rather than being left behind as a painter
+// nothing calls. What stays is the palette, because the MASK and UNMASK lines still
+// use it: blue is a value in clear, red is a replacement, and those lines are the
+// whole of what the console now shows about content.
 
 // unmaskedSeen returns the callback one response reports its restorations
 // through, or nil when there is no audit console.
@@ -338,7 +243,9 @@ func terminated(text string) string {
 // coming back in the next answer is a new exchange, and an operator watching this
 // console is watching exchanges go past.
 func (a *auditor) unmaskedSeen() func(replacement, original string) {
-	if a == nil {
+	// Nil for a -v run with no console too: the trace is written when the request
+	// goes out and holds nothing about the answer, so there is nothing here to record.
+	if !a.writes() {
 		return nil
 	}
 	var (
