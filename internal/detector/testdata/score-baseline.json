@@ -82,7 +82,7 @@
    "fn": 0
   },
   "SECRET_AWS_ACCESS_KEY": {
-   "tp": 1,
+   "tp": 4,
    "fp": 0,
    "fn": 0
   },
@@ -107,7 +107,7 @@
    "fn": 0
   },
   "SECRET_GITHUB_TOKEN": {
-   "tp": 3,
+   "tp": 4,
    "fp": 0,
    "fn": 0
   },
@@ -133,7 +133,7 @@
   },
   "SECRET_HF_TOKEN": {
    "tp": 1,
-   "fp": 0,
+   "fp": 1,
    "fn": 0
   },
   "SECRET_JWT": {
@@ -147,12 +147,12 @@
    "fn": 0
   },
   "SECRET_OPENAI_KEY": {
-   "tp": 3,
+   "tp": 5,
    "fp": 0,
    "fn": 0
   },
   "SECRET_PEM_KEY": {
-   "tp": 1,
+   "tp": 2,
    "fp": 0,
    "fn": 0
   },
@@ -177,12 +177,12 @@
    "fn": 0
   },
   "SECRET_STRIPE_KEY": {
-   "tp": 1,
+   "tp": 3,
    "fp": 0,
    "fn": 0
   },
   "SECRET_TWILIO_KEY": {
-   "tp": 1,
+   "tp": 2,
    "fp": 0,
    "fn": 0
   },
@@ -207,5 +207,5 @@
    "fn": 0
   }
  },
- "negatives": 72
+ "negatives": 75
 }

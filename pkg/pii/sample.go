@@ -100,20 +100,20 @@ Other dates: 12/25/2024, 07/04/1976, 1/1/2000
 // Fabricated to match, never a revoked real key. The vendor prefix is the part
 // under test; the body is filler.
 const secretsSample = `=== Identifiants techniques ===
-OpenAI : sk-proj-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGH, ancienne forme sk-abcdefghijklmnopqrstuvwxyz0123
+OpenAI : sk-proj-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGH, compte de service sk-svcacct-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGH, administration sk-admin-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGH, ancienne forme sk-abcdefghijklmnopqrstuvwxyz0123
 Anthropic : sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789
 Google : AIzaabcdefghijklmnopqrstuvwxyzABCDEFGHI
-AWS : AKIAIOSFODNN7EXAMPLE, et aws_secret_access_key = abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN
-GitHub : ghp_abcdefghijklmnopqrstuvwxyz0123456789, gho_0123456789abcdefghijklmnopqrstuvwxyz
+AWS : AKIAIOSFODNN7EXAMPLE, temporaire ASIAY34FZKBOKMUTVV7A, porteur ABIAY34FZKBOKMUTVV7A, lié au contexte ACCAY34FZKBOKMUTVV7A, ancien A3TY34FZKBOKMUTVV7AB, et aws_secret_access_key = abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN
+GitHub : ghp_abcdefghijklmnopqrstuvwxyz0123456789, gho_0123456789abcdefghijklmnopqrstuvwxyz, portée fine github_pat_11ABCDEFG0abcdefghijkl_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789AB
 GitLab : glpat-abcdefghijklmnopqrst
 Slack : xoxb-0123456789-a, applicatif xapp-0123456789-z
-Stripe : sk_live_abcdefghijklmnopqrstuvwx
+Stripe : sk_live_abcdefghijklmnopqrstuvwx, sk_test_abcdefghijklmnopqrstuvwx, sk_prod_abcdefghijklmnopqrstuvwx, restreinte rk_live_abcdefghijklmnopqrstuvwx
 SendGrid : SG.abcdefghijklmnopqrstuv.abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ
-Twilio : SK0123456789abcdef0123456789abcdef
+Twilio : SK0123456789abcdef0123456789abcdef, en majuscules SKFEDCBA9876543210FEDCBA9876543210
 Registres : npm_abcdefghijklmnopqrstuvwx, pypi-abcdefghijklmnopqrstuvwx, dckr_pat_abcdefghijklmnopqrstuvwx
 Modèles : hf_abcdefghijklmnopqrstuvwx, r8_abcdefghijklmnopqrstuvwx
 Inférence : gsk_abcdefghijklmnopqrstuvwxyz012345, xai-abcdefghijklmnopqrstuvwxyz012345
-Clé privée : -----BEGIN OPENSSH PRIVATE KEY-----
+Clé privée : -----BEGIN OPENSSH PRIVATE KEY-----, bloc armé -----BEGIN PGP PRIVATE KEY BLOCK-----
 JWT : eyJabcdefghijkl.eyJabcdefghijklmn.abcdefghijklmnopqrst
 Base : postgres://admin:s3cr3t@db.example.com:5432/app
 Broker : amqp://guest:gu3st@broker.internal:5672/

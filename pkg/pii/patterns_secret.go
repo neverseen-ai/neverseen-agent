@@ -30,9 +30,16 @@ const quoteChars = "\\s\"'`\\\\"
 var (
 	// --- vendor prefixes ---------------------------------------------------
 
-	// OpenAI project keys, before the legacy shape below so the longer prefix
+	// OpenAI's modern keys, before the legacy shape below so the longer prefix
 	// is the one reported.
-	openAIProjectRe = regexp.MustCompile(`sk-proj-[a-zA-Z0-9_-]{40,}`)
+	//
+	// Three prefixes, not one. A service-account key ("sk-svcacct-") and an admin
+	// key ("sk-admin-") reached no pattern at all: the legacy shape below admits
+	// no dash, so it stopped after "sk-svcacct" — seven characters, under its own
+	// floor — and both left in clear. An enumeration is right here because OpenAI
+	// documents the set; a new prefix is a line, and until it is added the key is
+	// invisible rather than partially masked.
+	openAIModernRe = regexp.MustCompile(`sk-(?:proj|svcacct|admin)-[a-zA-Z0-9_-]{40,}`)
 	// Anthropic, before the legacy OpenAI shape for the same reason.
 	anthropicRe = regexp.MustCompile(`sk-ant-[a-zA-Z0-9_-]{20,}`)
 	// Legacy OpenAI keys. The body admits no dash, which is what keeps it from
@@ -40,8 +47,14 @@ var (
 	// keeps it off a version string like "sk-1.2.3".
 	openAILegacyRe = regexp.MustCompile(`sk-[a-zA-Z0-9]{20,}`)
 
-	googleRe       = regexp.MustCompile(`AIza[a-zA-Z0-9_-]{35}`)
-	awsAccessKeyRe = regexp.MustCompile(`AKIA[A-Z0-9]{16}`)
+	googleRe = regexp.MustCompile(`AIza[a-zA-Z0-9_-]{35}`)
+	// Five prefixes, and "AKIA" alone was the wrong one to stop at. A temporary
+	// key from AWS STS carries "ASIA", and that is the form a pasted terminal
+	// session actually holds — an operator shows what `aws sts assume-role` just
+	// printed far more often than a long-lived key. "ABIA" is a service bearer
+	// token, "ACCA" a context-specific credential, "A3T" a key whose fourth
+	// character varies. All five are the same twenty-character shape.
+	awsAccessKeyRe = regexp.MustCompile(`(?:A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{16}`)
 	// Case-sensitive on purpose: "akia" in lowercase prose is not an AWS
 	// identifier, and matching it would mask the word.
 
@@ -51,13 +64,31 @@ var (
 	// would leave the reader unable to see which setting was redacted.
 	awsSecretKeyRe = regexp.MustCompile(`(?i)(?:aws_secret_access_key|aws_secret|secret_access_key)['"]?\s*[=:]\s*['"]?([a-zA-Z0-9/+=]{40})`)
 
-	githubRe    = regexp.MustCompile(`gh[pousr]_[a-zA-Z0-9]{36,}`)
-	gitlabRe    = regexp.MustCompile(`glpat-[a-zA-Z0-9_-]{20,}`)
-	slackRe     = regexp.MustCompile(`xox[bpa]-[a-zA-Z0-9-]{10,}`)
-	slackAppRe  = regexp.MustCompile(`xapp-[a-zA-Z0-9-]{10,}`)
-	stripeRe    = regexp.MustCompile(`[spr]k_(?:live|test)_[a-zA-Z0-9]{20,}`)
-	sendGridRe  = regexp.MustCompile(`SG\.[a-zA-Z0-9_-]{22}\.[a-zA-Z0-9_-]{43}`)
-	twilioRe    = regexp.MustCompile(`SK[a-f0-9]{32}`)
+	githubRe = regexp.MustCompile(`gh[pousr]_[a-zA-Z0-9]{36,}`)
+	// The fine-grained token, which is a different word and not a fifth letter in
+	// the class above: "github_pat_" shares no prefix with "ghp_" and reached
+	// nothing. It is the token GitHub now issues by default, so the gap covered
+	// the common case rather than an exotic one. The body admits the underscore
+	// that separates its two halves.
+	githubFineGrainedRe = regexp.MustCompile(`github_pat_[a-zA-Z0-9_]{22,}`)
+	gitlabRe            = regexp.MustCompile(`glpat-[a-zA-Z0-9_-]{20,}`)
+	slackRe             = regexp.MustCompile(`xox[bpa]-[a-zA-Z0-9-]{10,}`)
+	slackAppRe          = regexp.MustCompile(`xapp-[a-zA-Z0-9-]{10,}`)
+	// The leading \b is the whole point, and its absence corrupted ordinary text:
+	// with none, this matched *inside* a word, so "task_test_abcdef…" was reported
+	// as the Stripe key "sk_test_abcdef…" and an identifier came back with its
+	// first two characters eaten. Any word ending in "sk", "rk" or "pk" does it —
+	// task_, disk_, mask_. Go's \b is ASCII, which is all this prefix is.
+	//
+	// "prod" joins live and test because Stripe issues all three.
+	stripeRe   = regexp.MustCompile(`\b[spr]k_(?:live|test|prod)_[a-zA-Z0-9]{20,}`)
+	sendGridRe = regexp.MustCompile(`SG\.[a-zA-Z0-9_-]{22}\.[a-zA-Z0-9_-]{43}`)
+	// Hex in either case: lowercase alone missed the uppercase form, and with a
+	// locale loaded the IBAN pattern claimed it instead — "SK" opens a Slovak
+	// IBAN — so the key was not merely missed, it was masked as somebody's bank
+	// account. Overlap arbitration puts the credential first, which settles it
+	// once both can match.
+	twilioRe    = regexp.MustCompile(`SK[a-fA-F0-9]{32}`)
 	npmRe       = regexp.MustCompile(`npm_[a-zA-Z0-9]{20,}`)
 	pypiRe      = regexp.MustCompile(`pypi-[a-zA-Z0-9_-]{20,}`)
 	dockerRe    = regexp.MustCompile(`dckr_pat_[a-zA-Z0-9_-]{20,}`)
@@ -85,7 +116,10 @@ var (
 
 	// On "PRIVATE KEY", not on the delimiter shape: a certificate and a public
 	// key are meant to be shared, and masking them breaks the paste for nothing.
-	pemRe = regexp.MustCompile(`-----BEGIN\s[A-Z\s]*PRIVATE\sKEY-----`)
+	// The trailing BLOCK is what a PGP armour header carries, and requiring the
+	// line to end on "KEY-----" missed it: "-----BEGIN PGP PRIVATE KEY BLOCK-----"
+	// is a private key by any reading and reached nothing.
+	pemRe = regexp.MustCompile(`-----BEGIN\s[A-Z\s]*PRIVATE\sKEY(?:\sBLOCK)?-----`)
 
 	// Three base64url segments, the first two starting with the "eyJ" that a
 	// base64-encoded "{"" always produces. Without that anchor any dotted blob
@@ -173,13 +207,14 @@ var (
 func SecretPatterns() []Pattern {
 	return []Pattern{
 		// vendor prefixes, most specific first
-		{Regex: openAIProjectRe, Category: CatOpenAIKey, Label: "OpenAI project API key"},
+		{Regex: openAIModernRe, Category: CatOpenAIKey, Label: "OpenAI API key"},
 		{Regex: anthropicRe, Category: CatAnthropicKey, Label: "Anthropic API key"},
 		{Regex: openAILegacyRe, Category: CatOpenAIKey, Label: "OpenAI API key (legacy)"},
 		{Regex: googleRe, Category: CatGoogleKey, Label: "Google API key"},
 		{Regex: awsAccessKeyRe, Category: CatAWSAccessKey, Label: "AWS access key id"},
 		{Regex: awsSecretKeyRe, Group: 1, Category: CatAWSSecretKey, Label: "AWS secret access key"},
 		{Regex: githubRe, Category: CatGitHubToken, Label: "GitHub token"},
+		{Regex: githubFineGrainedRe, Category: CatGitHubToken, Label: "GitHub fine-grained token"},
 		{Regex: gitlabRe, Category: CatGitLabToken, Label: "GitLab personal access token"},
 		{Regex: slackRe, Category: CatSlackToken, Label: "Slack bot or user token"},
 		{Regex: slackAppRe, Category: CatSlackToken, Label: "Slack app-level token"},
