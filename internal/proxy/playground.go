@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	_ "embed"
 	"html/template"
 	"io"
 	"net/http"
@@ -168,108 +169,16 @@ func (s *Server) playgroundFindings(text string) []playgroundFinding {
 	return out
 }
 
-var playgroundTemplate = template.Must(template.New("playground").Parse(`<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Cloakfleet — what would be masked</title>
-<style>
-  :root { color-scheme: light dark; --line: #8883; --muted: #7c7c85; --ok: #2e7d32; --warn: #b26a00; }
-  body { margin: 0; padding: 1.5rem;
-         font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif; }
-  h1 { font-size: 1.1rem; margin: 0 0 .25rem; }
-  p.lede { margin: 0 0 1rem; color: var(--muted); max-width: 74ch; }
-  .meta { margin: 0 0 1.25rem; font-size: 12px; color: var(--muted); }
-  .meta code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-  .cols { display: grid; gap: 1rem; grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  @media (max-width: 1000px) { .cols { grid-template-columns: 1fr; } }
-  section { border: 1px solid var(--line); border-radius: 6px; padding: .75rem; min-width: 0; }
-  h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em;
-       margin: 0 0 .5rem; color: var(--muted); font-weight: 600; }
-  h2 .count { float: right; text-transform: none; letter-spacing: 0; font-weight: 400; }
-  textarea, pre { width: 100%; box-sizing: border-box; margin: 0;
-                  font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; }
-  textarea { min-height: 26rem; resize: vertical; padding: .5rem;
-             border: 1px solid var(--line); border-radius: 4px;
-             background: transparent; color: inherit; }
-  pre { min-height: 26rem; overflow: auto; white-space: pre-wrap; word-break: break-word;
-        padding: .5rem; border: 1px solid transparent; }
-  .bar { margin-top: 1rem; display: flex; gap: .75rem; align-items: baseline; flex-wrap: wrap; }
-  button { font: inherit; padding: .45rem 1rem; border-radius: 4px;
-           border: 1px solid var(--line); background: transparent; color: inherit;
-           cursor: pointer; }
-  button:hover { border-color: currentColor; }
-  .hint { color: var(--muted); font-size: 12px; max-width: 74ch; }
-  .ok { color: var(--ok); }
-  .warn { color: var(--warn); }
-  table { border-collapse: collapse; margin-top: 1.5rem; font-size: 12px; }
-  th, td { text-align: left; padding: .25rem .9rem .25rem 0; vertical-align: top; }
-  th { color: var(--muted); font-weight: 600; }
-  td.val { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
-  .tag { color: var(--muted); }
-  .none { color: var(--muted); margin-top: 1.5rem; }
-</style>
-</head>
-<body>
-<h1>What would be masked</h1>
-<p class="lede">The same text as written, then masked in each of the two
-representations, using this agent's own configuration. Paste a record of your
-own — with the values changed — and see what leaves the machine and what does
-not.</p>
-<p class="meta">Locales in use: <code>{{ .Locales }}</code>. Nothing on this page
-is sent anywhere, stored, or written to the session vault.</p>
+// playgroundTemplate is the page itself, in a file of its own.
+//
+// Embedded rather than held in a Go string literal, which is what it was: a hundred
+// and thirty lines of HTML and CSS inside a .go file is a page no editor highlights,
+// no formatter touches and nobody reads before changing. The file is the same bytes
+// and the same escaping rules — html/template still parses it at start-up, so a
+// broken template is a panic on the first build rather than a page served half
+// rendered.
+//
+//go:embed playground.html
+var playgroundHTML string
 
-<form method="post" action="/test">
-  <div class="cols">
-    <section>
-      <h2>As written</h2>
-      <textarea name="text" spellcheck="false">{{ .Text }}</textarea>
-    </section>
-    <section>
-      <h2>Token mode <span class="count">{{ .Token.Count }} replaced</span></h2>
-      <pre>{{ .Token.Output }}</pre>
-    </section>
-    <section>
-      <h2>Stand-in mode <span class="count">{{ .Fake.Count }} replaced</span></h2>
-      <pre>{{ .Fake.Output }}</pre>
-    </section>
-  </div>
-  <div class="bar">
-    <button type="submit">Run it again</button>
-    {{ if .RoundTrips }}
-    <span class="hint ok">Round trip verified: unmasking the token column returns
-    this text exactly, character for character.</span>
-    {{ else }}
-    <span class="hint warn">Round trip incomplete: unmasking the token column does
-    not return this text exactly. That happens when the text already contains
-    something shaped like a token.</span>
-    {{ end }}
-  </div>
-  <p class="hint">Stand-ins are indexed rather than random, so the same text
-  always produces the same ones. They are unattributable by construction —
-  reserved ranges and deliberately invalid checksums — and the agent does not
-  expand them on the way back, which is the trade: prose the model reads better,
-  in exchange for an answer carrying values nobody can check. Tokens are restored
-  in full, credentials included.</p>
-</form>
-
-{{ if .Findings }}
-<table>
-  <tr><th>Category</th><th>Detected value</th><th>Confidence</th><th>Recognised as</th></tr>
-  {{ range .Findings }}
-  <tr>
-    <td>{{ .Category }}{{ if .TokenInFakeMode }} <span class="tag">— token even in stand-in mode</span>{{ end }}</td>
-    <td class="val">{{ .Value }}</td>
-    <td>{{ .Confidence }}</td>
-    <td class="tag">{{ .Label }}</td>
-  </tr>
-  {{ end }}
-</table>
-{{ else }}
-<p class="none">Nothing detected in this text. If you expected something, the
-category may belong to a locale this agent has not loaded.</p>
-{{ end }}
-</body>
-</html>
-`))
+var playgroundTemplate = template.Must(template.New("playground").Parse(playgroundHTML))

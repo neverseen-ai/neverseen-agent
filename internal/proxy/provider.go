@@ -124,3 +124,7 @@ func providerCodes(providers []Provider) []string {
 	sort.Strings(codes)
 	return codes
 }
+
+// Providers reports the upstreams this server serves, for the line the command
+// prints on start-up.
+func (s *Server) Providers() []string { return providerCodes(s.providers) }

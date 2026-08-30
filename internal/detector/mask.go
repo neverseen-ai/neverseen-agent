@@ -1,51 +1,12 @@
 package detector
 
 import (
-	"fmt"
 	"sort"
 	"strings"
 	"sync/atomic"
 
 	"github.com/cloakfleet/cloakfleet/pkg/pii"
 )
-
-// Substitution selects what a masked value looks like on the wire. Both are
-// permanent options: a deployment picks the one that fits its tolerance for a
-// placeholder turning up in a model's answer.
-type Substitution int
-
-const (
-	// SubstitutionToken replaces a value with "[EMAIL_1]". Unmistakably not
-	// data, impossible to confuse with a real value in a log, and invisible to
-	// the catalogue on a second pass.
-	SubstitutionToken Substitution = iota
-
-	// SubstitutionFake replaces a value with a stand-in of the same shape, so
-	// the prompt reaches the model as prose. Categories with no generator fall
-	// back to a token — see pii.FakeSet.
-	SubstitutionFake
-)
-
-func (s Substitution) String() string {
-	if s == SubstitutionFake {
-		return "fake"
-	}
-	return "token"
-}
-
-// ParseSubstitution reads the mode from its configured spelling. An empty spec
-// means tokens, so an unset variable cannot quietly change how data leaves the
-// machine.
-func ParseSubstitution(spec string) (Substitution, error) {
-	switch strings.ToLower(strings.TrimSpace(spec)) {
-	case "", "token":
-		return SubstitutionToken, nil
-	case "fake":
-		return SubstitutionFake, nil
-	default:
-		return 0, fmt.Errorf("unknown substitution mode %q (want token or fake)", spec)
-	}
-}
 
 // Pass carries the identity of values across one exchange.
 //

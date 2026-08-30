@@ -196,9 +196,9 @@ func (m *menuBar) buildSwitches() {
 		}
 
 		m.groups = append(m.groups, slot)
-		go m.watchGroup(len(m.groups) - 1)
+		go m.watchClicks(item.ClickedCh, m.groupCode(len(m.groups)-1), toGroup)
 		for c := range slot.cats {
-			go m.watchCategory(len(m.groups)-1, c)
+			go m.watchClicks(slot.cats[c].item.ClickedCh, m.categoryCode(len(m.groups)-1, c), toCategory)
 		}
 	}
 
@@ -224,7 +224,7 @@ func (m *menuBar) buildSubstitution() {
 		item := parent.AddSubMenuItemCheckbox("", "", false)
 		item.Hide()
 		m.modes = append(m.modes, catSlot{item: item})
-		go m.watchMode(len(m.modes) - 1)
+		go m.watchClicks(item.ClickedCh, m.modeCode(len(m.modes)-1), toMode)
 	}
 }
 
@@ -241,21 +241,52 @@ func (m *menuBar) buildSecretLevels() {
 		item := parent.AddSubMenuItemCheckbox("", "", false)
 		item.Hide()
 		m.levels = append(m.levels, catSlot{item: item})
-		go m.watchLevel(len(m.levels) - 1)
+		go m.watchClicks(item.ClickedCh, m.levelCode(len(m.levels)-1), toLevel)
 	}
 }
 
-func (m *menuBar) watchLevel(index int) {
-	for range m.levels[index].item.ClickedCh {
+// watchClicks turns every click on one entry into the whole policy to send.
+//
+// One loop rather than the five it was. They differed only in where the entry's code
+// came from and which part of the policy the click replaced, and written out five
+// times the shape had to be got right five times: take the lock, read the code *and*
+// the display under it, release, ignore a hidden slot, send. The lock is the part
+// that matters — a slot relabelled between reading its code and reading the display
+// would send one entry's change against another entry's state.
+//
+// What a click means still lives in plan.go, where a test reaches it: the
+// all-or-nothing rule for a family, the arithmetic around locked members and the
+// locale toggle are decisions, and decisions do not belong in the half of this
+// package that only ever runs on somebody's screen.
+//
+// A hidden slot is skipped rather than sent. The pools are built full and revealed
+// as the agent reports its catalogue, so an entry with no code behind it is one the
+// toolkit is drawing at nothing.
+func (m *menuBar) watchClicks(clicks <-chan struct{}, code func() string,
+	want func(d display, code string) proxy.Policy) {
+	for range clicks {
 		m.mu.Lock()
-		level, shown := m.levels[index].code, m.shown
+		this, shown := code(), m.shown
 		m.mu.Unlock()
-		if level == "" {
+		if this == "" {
 			continue
 		}
-		m.apply(shown.policyWith(nil, "", nil, level))
+		m.apply(want(shown, this))
 	}
 }
+
+// The five things a click can change, as the policy each one sends. The route
+// replaces the whole state rather than patching it, so every one of these carries
+// the other parts through unchanged.
+var (
+	toGroup    = func(d display, code string) proxy.Policy { return d.policyWith(d.withGroupToggled(code), "", nil, "") }
+	toCategory = func(d display, code string) proxy.Policy {
+		return d.policyWith(d.withCategoryToggled(code), "", nil, "")
+	}
+	toMode   = func(d display, code string) proxy.Policy { return d.policyWith(nil, code, nil, "") }
+	toLocale = func(d display, code string) proxy.Policy { return d.policyWith(nil, "", d.withLocaleToggled(code), "") }
+	toLevel  = func(d display, code string) proxy.Policy { return d.policyWith(nil, "", nil, code) }
+)
 
 // buildLocales creates the locale rows.
 func (m *menuBar) buildLocales() {
@@ -270,61 +301,7 @@ func (m *menuBar) buildLocales() {
 		item := parent.AddSubMenuItemCheckbox("", "", false)
 		item.Hide()
 		m.locales = append(m.locales, catSlot{item: item})
-		go m.watchLocale(len(m.locales) - 1)
-	}
-}
-
-func (m *menuBar) watchMode(index int) {
-	for range m.modes[index].item.ClickedCh {
-		m.mu.Lock()
-		mode, shown := m.modes[index].code, m.shown
-		m.mu.Unlock()
-		if mode == "" {
-			continue
-		}
-		m.apply(shown.policyWith(nil, mode, nil, ""))
-	}
-}
-
-func (m *menuBar) watchLocale(index int) {
-	for range m.locales[index].item.ClickedCh {
-		m.mu.Lock()
-		code, shown := m.locales[index].code, m.shown
-		m.mu.Unlock()
-		if code == "" {
-			continue
-		}
-		m.apply(shown.policyWith(nil, "", shown.withLocaleToggled(code), ""))
-	}
-}
-
-// watchGroup and watchCategory turn a click into the whole set to send.
-//
-// The set comes from display.withGroupToggled and withCategoryToggled, which are in
-// tray.go where a test reaches them: the all-or-nothing rule for a family and the
-// arithmetic around locked members are decisions, and decisions do not live in the
-// half of this package that only ever runs on somebody's screen.
-func (m *menuBar) watchGroup(index int) {
-	for range m.groups[index].item.ClickedCh {
-		m.mu.Lock()
-		code, shown := m.groups[index].code, m.shown
-		m.mu.Unlock()
-		if code == "" {
-			continue
-		}
-		m.apply(shown.policyWith(shown.withGroupToggled(code), "", nil, ""))
-	}
-}
-
-func (m *menuBar) watchCategory(groupIndex, catIndex int) {
-	for range m.groups[groupIndex].cats[catIndex].item.ClickedCh {
-		m.mu.Lock()
-		code, shown := m.groups[groupIndex].cats[catIndex].code, m.shown
-		m.mu.Unlock()
-		if code == "" {
-			continue
-		}
-		m.apply(shown.policyWith(shown.withCategoryToggled(code), "", nil, ""))
+		go m.watchClicks(item.ClickedCh, m.localeCode(len(m.locales)-1), toLocale)
 	}
 }
 
@@ -558,4 +535,26 @@ func (m *menuBar) showProviders(codes []string) {
 			m.slots[i].item.Hide()
 		}
 	}
+}
+
+// The code readers, one per pool. Each is called by watchClicks with m.mu held: the
+// slots are rewritten by a poll on one goroutine while the clicks arrive on another.
+//
+// Every one of them reads through the receiver rather than closing over the slice.
+// The pools are built at full capacity so append never moves them today, but a
+// closure holding its own slice header would read a stale backing array the day one
+// of those bounds was raised past its capacity — a click that then sends the code of
+// whatever the slot used to be.
+func (m *menuBar) modeCode(i int) func() string { return func() string { return m.modes[i].code } }
+
+func (m *menuBar) levelCode(i int) func() string { return func() string { return m.levels[i].code } }
+
+func (m *menuBar) localeCode(i int) func() string {
+	return func() string { return m.locales[i].code }
+}
+
+func (m *menuBar) groupCode(i int) func() string { return func() string { return m.groups[i].code } }
+
+func (m *menuBar) categoryCode(group, cat int) func() string {
+	return func() string { return m.groups[group].cats[cat].code }
 }
