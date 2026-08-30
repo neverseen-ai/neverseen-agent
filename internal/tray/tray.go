@@ -26,8 +26,8 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"reflect"
 	"runtime"
-	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -420,16 +420,24 @@ func watch(ctx context.Context, v view, ask func() proxy.Status, every time.Dura
 
 // same reports whether two displays would put the same thing on screen.
 //
-// The icons are compared by content, not by pointer. Comparing &a.icon[0] would
-// have been cheaper and it panics on the first call: the display watch starts from
-// is the zero value, and indexing a nil slice is not a comparison. Three hundred
-// bytes every five seconds is not a cost worth being clever about.
-func same(a, b display) bool {
-	return slices.Equal(a.icon, b.icon) &&
-		a.tooltip == b.tooltip &&
-		slices.Equal(a.lines, b.lines) &&
-		slices.Equal(a.providers, b.providers)
-}
+// The whole value, rather than the four fields somebody thought of. The
+// field-by-field version carried a promise that a fifth thing to show could not be
+// added without this being updated with it, and six were added past it: the
+// substitution mode, the secret level, the two lists of choices, the locales and
+// the switches. None of them was compared, and what that cost is a menu that lies.
+// No line of the menu carries the secret level, so `cloakfleet mask
+// --secret-level strong` changed nothing this looked at and the ticked row stayed
+// on the old level until something else moved; the locales are named in a state
+// line only while no category is switched off, so a locale change on an agent in
+// the partial state was invisible in exactly the same way.
+//
+// A promise in a comment is not what keeps a comparison current — comparing the
+// value is. DeepEqual reads the icons by content as well, which is the property
+// the pointer comparison could never have: the display watch starts from the zero
+// value, and indexing a nil slice is not a comparison. Three hundred bytes and a
+// handful of short slices every five seconds is not a cost worth being clever
+// about.
+func same(a, b display) bool { return reflect.DeepEqual(a, b) }
 
 // orUnknown is what a state line says about a field the agent did not fill in.
 //

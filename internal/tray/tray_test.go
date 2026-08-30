@@ -5,6 +5,7 @@ import (
 	"context"
 	"image"
 	_ "image/png"
+	"reflect"
 	"runtime"
 	"slices"
 	"strings"
@@ -682,5 +683,104 @@ func TestAClickCarriesTheWholeState(t *testing.T) {
 	}
 	if len(want.Off) != 0 {
 		t.Errorf("the category was not switched back on: %v", want.Off)
+	}
+}
+
+// The two changes the field-by-field comparison could not see.
+//
+// Neither is exotic: both are made by `cloakfleet mask`, which is the only way to
+// reach these settings on a workstation with no menu bar, and both used to leave
+// the bar ticking the value the agent had stopped applying. The secret level is
+// named nowhere in the state lines, so it moved with nothing else to give it away;
+// the locales are named in a state line only while no category is switched off,
+// which is why the second case pins an agent in the partial state.
+func TestSameSeesTheSettingsNoStateLineCarries(t *testing.T) {
+	masking := proxy.Status{Addr: "127.0.0.1:8787", Answering: true, Health: proxy.Health{
+		Version: "1.0.0", Masking: "full", Substitution: "token", SecretLevel: "weak",
+		Locales: []string{"fr"}, AvailableLocales: []string{"fr", "gb"},
+	}}
+
+	partial := masking
+	partial.Health.Masking = "partial"
+	partial.Groups = []proxy.HealthGroup{{Code: "personal", Label: "Personal details",
+		Categories: []proxy.HealthCategory{{Code: "EMAIL", Label: "Email address", Off: true}}}}
+
+	for _, tc := range []struct {
+		name   string
+		before proxy.Status
+		change func(*proxy.Status)
+	}{
+		{"the secret level", masking, func(s *proxy.Status) { s.SecretLevel = "strong" }},
+		{"the locales, with a category switched off", partial,
+			func(s *proxy.Status) { s.Locales = []string{"gb"} }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			after := tc.before
+			tc.change(&after)
+
+			if same(render(tc.before), render(after)) {
+				t.Errorf("%s changed and the menu bar would not redraw, "+
+					"so it goes on ticking what the agent stopped applying", tc.name)
+			}
+		})
+	}
+}
+
+// The guard the comparison's own comment promised and did not keep: six fields
+// were added to display and none of them was compared.
+//
+// It walks the type rather than naming the fields, because a test that named them
+// would be the same list going stale in a second place. A field this cannot
+// perturb fails loudly rather than passing quietly — an unperturbed field is a
+// field this test is not checking, which is exactly how the last one got through.
+func TestSameComparesEveryFieldOfADisplay(t *testing.T) {
+	base := render(proxy.Status{Addr: "127.0.0.1:8787", Answering: true, Health: proxy.Health{
+		Version: "1.0.0", Masking: "full", Substitution: "token", SecretLevel: "weak",
+		Locales: []string{"fr"}, AvailableLocales: []string{"fr", "gb"},
+		Providers: []string{"anthropic"},
+		Groups: []proxy.HealthGroup{{Code: "personal", Label: "Personal details",
+			Categories: []proxy.HealthCategory{{Code: "EMAIL", Label: "Email address"}}}},
+	}})
+
+	typ := reflect.TypeOf(base)
+	for i := range typ.NumField() {
+		field := typ.Field(i)
+
+		changed := base
+		target := reflect.ValueOf(&changed).Elem().Field(i)
+		if !perturb(target) {
+			t.Fatalf("display.%s is a %s this test cannot change, so nothing here "+
+				"checks that same() compares it", field.Name, field.Type)
+		}
+
+		if same(base, changed) {
+			t.Errorf("display.%s changed and same() reported no change, so the menu "+
+				"bar would go on showing the old value", field.Name)
+		}
+	}
+}
+
+// perturb gives a field a value it did not have, reporting false for a kind it
+// does not know how to change — which the caller treats as a failure rather than
+// as nothing to do.
+func perturb(v reflect.Value) bool {
+	// Reachable through the unexported fields of a display, which is the whole of
+	// what this test is for.
+	v = reflect.NewAt(v.Type(), v.Addr().UnsafePointer()).Elem()
+
+	switch v.Kind() {
+	case reflect.String:
+		v.SetString(v.String() + " changed")
+		return true
+	case reflect.Bool:
+		v.SetBool(!v.Bool())
+		return true
+	case reflect.Slice:
+		// Appended rather than replaced, so a nil slice and an empty one are both
+		// perturbed into something DeepEqual tells apart.
+		v.Set(reflect.Append(v, reflect.New(v.Type().Elem()).Elem()))
+		return true
+	default:
+		return false
 	}
 }
