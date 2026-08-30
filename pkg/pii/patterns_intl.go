@@ -89,6 +89,32 @@ var (
 	ipv4Octet = `(?:25[0-5]|2[0-4]\d|[01]?\d\d?)`
 	ipv4Re    = regexp.MustCompile(`\b` + ipv4Octet + `\.` + ipv4Octet + `\.` + ipv4Octet + `\.` + ipv4Octet + `\b`)
 
+	// IPv6, which went unmasked entirely while the category that holds it was
+	// labelled "IP address" in every menu that offers to switch it off.
+	//
+	// Two branches, and what is left out of them is the decision. The full
+	// eight-group form is unambiguous. The compressed form is not: "abc::def" is a
+	// valid address by every rule of the notation, and it is also how C++ writes a
+	// namespace — so the compressed branch requires two groups on one side of the
+	// "::", which keeps "2001:db8::1" and drops the two-group shape entirely. What
+	// that costs is the short well-known addresses: "::1" and "fe80::1" are not
+	// read. Neither identifies a machine — every host has the same loopback, and a
+	// link-local address names a network that failed rather than a host — which is
+	// the same argument localAddresses makes when it refuses to report them.
+	//
+	// A MAC address cannot reach either branch: six groups is not eight, and it
+	// carries no "::". Nor can a timestamp, for the same reason.
+	//
+	// IPAddressCheck is what actually decides. RE2 can describe the shape of an
+	// address and not whether it is one, and the compression rule — where "::" may
+	// appear and how many groups it stands for — is not something to re-implement
+	// in an expression when the standard library has it.
+	ipv6Group = `[0-9a-fA-F]{1,4}`
+	ipv6Re    = regexp.MustCompile(
+		`\b(?:` + ipv6Group + `:){7}` + ipv6Group + `\b` +
+			`|\b(?:` + ipv6Group + `:){2,7}(?::` + ipv6Group + `){1,6}\b` +
+			`|\b(?:` + ipv6Group + `:){1,6}(?::` + ipv6Group + `){2,7}\b`)
+
 	// The one date order that is unambiguous everywhere: year first. Day-first and
 	// month-first are the same string read two ways, so each lives in the locale
 	// that reads it that way.
@@ -109,6 +135,7 @@ func InternationalPatterns() []Pattern {
 		{Regex: ibanRe, Category: CatIBAN, Label: "IBAN", Refine: trimToIBAN},
 		{Regex: mongoIDRe, Category: CatMongoID, Label: "MongoDB ObjectId"},
 		{Regex: ipv4Re, Category: CatIPAddr, Label: "IPv4 address"},
+		{Regex: ipv6Re, Category: CatIPv6, Label: "IPv6 address"},
 		{Regex: dateRe, Category: CatDOB, Label: "Date (ISO)"},
 	}
 }

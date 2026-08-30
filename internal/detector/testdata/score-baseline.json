@@ -31,6 +31,11 @@
    "fp": 0,
    "fn": 0
   },
+  "IPV6_ADDRESS": {
+   "tp": 3,
+   "fp": 0,
+   "fn": 0
+  },
   "IP_ADDRESS": {
    "tp": 6,
    "fp": 0,
@@ -207,5 +212,5 @@
    "fn": 0
   }
  },
- "negatives": 80
+ "negatives": 84
 }

@@ -1,6 +1,7 @@
 package pii
 
 import (
+	"net/netip"
 	"regexp"
 	"strconv"
 	"strings"
@@ -452,6 +453,24 @@ var englishMonths = map[string]string{
 	"january": "1", "february": "2", "march": "3", "april": "4",
 	"may": "5", "june": "6", "july": "7", "august": "8",
 	"september": "9", "october": "10", "november": "11", "december": "12",
+}
+
+// IPAddressCheck reports whether a value really is an IP address.
+//
+// Not a checksum, and the second case after DOBCheck of Verify carrying a rule the
+// regex cannot express. An address has no check digit; what it has is a grammar,
+// and the standard library already implements it exactly. A hand-written
+// expression for IPv6 has to encode the compression rule — where "::" may appear
+// and how many groups it stands for — and every version of that expression anybody
+// writes is either too loose or wrong about an edge of the notation.
+//
+// So the expression finds candidates and this decides, which is what lets the
+// expression stay readable. It guards both families at once because it hangs off
+// the category: whatever a pattern claims, a value that does not parse is not an
+// address and is dropped outright rather than scored down.
+func IPAddressCheck(value string) bool {
+	_, err := netip.ParseAddr(value)
+	return err == nil
 }
 
 // GenericSecretCheck rejects a value that is the source code around a secret

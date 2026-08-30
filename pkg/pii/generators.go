@@ -117,6 +117,14 @@ var fakeGenerators = map[Category]Generator{
 		return fmt.Sprintf("contact%d@example.org", i)
 	}},
 
+	// The documentation prefix of RFC 3849, which is never routed — the IPv6
+	// counterpart of the blocks below, and its own generator for the reason the
+	// dates have theirs: a stand-in is chosen by category, so an address handed one
+	// from the other family would come back in a notation nobody wrote.
+	CatIPv6: {Capacity: 0xffff, Make: func(i int64) string {
+		return fmt.Sprintf("2001:db8::%x", i)
+	}},
+
 	// The three documentation blocks of RFC 5737, which are never routed.
 	CatIPAddr: {Capacity: 3 * 256, Make: func(i int64) string {
 		blocks := [...]string{"192.0.2", "198.51.100", "203.0.113"}

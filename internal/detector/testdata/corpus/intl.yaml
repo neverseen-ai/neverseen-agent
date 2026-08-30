@@ -115,3 +115,47 @@ cases:
     text: "Ancienne carte 4222222222222 encore au dossier."
     expect:
       - {category: CREDIT_CARD, value: "4222222222222"}
+
+  # --- IPv6 -----------------------------------------------------------------
+  #
+  # These exist because the shape did not. The category was labelled "IP address"
+  # in every menu offering to switch it off, and only IPv4 was ever read — so an
+  # operator who left it ticked believed their addresses were masked.
+
+  - id: intl-ipv6-full
+    text: "The host 2001:0db8:85a3:0000:0000:8a2e:0370:7334 stopped answering."
+    expect:
+      - {category: IPV6_ADDRESS, value: "2001:0db8:85a3:0000:0000:8a2e:0370:7334"}
+
+  - id: intl-ipv6-compressed
+    text: "Route traffic to 2001:db8::1 for now."
+    expect:
+      - {category: IPV6_ADDRESS, value: "2001:db8::1"}
+
+  - id: intl-ipv6-compressed-middle
+    text: "Peer 2001:db8:85a3::8a2e:370:7334 is up."
+    expect:
+      - {category: IPV6_ADDRESS, value: "2001:db8:85a3::8a2e:370:7334"}
+
+  # A MAC address is six groups and carries no "::", so neither branch can reach
+  # it. It is the nearest shape to an address that is not one.
+  - id: intl-prec-mac-address
+    text: "Interface 00:1A:2B:3C:4D:5E came up on the switch."
+    expect: []
+
+  # A timestamp is the same characters in the same arrangement, three groups deep.
+  - id: intl-prec-timestamp
+    text: "Backup ran at 12:34:56 and finished at 01:02:03."
+    expect: []
+
+  # "abc::def" is a valid IPv6 address by every rule of the notation, and it is
+  # also how C++ writes a namespace. Requiring two groups on one side of the "::"
+  # is what keeps a prompt about source code from coming back with its identifiers
+  # replaced — the lesson GenericSecretCheck already paid for.
+  - id: intl-prec-cpp-namespace
+    text: "The call was abc::def rather than std::vector<int> here."
+    expect: []
+
+  - id: intl-prec-ratio-and-range
+    text: "Mixing ratio 1:2, port range 10:20:30 in the config."
+    expect: []

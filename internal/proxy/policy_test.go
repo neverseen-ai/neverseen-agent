@@ -351,7 +351,11 @@ func TestSetPolicyGoesThroughTheRoute(t *testing.T) {
 	if got := status.Level(); got != detector.LevelPartial {
 		t.Errorf("level is %v, want partial", got)
 	}
-	if off := status.SwitchedOff(); len(off) != 1 || off[0] != "IP address" {
+	// The live catalogue's label, not a fixture's: this test switches a real
+	// category off through the real detector. It reads "IPv4 address" since IPv6
+	// became a category of its own — one entry saying "IP address" over a pattern
+	// that read only half of them was the switch that lied.
+	if off := status.SwitchedOff(); len(off) != 1 || off[0] != "IPv4 address" {
 		t.Errorf("the reply names %v as switched off", off)
 	}
 	if got := det.Disabled(); len(got) != 1 {

@@ -29,6 +29,7 @@ Cartes des autres longueurs : 4222222222222 (13), 4532015112830366120 (19), 4532
 IBAN : FR1420041010050500013M02606, groupé FR14 2004 1010 0505 0001 3M02 606
 IBAN étrangers : DE89370400440532013000, BE68539007547034, NL91ABNA0417164300
 Serveur : 192.168.13.42, et 10.0.0.1 en secours
+Serveur IPv6 : 2001:0db8:85a3:0000:0000:8a2e:0370:7334, forme compacte 2001:db8::1, compactée au milieu 2001:db8:85a3::8a2e:370:7334
 Identifiant document : 507f1f77bcf86cd799439011
 
 === Dates au format ISO ===

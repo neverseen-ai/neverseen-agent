@@ -77,6 +77,11 @@ func TestSampleShowsEveryNotation(t *testing.T) {
 				"NL91ABNA0417164300", pii.CatIBAN,
 				"192.168.13.42", pii.CatIPAddr,
 				"507f1f77bcf86cd799439011", pii.CatMongoID,
+				// Both families, because the category that held them was labelled
+				// "IP address" while only one of them was ever read.
+				"2001:0db8:85a3:0000:0000:8a2e:0370:7334", pii.CatIPv6,
+				"2001:db8::1", pii.CatIPv6,
+				"2001:db8:85a3::8a2e:370:7334", pii.CatIPv6,
 				"1987-03-14", pii.CatDOB,
 				"1987/03/14", pii.CatDOB,
 			),

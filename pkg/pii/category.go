@@ -34,6 +34,7 @@ const (
 	CatCreditCard Category = "CREDIT_CARD"
 	CatIBAN       Category = "IBAN"
 	CatIPAddr     Category = "IP_ADDRESS"
+	CatIPv6       Category = "IPV6_ADDRESS"
 	CatMongoID    Category = "MONGO_ID"
 	CatDOB        Category = "DOB"
 )
@@ -152,9 +153,21 @@ var categoryRegistry = map[Category]CategoryInfo{
 	CatEmail:      {Prefix: "EMAIL", Score: 95, Group: GroupPersonal, Label: "Email address"},
 	CatCreditCard: {Prefix: "CARD", Score: 95, Verify: LuhnCheck, Group: GroupBanking, Label: "Payment card"},
 	CatIBAN:       {Prefix: "IBAN", Score: 95, Verify: IBANCheck, Group: GroupBanking, Label: "Bank account (IBAN)"},
-	CatIPAddr:     {Prefix: "IP", Score: 75, Group: GroupTechnical, Label: "IP address"},
-	CatMongoID:    {Prefix: "MONGOID", Score: 85, Group: GroupTechnical, Label: "Database identifier"},
-	CatDOB:        {Prefix: "DOB", Score: 75, Verify: DOBCheck, Group: GroupPersonal, Label: "Date of birth"},
+	// Two categories rather than one, and the split is what makes fake mode
+	// honest: a stand-in is chosen by category, so a single "IP address" entry
+	// would hand an IPv6 address an IPv4 stand-in — a value in the wrong notation,
+	// which is the machine artefact fake mode exists to avoid. It also stops the
+	// switch lying: labelled "IP address" while only half of them were read, it
+	// told an operator their addresses were masked.
+	//
+	// Verify parses the value, which is the rule neither expression can state. A
+	// regex can describe the shape of an address and not whether it is one.
+	CatIPAddr: {Prefix: "IP", Score: 75, Verify: IPAddressCheck, Group: GroupTechnical,
+		Label: "IPv4 address"},
+	CatIPv6: {Prefix: "IPV6", Score: 75, Verify: IPAddressCheck, Group: GroupTechnical,
+		Label: "IPv6 address"},
+	CatMongoID: {Prefix: "MONGOID", Score: 85, Group: GroupTechnical, Label: "Database identifier"},
+	CatDOB:     {Prefix: "DOB", Score: 75, Verify: DOBCheck, Group: GroupPersonal, Label: "Date of birth"},
 
 	// --- France -------------------------------------------------------------
 	CatNIR:   {Prefix: "NIR", Score: 95, Verify: NIRCheck, Group: GroupPersonal, Label: "Social security number (fr)"},
