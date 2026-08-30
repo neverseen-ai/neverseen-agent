@@ -65,3 +65,41 @@ func TestEveryLocaleIsDocumented(t *testing.T) {
 // The other half of that pact — every documented variable being one some code
 // reads — needs to see the whole binary's settings at once, so it lives with the
 // command rather than here.
+
+// A locale that reads dates has to read them in the notation its country writes.
+//
+// This is the test that would have caught the gap it was written for: a UK
+// deployment masked the NHS number, the National Insurance number, the postcode,
+// the address and the telephone, and forwarded "14/03/1987" in clear, because the
+// day-first pattern lived in the French set alone.
+//
+// Nothing else could have. The sample sweep and the corpus both check that what a
+// locale *does* detect is documented and measured, and neither can ask about a
+// shape no pattern claims — an absent category is absent from the expectations
+// too. So the question is asked here, from the outside: for each locale, a date
+// written the way that country writes it must be recognised.
+func TestEveryLocaleReadsItsOwnDateNotation(t *testing.T) {
+	for _, tc := range []struct{ locale, date string }{
+		// Day first in both, and the same notation: the United Kingdom writes a
+		// date the way France does.
+		{"fr", "23/02/2004"},
+		{"gb", "14/03/1987"},
+		// Month first, which is this locale's reading and nobody else's.
+		{"us", "03/14/1987"},
+	} {
+		t.Run(tc.locale, func(t *testing.T) {
+			d := New(Config{Locales: []string{tc.locale}})
+
+			var found bool
+			for _, m := range d.Scan("date of birth " + tc.date + " on file") {
+				if m.Category == pii.CatDOB && m.Value == tc.date {
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf("a %s deployment does not recognise %q as a date of birth, "+
+					"so it forwards one in clear", tc.locale, tc.date)
+			}
+		})
+	}
+}

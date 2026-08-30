@@ -77,6 +77,12 @@ Address with no town: 42 Wellington Crescent
 Abbreviated street type: 8 High St, Manchester M1 2AB
 Street types, written in full: 1 Example Street, 2 Example Road, 3 Example Avenue, 4 Example Lane, 5 Example Close, 6 Example Drive, 7 Example Place, 8 Example Court, 9 Example Crescent, 10 Example Gardens
 And the rest: 11 Example Terrace, 12 Example Square, 13 Example Mews, 14 Example Grove, 15 Example Parade, 16 Example Way, 17 Example St, 18 Example Rd, 19 Example Ave
+
+=== Dates of birth (day first) ===
+THE SAME DATE in its four notations: 14/03/1987, 14-03-1987, 14.03.1987, 14 March 1987
+With and without a leading zero: 4/3/1987, 04/03/1987, 4 March 1987, 04 March 1987
+The twelve month names: 9 January 2004, 17 February 1998, 1 March 2019, 4 April 1977, 12 May 1985, 30 June 1962, 8 July 2001, 22 August 1993, 3 September 1970, 15 October 1988, 26 November 1955, 31 December 1978
+Month names are read whatever their case: 3 september 1970, 3 SEPTEMBER 1970
 `
 
 const unitedStatesSample = `=== United States ===

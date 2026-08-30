@@ -390,7 +390,7 @@ func dobCheckAt(date string, now time.Time) bool {
 	}
 
 	// A month spelled out fixes the order, whatever the locale.
-	if month, ok := frenchMonths[fields[1]]; ok {
+	if month, ok := monthNumber(fields[1]); ok {
 		// The ordinal the French first of the month carries: "1er mars 2004".
 		return notAfter(fields[2], month, strings.TrimSuffix(fields[0], "er"), cutoff)
 	}
@@ -419,6 +419,22 @@ func notAfter(year, month, day string, cutoff time.Time) bool {
 	return !time.Date(y, time.Month(m), d, 0, 0, 0, 0, time.UTC).After(cutoff)
 }
 
+// monthNumber reads a month written out, in any language a pattern here accepts.
+//
+// One lookup over both tables rather than one per language, because the rule this
+// feeds is what separates a birth date from a deadline. A name it could not read
+// falls through to the numeric branch, where Atoi fails and notAfter answers "go on
+// masking" — so a language missing from here does not under-mask, it *stops the
+// rule applying at all* and every future date in that language is masked as a birth
+// date. Adding a month name to a pattern means adding it here in the same commit.
+func monthNumber(name string) (string, bool) {
+	if n, ok := frenchMonths[name]; ok {
+		return n, true
+	}
+	n, ok := englishMonths[name]
+	return n, ok
+}
+
 // frenchMonths maps every spelling frMonthName accepts, accents included and
 // omitted, to its number. Lower case because dobCheckAt folds the input.
 var frenchMonths = map[string]string{
@@ -428,6 +444,14 @@ var frenchMonths = map[string]string{
 	"août": "8", "aout": "8",
 	"septembre": "9", "octobre": "10", "novembre": "11",
 	"décembre": "12", "decembre": "12",
+}
+
+// englishMonths maps every spelling gbMonthName accepts to its number. Lower case
+// for the reason frenchMonths is: dobCheckAt folds the input before looking here.
+var englishMonths = map[string]string{
+	"january": "1", "february": "2", "march": "3", "april": "4",
+	"may": "5", "june": "6", "july": "7", "august": "8",
+	"september": "9", "october": "10", "november": "11", "december": "12",
 }
 
 // GenericSecretCheck rejects a value that is the source code around a secret

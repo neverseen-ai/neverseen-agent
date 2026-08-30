@@ -40,6 +40,19 @@ const (
 	// two cannot disagree about what a postcode looks like.
 	gbPostcodeBody = `[A-Z]{1,2}\d[A-Z\d]?[ ]?\d[A-Z]{2}`
 
+	// Date fragments: a day, a month as digits or as an English name, and a year
+	// anchored to 19xx/20xx. That anchor is what keeps a date apart from an
+	// arbitrary run of numbers.
+	//
+	// Its own set rather than France's, which are identical today, because the
+	// two are separate decisions: a locale that changed how it writes a day
+	// should not be able to change another country's pattern by doing it.
+	gbDay       = `(?:0?[1-9]|[12]\d|3[01])`
+	gbMonthNum  = `(?:0?[1-9]|1[0-2])`
+	gbMonthName = `(?:January|February|March|April|May|June|July|August|` +
+		`September|October|November|December)`
+	gbYear = `(?:19|20)\d{2}`
+
 	// A town, and the reason its words are three characters or more.
 	//
 	// At two, the greedy repetition ate the letters off the front of the postcode
@@ -100,6 +113,33 @@ var (
 	// postcode narrows to about fifteen addresses, which is why it is treated as
 	// identifying on its own where a bare five-digit code is not.
 	gbPostcodeRe = regexp.MustCompile(`\b` + gbPostcodeBody + `\b`)
+
+	// The day-first orders, which is how the United Kingdom writes a date — the
+	// same way France does and the opposite way round from the United States.
+	//
+	// It is here because it was nowhere: a UK deployment masked the NHS number,
+	// the National Insurance number, the postcode, the address and the telephone,
+	// and forwarded "14/03/1987" in clear. The day-first pattern lived in the
+	// French set alone, so the gap was invisible to every test — the sample sweep
+	// and the corpus both check that what a locale detects is documented, and
+	// neither can ask about a shape no pattern here claims.
+	//
+	// One alternative per separator rather than a character class, for the reason
+	// France's carries: the separators have to agree and RE2 has no backreference
+	// to say so, so "23/02-2004" is not a date.
+	//
+	// The month name is offered in English only, and only in "day Month year".
+	// TODO: two notations are still missed. An ordinal — "14th March 1987" — is
+	// not read, because DOBCheck would have to strip the suffix before parsing,
+	// and the space-separated numeric form "14 03 1987" is left out because three
+	// bare numbers in a row is a shape prose produces and the negatives floor is
+	// what pays for it. Both are additions here plus a row in the sample.
+	gbDateRe = regexp.MustCompile(`(?i)\b(?:` +
+		gbDay + `/` + gbMonthNum + `/` + gbYear + `|` +
+		gbDay + `-` + gbMonthNum + `-` + gbYear + `|` +
+		gbDay + `\.` + gbMonthNum + `\.` + gbYear + `|` +
+		gbDay + `[ ]+` + gbMonthName + `[ ]+` + gbYear +
+		`)\b`)
 
 	// A trunk 0 or +44, then the number in any of the groupings the UK uses:
 	// 2+8 for London, 4+6 for most cities, 5+6 for mobiles.
@@ -194,5 +234,6 @@ func UnitedKingdomPatterns() []Pattern {
 		{Regex: gbPostcodeRe, Category: CatPostalCode, Label: "UK postcode"},
 		{Regex: gbPhoneRe, Category: CatPhone, Label: "UK telephone number"},
 		{Regex: gbNINORe, Category: CatNINO, Label: "National Insurance number"},
+		{Regex: gbDateRe, Category: CatDOB, Label: "Date (day first)"},
 	}
 }

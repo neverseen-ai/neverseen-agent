@@ -149,6 +149,23 @@ func TestSampleShowsEveryNotation(t *testing.T) {
 				"221B Baker Street, London NW1 6XE", pii.CatAddress,
 				"42 Wellington Crescent", pii.CatAddress,
 				"8 High St, Manchester M1 2AB", pii.CatAddress,
+				// Day first, which the United Kingdom shares with France and
+				// reads the opposite way round from the United States. Every
+				// notation is a separate branch of the expression, and a table
+				// with only the tidy forms in it lets the others be dropped
+				// unnoticed.
+				"14/03/1987", pii.CatDOB,
+				"14-03-1987", pii.CatDOB,
+				"14.03.1987", pii.CatDOB,
+				"14 March 1987", pii.CatDOB,
+				// The leading zero, optional on both sides.
+				"4/3/1987", pii.CatDOB,
+				"04/03/1987", pii.CatDOB,
+				"4 March 1987", pii.CatDOB,
+				// The expression is case-folded, so a month somebody typed in
+				// lower case is still a month.
+				"3 september 1970", pii.CatDOB,
+				"3 SEPTEMBER 1970", pii.CatDOB,
 			),
 		},
 		{

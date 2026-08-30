@@ -217,3 +217,56 @@ cases:
   - id: gb-prec-lowercase-postcode-shape
     text: "the token sw1a 1aa appears in the fixture"
     expect: []
+
+  # --- date of birth --------------------------------------------------------
+  #
+  # Day first, which the United Kingdom shares with France and reads the opposite
+  # way round from the United States. These cases exist because the shape did
+  # not: the day-first pattern lived in the French set alone, so a UK deployment
+  # masked the NHS number, the National Insurance number, the postcode, the
+  # address and the telephone, and forwarded a date of birth in clear.
+
+  - id: gb-dob-slashes
+    text: "Patient born 14/03/1987, registered at the practice since 2010."
+    expect:
+      - {category: DOB, value: "14/03/1987"}
+
+  - id: gb-dob-dashes
+    text: "Date of birth: 14-03-1987"
+    expect:
+      - {category: DOB, value: "14-03-1987"}
+
+  - id: gb-dob-dots
+    text: "Born 14.03.1987 in Manchester."
+    expect:
+      - {category: DOB, value: "14.03.1987"}
+
+  - id: gb-dob-month-name
+    text: "Born 3 September 1970 according to the record."
+    expect:
+      - {category: DOB, value: "3 September 1970"}
+
+  # The expression is case-folded, because a form field receives whatever was
+  # typed and a lower-case month is still a month.
+  - id: gb-dob-month-name-lowercase
+    text: "born 3 september 1970 per the form"
+    expect:
+      - {category: DOB, value: "3 september 1970"}
+
+  # A date in the future is not a date of birth. DOBCheck is what says so, and it
+  # has to say it for the month-name form too: without an English month table the
+  # rule falls through to the numeric branch, where the month will not parse and
+  # the answer is "go on masking" — which would mask every deadline in the diary.
+  - id: gb-prec-future-date-numeric
+    text: "The licence must be renewed by 14/03/2099."
+    expect: []
+
+  - id: gb-prec-future-date-month-name
+    text: "The consultation closes on 14 March 2099."
+    expect: []
+
+  # A month that does not exist. Thirteen months is a version string or a count,
+  # never a date.
+  - id: gb-prec-month-out-of-range
+    text: "Batch 14/13/1987 failed validation."
+    expect: []
