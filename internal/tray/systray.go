@@ -60,6 +60,9 @@ type menuBar struct {
 	mu    sync.Mutex
 	slots []providerSlot
 
+	// levels is the pool of secret-strength rows, drawn like the modes are.
+	levels []catSlot
+
 	// groups is the pool of switch entries, created up front and revealed as the
 	// agent reports its catalogue — the toolkit builds a menu once and there is no
 	// adding an entry later, which is the same reason the provider pool exists.
@@ -114,6 +117,7 @@ func (m *menuBar) build() {
 	systray.AddSeparator()
 	m.buildSwitches()
 	m.buildSubstitution()
+	m.buildSecretLevels()
 	m.buildLocales()
 	m.buildProviders()
 
@@ -153,6 +157,11 @@ const (
 	// menu nobody can read.
 	maxModeEntries   = 4
 	maxLocaleEntries = 8
+
+	// maxLevelEntries bounds the secret-strength pool. Three levels today, and the
+	// scale is a judgement rather than a registry — a fourth would mean a new
+	// answer to "how much does this look like a credential", not a new country.
+	maxLevelEntries = 4
 )
 
 // buildSwitches creates the group entries and their category entries, all hidden.
@@ -200,7 +209,7 @@ func (m *menuBar) buildSwitches() {
 			m.mu.Lock()
 			shown := m.shown
 			m.mu.Unlock()
-			m.apply(shown.policyWith([]string{}, "", nil))
+			m.apply(shown.policyWith([]string{}, "", nil, ""))
 		}
 	}()
 	systray.AddSeparator()
@@ -216,6 +225,35 @@ func (m *menuBar) buildSubstitution() {
 		item.Hide()
 		m.modes = append(m.modes, catSlot{item: item})
 		go m.watchMode(len(m.modes) - 1)
+	}
+}
+
+// buildSecretLevels creates the level rows.
+func (m *menuBar) buildSecretLevels() {
+	parent := systray.AddMenuItem("Secret strength", "How far down the scale a named secret is masked")
+
+	caution := parent.AddSubMenuItem("A key with a known prefix is masked at every level", "")
+	caution.Disable()
+	parent.AddSeparator()
+
+	m.levels = make([]catSlot, 0, maxLevelEntries)
+	for range maxLevelEntries {
+		item := parent.AddSubMenuItemCheckbox("", "", false)
+		item.Hide()
+		m.levels = append(m.levels, catSlot{item: item})
+		go m.watchLevel(len(m.levels) - 1)
+	}
+}
+
+func (m *menuBar) watchLevel(index int) {
+	for range m.levels[index].item.ClickedCh {
+		m.mu.Lock()
+		level, shown := m.levels[index].code, m.shown
+		m.mu.Unlock()
+		if level == "" {
+			continue
+		}
+		m.apply(shown.policyWith(nil, "", nil, level))
 	}
 }
 
@@ -244,7 +282,7 @@ func (m *menuBar) watchMode(index int) {
 		if mode == "" {
 			continue
 		}
-		m.apply(shown.policyWith(nil, mode, nil))
+		m.apply(shown.policyWith(nil, mode, nil, ""))
 	}
 }
 
@@ -256,7 +294,7 @@ func (m *menuBar) watchLocale(index int) {
 		if code == "" {
 			continue
 		}
-		m.apply(shown.policyWith(nil, "", shown.withLocaleToggled(code)))
+		m.apply(shown.policyWith(nil, "", shown.withLocaleToggled(code), ""))
 	}
 }
 
@@ -274,7 +312,7 @@ func (m *menuBar) watchGroup(index int) {
 		if code == "" {
 			continue
 		}
-		m.apply(shown.policyWith(shown.withGroupToggled(code), "", nil))
+		m.apply(shown.policyWith(shown.withGroupToggled(code), "", nil, ""))
 	}
 }
 
@@ -286,7 +324,7 @@ func (m *menuBar) watchCategory(groupIndex, catIndex int) {
 		if code == "" {
 			continue
 		}
-		m.apply(shown.policyWith(shown.withCategoryToggled(code), "", nil))
+		m.apply(shown.policyWith(shown.withCategoryToggled(code), "", nil, ""))
 	}
 }
 
@@ -378,6 +416,7 @@ func (m *menuBar) show(d display) {
 
 	m.showSwitches(d)
 	m.showRows(m.modes, planModes(d))
+	m.showRows(m.levels, planLevels(d))
 	m.showRows(m.locales, planLocales(d))
 	m.showProviders(d.providers)
 }

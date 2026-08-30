@@ -81,6 +81,10 @@ type display struct {
 	// substitution is the live mode, and modes are every mode this build offers, so
 	// the menu can draw a choice rather than a state.
 	substitution string
+
+	// secretLevel is the live level, and levels are every level this build offers.
+	secretLevel  string
+	secretLevels []string
 	modes        []string
 
 	// locales is one row per locale the build has, with whether it is loaded.
@@ -253,6 +257,8 @@ func render(s proxy.Status) display {
 		providers:    s.Providers,
 		substitution: s.Substitution,
 		modes:        proxy.SubstitutionModes(),
+		secretLevel:  s.SecretLevel,
+		secretLevels: proxy.SecretLevels(),
 		locales:      localesOf(s),
 		switches:     switchesOf(s),
 	}
@@ -286,8 +292,8 @@ func localesOf(s proxy.Status) []localeRow {
 // Built from what the menu is currently drawing, which is what the agent last
 // reported: the route replaces the state rather than patching it, so a click has to
 // carry the other two parts unchanged.
-func (d display) policyWith(off []string, substitution string, locales []string) proxy.Policy {
-	want := proxy.Policy{Off: d.offCodes(), Substitution: d.substitution}
+func (d display) policyWith(off []string, substitution string, locales []string, level string) proxy.Policy {
+	want := proxy.Policy{Off: d.offCodes(), Substitution: d.substitution, SecretLevel: d.secretLevel}
 	for _, l := range d.locales {
 		if l.on {
 			want.Locales = append(want.Locales, l.code)
@@ -302,6 +308,9 @@ func (d display) policyWith(off []string, substitution string, locales []string)
 	}
 	if locales != nil {
 		want.Locales = locales
+	}
+	if level != "" {
+		want.SecretLevel = level
 	}
 	return want
 }
@@ -697,4 +706,39 @@ func planLocales(d display) []entryPlan {
 		})
 	}
 	return out
+}
+
+// planLevels is one row per secret level, ticked for the live one.
+//
+// The same shape as planModes, and for the same reason: the toolkit has no radio
+// group, and a cycling item cannot say what it is about to become.
+//
+// The titles say what each level costs rather than only naming it. "weak" and
+// "strong" are the words the configuration uses and they have to stay, but neither
+// says which one replaces the identifiers in the code somebody is asking about.
+func planLevels(d display) []entryPlan {
+	out := make([]entryPlan, 0, len(d.secretLevels))
+	for _, level := range d.secretLevels {
+		out = append(out, entryPlan{
+			code:    level,
+			title:   levelTitle(level),
+			visible: true,
+			enabled: level != d.secretLevel,
+			checked: level == d.secretLevel,
+		})
+	}
+	return out
+}
+
+func levelTitle(level string) string {
+	switch level {
+	case "weak":
+		return "weak — every value found, words included; masks code too"
+	case "medium":
+		return "medium — values mixing two kinds of character"
+	case "strong":
+		return "strong — only what nobody typed; keeps code readable"
+	default:
+		return level
+	}
 }

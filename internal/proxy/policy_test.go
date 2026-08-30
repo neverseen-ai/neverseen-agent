@@ -70,7 +70,7 @@ func TestPolicySwitchesACategoryOff(t *testing.T) {
 	up := newUpstream(t, echoJSON)
 	agent, det := newControlledAgent(t, up, []string{"fr"})
 
-	got := putPolicy(t, agent, testControlKey, `{"off":["IP_ADDRESS"],"substitution":"token","locales":["fr"]}`)
+	got := putPolicy(t, agent, testControlKey, `{"off":["IP_ADDRESS"],"substitution":"token","secret_level":"weak","locales":["fr"]}`)
 	if got.status != http.StatusOK {
 		t.Fatalf("status %d: %s", got.status, got.body)
 	}
@@ -123,7 +123,7 @@ func TestPolicyRefusesWithoutTheKey(t *testing.T) {
 		{"a wrong key", strings.Repeat("f", 64)},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			got := putPolicy(t, agent, tt.key, `{"off":["IP_ADDRESS"],"substitution":"token","locales":["fr"]}`)
+			got := putPolicy(t, agent, tt.key, `{"off":["IP_ADDRESS"],"substitution":"token","secret_level":"weak","locales":["fr"]}`)
 			if got.status != http.StatusForbidden {
 				t.Errorf("status %d, want 403: %s", got.status, got.body)
 			}
@@ -140,7 +140,7 @@ func TestAnAgentWithNoKeyAcceptsNoChange(t *testing.T) {
 	up := newUpstream(t, echoJSON)
 	agent := newAgent(t, up, []string{"fr"})
 
-	got := putPolicy(t, agent, testControlKey, `{"off":["IP_ADDRESS"],"substitution":"token","locales":["fr"]}`)
+	got := putPolicy(t, agent, testControlKey, `{"off":["IP_ADDRESS"],"substitution":"token","secret_level":"weak","locales":["fr"]}`)
 	if got.status != http.StatusServiceUnavailable {
 		t.Errorf("status %d, want 503: %s", got.status, got.body)
 	}
@@ -158,10 +158,10 @@ func TestPolicyRefusesACredentialFromTheWire(t *testing.T) {
 		body string
 		want string
 	}{
-		{"an API key", `{"off":["SECRET_ANTHROPIC_KEY"],"substitution":"token","locales":["fr"]}`, "live key"},
-		{"a connection string", `{"off":["SECRET_CONN_STR"],"substitution":"token","locales":["fr"]}`, "live key"},
-		{"the deployment's own declaration", `{"off":["CUSTOM"],"substitution":"token","locales":["fr"]}`, "declared sensitive itself"},
-		{"a category that does not exist", `{"off":["INVENTED"],"substitution":"token","locales":["fr"]}`, "no category named"},
+		{"an API key", `{"off":["SECRET_ANTHROPIC_KEY"],"substitution":"token","secret_level":"weak","locales":["fr"]}`, "live key"},
+		{"a connection string", `{"off":["SECRET_CONN_STR"],"substitution":"token","secret_level":"weak","locales":["fr"]}`, "live key"},
+		{"the deployment's own declaration", `{"off":["CUSTOM"],"substitution":"token","secret_level":"weak","locales":["fr"]}`, "declared sensitive itself"},
+		{"a category that does not exist", `{"off":["INVENTED"],"substitution":"token","secret_level":"weak","locales":["fr"]}`, "no category named"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			got := putPolicy(t, agent, testControlKey, tt.body)
@@ -183,7 +183,7 @@ func TestARefusedSetIsNotPartlyApplied(t *testing.T) {
 	up := newUpstream(t, echoJSON)
 	agent, det := newControlledAgent(t, up, []string{"fr"})
 
-	got := putPolicy(t, agent, testControlKey, `{"off":["IP_ADDRESS","SECRET_ANTHROPIC_KEY"],"substitution":"token","locales":["fr"]}`)
+	got := putPolicy(t, agent, testControlKey, `{"off":["IP_ADDRESS","SECRET_ANTHROPIC_KEY"],"substitution":"token","secret_level":"weak","locales":["fr"]}`)
 	if got.status != http.StatusUnprocessableEntity {
 		t.Fatalf("status %d, want 422", got.status)
 	}
@@ -340,7 +340,7 @@ func TestSetPolicyGoesThroughTheRoute(t *testing.T) {
 	addr := strings.TrimPrefix(agent.URL, "http://")
 
 	status, err := SetPolicy(t.Context(), addr, testControlKey,
-		Policy{Off: []string{"IP_ADDRESS"}, Substitution: "token", Locales: []string{"fr"}}, 2*time.Second)
+		Policy{Off: []string{"IP_ADDRESS"}, Substitution: "token", Locales: []string{"fr"}, SecretLevel: "weak"}, 2*time.Second)
 	if err != nil {
 		t.Fatalf("set: %v", err)
 	}
@@ -361,7 +361,7 @@ func TestSetPolicyGoesThroughTheRoute(t *testing.T) {
 	// And back on, with nil rather than an empty slice — the shape a menu sends when
 	// somebody switches the last one back on.
 	status, err = SetPolicy(t.Context(), addr, testControlKey,
-		Policy{Substitution: "token", Locales: []string{"fr"}}, 2*time.Second)
+		Policy{Substitution: "token", Locales: []string{"fr"}, SecretLevel: "weak"}, 2*time.Second)
 	if err != nil {
 		t.Fatalf("set: %v", err)
 	}
@@ -381,7 +381,7 @@ func TestSetPolicyCarriesTheAgentsRefusal(t *testing.T) {
 	addr := strings.TrimPrefix(agent.URL, "http://")
 
 	_, err := SetPolicy(t.Context(), addr, testControlKey,
-		Policy{Off: []string{"SECRET_ANTHROPIC_KEY"}, Substitution: "token", Locales: []string{"fr"}},
+		Policy{Off: []string{"SECRET_ANTHROPIC_KEY"}, Substitution: "token", Locales: []string{"fr"}, SecretLevel: "weak"},
 		2*time.Second)
 	if err == nil {
 		t.Fatal("the credential was accepted")
@@ -566,7 +566,7 @@ func TestPolicyChangesTheSubstitutionMode(t *testing.T) {
 	up := newUpstream(t, echoJSON)
 	agent, det := newControlledAgent(t, up, []string{"fr"})
 
-	got := putPolicy(t, agent, testControlKey, `{"substitution":"fake","locales":["fr"]}`)
+	got := putPolicy(t, agent, testControlKey, `{"substitution":"fake","secret_level":"weak","locales":["fr"]}`)
 	if got.status != http.StatusOK {
 		t.Fatalf("status %d: %s", got.status, got.body)
 	}
@@ -603,7 +603,7 @@ func TestPolicyChangingTheModeClearsWhatWasAlreadyMinted(t *testing.T) {
 		t.Fatalf("the first exchange was not masked with a token:\n%s", bodies[0])
 	}
 
-	got := putPolicy(t, agent, testControlKey, `{"substitution":"fake","locales":["fr"]}`)
+	got := putPolicy(t, agent, testControlKey, `{"substitution":"fake","secret_level":"weak","locales":["fr"]}`)
 	if got.status != http.StatusOK {
 		t.Fatalf("status %d: %s", got.status, got.body)
 	}
@@ -636,7 +636,7 @@ func TestPolicyResendingTheSameModeKeepsTheMapping(t *testing.T) {
 
 	// The mode is unchanged; only the switched-off set moves.
 	got := putPolicy(t, agent, testControlKey,
-		`{"off":["EMAIL"],"substitution":"token","locales":["fr"]}`)
+		`{"off":["EMAIL"],"substitution":"token","secret_level":"weak","locales":["fr"]}`)
 	if got.status != http.StatusOK {
 		t.Fatalf("status %d: %s", got.status, got.body)
 	}
@@ -653,7 +653,7 @@ func TestPolicyRefusesAModeThatDoesNotExist(t *testing.T) {
 	up := newUpstream(t, echoJSON)
 	agent, det := newControlledAgent(t, up, []string{"fr"})
 
-	got := putPolicy(t, agent, testControlKey, `{"substitution":"invisible","locales":["fr"]}`)
+	got := putPolicy(t, agent, testControlKey, `{"substitution":"invisible","secret_level":"weak","locales":["fr"]}`)
 	if got.status != http.StatusUnprocessableEntity {
 		t.Fatalf("status %d, want 422: %s", got.status, got.body)
 	}
@@ -666,7 +666,7 @@ func TestPolicyChangesTheLocales(t *testing.T) {
 	up := newUpstream(t, echoJSON)
 	agent, det := newControlledAgent(t, up, []string{"fr"})
 
-	got := putPolicy(t, agent, testControlKey, `{"substitution":"token","locales":["gb","fr"]}`)
+	got := putPolicy(t, agent, testControlKey, `{"substitution":"token","secret_level":"weak","locales":["gb","fr"]}`)
 	if got.status != http.StatusOK {
 		t.Fatalf("status %d: %s", got.status, got.body)
 	}
@@ -699,7 +699,7 @@ func TestPolicyCanLoadNoLocaleAtAll(t *testing.T) {
 	up := newUpstream(t, echoJSON)
 	agent, det := newControlledAgent(t, up, []string{"fr"})
 
-	got := putPolicy(t, agent, testControlKey, `{"substitution":"token","locales":[]}`)
+	got := putPolicy(t, agent, testControlKey, `{"substitution":"token","secret_level":"weak","locales":[]}`)
 	if got.status != http.StatusOK {
 		t.Fatalf("status %d: %s", got.status, got.body)
 	}
@@ -720,7 +720,7 @@ func TestPolicyRefusesALocaleThatDoesNotExist(t *testing.T) {
 	up := newUpstream(t, echoJSON)
 	agent, det := newControlledAgent(t, up, []string{"fr"})
 
-	got := putPolicy(t, agent, testControlKey, `{"substitution":"token","locales":["fr","uk"]}`)
+	got := putPolicy(t, agent, testControlKey, `{"substitution":"token","secret_level":"weak","locales":["fr","uk"]}`)
 	if got.status != http.StatusUnprocessableEntity {
 		t.Fatalf("status %d, want 422: %s", got.status, got.body)
 	}
@@ -771,5 +771,57 @@ func TestSubstitutionModesAreTheOnesTheBuildHas(t *testing.T) {
 		if _, err := detector.ParseSubstitution(mode); err != nil {
 			t.Errorf("mode %q is offered but the agent will not parse it: %v", mode, err)
 		}
+	}
+}
+
+// The level has to show on the traffic, and it has to grade only the catch-all.
+//
+// The pair is the point. A level that could stop masking a key identified by its
+// prefix would be a setting whose only effect is to leak, so the Groq key below must
+// go out masked at every level while the ordinary word beside it stops being masked.
+func TestPolicySecretLevelGradesOnlyTheCatchAll(t *testing.T) {
+	up := newUpstream(t, echoJSON)
+	agent, _ := newControlledAgent(t, up, []string{"fr"})
+
+	const body = `{"prompt":"PASSWORD=troisieme-valeur-longue et gsk_abcdefghijklmnopqrstuvwxyz012345"}`
+
+	// weak is where an agent starts: everything the pattern finds.
+	post(t, agent, "/anthropic/v1/messages", "lvl", body)
+	bodies, _ := up.received()
+	if strings.Contains(bodies[0], "troisieme-valeur-longue") {
+		t.Errorf("at weak the passphrase of plain words went out in clear:\n%s", bodies[0])
+	}
+
+	got := putPolicy(t, agent, testControlKey,
+		`{"substitution":"token","secret_level":"strong","locales":["fr"]}`)
+	if got.status != http.StatusOK {
+		t.Fatalf("status %d: %s", got.status, got.body)
+	}
+
+	post(t, agent, "/anthropic/v1/messages", "lvl", body)
+	bodies, _ = up.received()
+	last := bodies[len(bodies)-1]
+
+	if !strings.Contains(last, "troisieme-valeur-longue") {
+		t.Errorf("at strong the weak passphrase is still masked, so the level does nothing:\n%s", last)
+	}
+	if strings.Contains(last, "gsk_abcdefghijklmnopqrstuvwxyz012345") {
+		t.Errorf("the level stopped masking a key identified by its prefix:\n%s", last)
+	}
+}
+
+// The route replaces the whole state, so the level is required exactly as the
+// substitution mode is. A caller that sent everything but this would silently move
+// the agent back to masking every ordinary word it finds.
+func TestPolicyRefusesARequestWithoutTheLevel(t *testing.T) {
+	up := newUpstream(t, echoJSON)
+	agent, det := newControlledAgent(t, up, []string{"fr"})
+
+	got := putPolicy(t, agent, testControlKey, `{"substitution":"token","locales":["fr"]}`)
+	if got.status != http.StatusBadRequest {
+		t.Fatalf("status %d, want 400: %s", got.status, got.body)
+	}
+	if level := det.SecretLevel(); level != pii.StrengthWeak {
+		t.Errorf("the level changed to %v anyway", level)
 	}
 }

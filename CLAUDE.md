@@ -134,13 +134,36 @@ area: the reasoning is what stops a tempting simplification being reintroduced.
   way to reach it. It accepts a family name as well as a category code, and lists only
   what the detector can actually emit (`Detector.Categories`): a switch for a category
   no loaded locale can find would say the agent is masking it.
-- **Three things change while the agent runs: the switched-off categories, the
-  substitution mode and the loaded locales.** All three live behind one atomic
+- **Four things change while the agent runs: the switched-off categories, the
+  substitution mode, the secret level and the loaded locales.** All three live behind one atomic
   pointer in `detector.policy`, and the locales carry `patterns` and `fakes` with
   them in one `catalogue` value — swapped whole, because a scan reading new patterns
   against the old stand-in table would render a French address with an American
   postcode. One atomic load per scan, not a lock: the alternative is a read lock on
   the hottest loop in the agent to serve a click a day.
+- **The secret level grades one pattern, and only one.** `pii.SecretStrength`
+  counts character classes — weak, medium, strong — and `Detector.strongEnough`
+  drops a `SECRET_GENERIC` match below the level. Every other credential is
+  identified by a prefix somebody can verify, and a level that could stop masking a
+  real Anthropic key would be a setting whose only effect is to leak.
+  `TestPolicySecretLevelGradesOnlyTheCatchAll` holds both halves at once.
+- **A separator is not a character class.** Counting the hyphen,
+  `troisieme-valeur-longue` scored a class above `troisiemevaleurlongue`, which put
+  every passphrase of plain words into medium and left **weak unreachable** — a level
+  in the menu that could never differ from the one below it. A separator says how a
+  value is written, not how hard it is.
+- **Classes, not entropy.** Shannon entropy at the threshold gitleaks uses (3.5) was
+  measured against this corpus and did worse: it missed `hunter2-correct-horse` and
+  `p@ssw0rd!` — real credentials, both short — while still claiming
+  `security.authorize(plainUser`. Entropy rewards length and spread, which is what a
+  long code expression has and a short password has not.
+- **The default level is weak, and it has to be.** It is what the agent did before
+  the level existed, and a setting nobody has touched must not quietly mask less
+  than it used to.
+- **Load order cannot decide a secret against a PII category, and no setting should
+  pretend otherwise.** `pickFromCluster` ranks on `IsSecret` first, so the two never
+  reach the tie-break that load order feeds. Measured as well as argued: reversing
+  the two sets across the whole corpus and the sample — 199 texts — changed nothing.
 - **`PUT /policy` replaces the whole state, and refuses a partial request.** Not
   "absent means unchanged": an empty locale list is a *valid* state — the one an
   agent starts in — so absence cannot mean "leave them alone" without making "load

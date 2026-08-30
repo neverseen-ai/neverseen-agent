@@ -87,6 +87,7 @@ func New(cfg Config) *Detector {
 	}
 	d.policy.cat.Store(newCatalogue(cfg.Locales))
 	d.policy.sub.Store(int32(cfg.Substitution))
+	d.policy.level.Store(int32(cfg.SecretLevel))
 	return d
 }
 
@@ -173,6 +174,9 @@ func (d *Detector) candidates(text string) []Match {
 			if !ok || score < minConfidence {
 				continue
 			}
+			if !d.strongEnough(p.Category, value) {
+				continue
+			}
 
 			out = append(out, Match{
 				Value:      value,
@@ -242,4 +246,21 @@ func refinedSpans(p pii.Pattern, text string) [][]int {
 		pos = refined
 	}
 	return out
+}
+
+// strongEnough applies the secret level, and applies it to one category.
+//
+// Only the named-secret catch-all is graded. Every other credential here is
+// identified by a prefix somebody can verify — "gsk_", "sk-ant-", "ghp_" — or by a
+// structure that leaves no room for judgement, and a level that could stop masking a
+// real Anthropic key would be a setting whose only effect is to leak. The spectrum
+// exists for the one pattern whose evidence is a *name* beside the value, where the
+// value itself may be a generated key or an ordinary word.
+//
+// Read once per candidate, from the same atomic the rest of the policy lives behind.
+func (d *Detector) strongEnough(cat pii.Category, value string) bool {
+	if cat != pii.CatGenericSecret {
+		return true
+	}
+	return pii.SecretStrength(value) >= d.SecretLevel()
 }

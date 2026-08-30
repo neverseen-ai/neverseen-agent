@@ -31,11 +31,18 @@ Usage:
   cloakfleet mask --off personal        a whole family, by its name
   cloakfleet mask --reset               mask everything again
   cloakfleet mask --substitution fake   change what a masked value is replaced by
+  cloakfleet mask --secret-level strong how far down the strength scale to mask
   cloakfleet mask --locales fr,gb       load these country pattern sets
   cloakfleet mask --locales none        load none of them
 
 A category or family that is switched off leaves the machine in clear. Credentials
 can never be switched off, whichever way they are named.
+
+--secret-level is weak, medium or strong, and grades only the catch-all pattern:
+a credential identified by a prefix ("gsk_", "sk-ant-") is masked at every level.
+weak masks every value the pattern finds, ordinary words included, which is what
+over-masks source code; strong masks only what nobody typed by hand, and is the
+level to run at while reviewing code.
 
 --substitution is token or fake. A token reads as [EMAIL_1] and is obvious in an
 answer; a stand-in reads as prose and cannot be told from a real value, which is why
@@ -59,6 +66,7 @@ func runMask(args []string, stdout io.Writer) error {
 	on := fs.String("on", "", "categories or families to mask again, separated by commas")
 	reset := fs.Bool("reset", false, "mask everything again")
 	substitution := fs.String("substitution", "", "what a masked value becomes: token or fake")
+	secretLevel := fs.String("secret-level", "", "weakest named secret to mask: weak, medium or strong")
 	locales := fs.String("locales", "", "country pattern sets to load, separated by commas, or none")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -78,7 +86,7 @@ func runMask(args []string, stdout io.Writer) error {
 		return errQuiet
 	}
 
-	if *off == "" && *on == "" && !*reset && *substitution == "" && *locales == "" {
+	if *off == "" && *on == "" && !*reset && *substitution == "" && *locales == "" && *secretLevel == "" {
 		writeCatalogue(stdout, status)
 		return nil
 	}
@@ -97,6 +105,9 @@ func runMask(args []string, stdout io.Writer) error {
 	}
 	if *substitution != "" {
 		want.Substitution = *substitution
+	}
+	if *secretLevel != "" {
+		want.SecretLevel = *secretLevel
 	}
 	if *locales != "" {
 		if want.Locales, err = parseLocales(status, *locales); err != nil {
@@ -282,6 +293,7 @@ func writeCatalogue(w io.Writer, status proxy.Status) {
 	}
 
 	fmt.Fprintf(w, "  substitution   %s\n", or(status.Substitution, "unknown"))
+	fmt.Fprintf(w, "  secret level   %s\n", or(status.SecretLevel, "unknown"))
 	fmt.Fprintf(w, "  countries      %s   (of %s)\n\n",
 		or(strings.Join(status.Locales, ", "), "none"),
 		strings.Join(status.AvailableLocales, ", "))
@@ -313,7 +325,8 @@ func writeCatalogue(w io.Writer, status proxy.Status) {
 	}
 
 	fmt.Fprint(w, "Switch one off with `cloakfleet mask --off CODE`, a whole family by its name.\n")
-	fmt.Fprint(w, "Change the rest with `--substitution token|fake` and `--locales fr,gb|none`.\n")
+	fmt.Fprint(w, "Change the rest with `--substitution token|fake`, `--secret-level weak|medium|strong`\n"+
+		"and `--locales fr,gb|none`.\n")
 }
 
 func or(value, fallback string) string {

@@ -23,6 +23,11 @@ const (
 	EnvAllowList = "CLOAKFLEET_PII_ALLOWLIST"
 	// EnvSubstitution selects what a masked value looks like: "token" or "fake".
 	EnvSubstitution = "CLOAKFLEET_PII_SUBSTITUTION"
+
+	// EnvSecretLevel is how far down the strength scale a named secret is masked:
+	// "weak", "medium" or "strong". The starting value only — PUT /policy moves it
+	// while the agent runs, exactly as it does the substitution mode.
+	EnvSecretLevel = "CLOAKFLEET_SECRET_LEVEL"
 )
 
 // minConfidence is the score a match must reach to be reported.
@@ -54,6 +59,11 @@ type Config struct {
 	// SubstitutionToken, so a Config built by hand keeps the reversible
 	// behaviour without having to say so.
 	Substitution Substitution
+
+	// SecretLevel is the weakest named secret this agent masks. The zero value is
+	// pii.StrengthWeak, which masks everything the pattern finds — the behaviour
+	// this agent had before the level existed, so a Config built by hand keeps it.
+	SecretLevel pii.Strength
 }
 
 // DefaultConfig returns the configuration of a deployment that has said
@@ -107,6 +117,9 @@ func FromEnv() (*Detector, error) {
 	cfg.AllowList = parseValueList(os.Getenv(EnvAllowList))
 
 	if cfg.Substitution, err = ParseSubstitution(os.Getenv(EnvSubstitution)); err != nil {
+		return nil, err
+	}
+	if cfg.SecretLevel, err = ParseSecretLevel(os.Getenv(EnvSecretLevel)); err != nil {
 		return nil, err
 	}
 

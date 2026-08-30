@@ -664,7 +664,7 @@ func TestAClickCarriesTheWholeState(t *testing.T) {
 	d := render(proxy.Status{Addr: "a", Answering: true, Health: healthWithGroups("EMAIL")})
 
 	// Changing the mode leaves the categories and the locales alone.
-	want := d.policyWith(nil, "fake", nil)
+	want := d.policyWith(nil, "fake", nil, "")
 	if want.Substitution != "fake" {
 		t.Errorf("the mode was not applied: %+v", want)
 	}
@@ -676,7 +676,7 @@ func TestAClickCarriesTheWholeState(t *testing.T) {
 	}
 
 	// And changing a category leaves the mode alone.
-	want = d.policyWith(d.withCategoryToggled("EMAIL"), "", nil)
+	want = d.policyWith(d.withCategoryToggled("EMAIL"), "", nil, "")
 	if want.Substitution != "token" {
 		t.Errorf("the mode was lost: %+v", want)
 	}

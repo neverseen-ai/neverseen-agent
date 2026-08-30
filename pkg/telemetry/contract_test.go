@@ -31,6 +31,7 @@ var allowedStrings = map[string]string{
 	"state.addresses[]":           "the machine's own IP addresses — personal data, and the one field here that is; see the field's comment",
 	"state.masking":               "how much of the catalogue is applied: full, partial or none",
 	"state.switched_off[]":        "category names from the agent's own catalogue, never a value — the same strings counters.masked already keys on",
+	"state.secret_level":          "one of three fixed words — weak, medium, strong — chosen from a closed set the agent itself parses, never a value",
 	"buckets[].counters.masked{}": "category names from the agent's own catalogue, never a value",
 	"buckets[].counters.models{}": "the model id the provider reported, which is a product name",
 }
@@ -158,6 +159,13 @@ func TestHeartbeatWireFormat(t *testing.T) {
 			// field is missing.
 			Masking:     "partial",
 			SwitchedOff: []string{"IP_ADDRESS", "MONGO_ID"},
+
+			// "strong" rather than "weak" for the reason "partial" is pinned above:
+			// weak is the level an agent starts at, so an example carrying it would
+			// exercise nothing a zero value does not. Strong is also the state worth
+			// showing a backend — an agent masking less than its catalogue allows
+			// with nothing switched off to explain it.
+			SecretLevel: "strong",
 		},
 		// Two buckets, not one. A batch of one would be a golden in which the
 		// plural case — the whole reason the message is a batch — never appears,

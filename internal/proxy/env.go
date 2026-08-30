@@ -285,6 +285,7 @@ func (s *Server) State() contract.State {
 		// field here whose whole purpose is to say otherwise.
 		Masking:     s.det.Masking().String(),
 		SwitchedOff: switchedOffCodes(s.det.Disabled()),
+		SecretLevel: s.det.SecretLevel().String(),
 	}
 }
 

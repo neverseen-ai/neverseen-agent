@@ -66,6 +66,13 @@ type policyRequest struct {
 	// state — the one an agent starts in when nothing is configured — so it cannot
 	// double as "no change".
 	Locales []string `json:"locales"`
+
+	// SecretLevel is the weakest named secret to mask: "weak", "medium" or
+	// "strong". Required, for the reason Substitution is: absent cannot mean
+	// unchanged on a route that replaces the state, and a caller that sent
+	// everything but this would silently move the agent back to masking every
+	// ordinary word it finds.
+	SecretLevel string `json:"secret_level"`
 }
 
 // handlePolicy replaces the set of categories the agent is not masking.
@@ -124,7 +131,20 @@ func (s *Server) handlePolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.SecretLevel == "" {
+		http.Error(w, "cloakfleet: this route replaces the whole state, so \"secret_level\" "+
+			"is required — send what the agent currently reports on /healthz, with your change applied",
+			http.StatusBadRequest)
+		return
+	}
+
 	mode, err := detector.ParseSubstitution(req.Substitution)
+	if err != nil {
+		http.Error(w, "cloakfleet: "+err.Error(), http.StatusUnprocessableEntity)
+		return
+	}
+
+	level, err := detector.ParseSecretLevel(req.SecretLevel)
 	if err != nil {
 		http.Error(w, "cloakfleet: "+err.Error(), http.StatusUnprocessableEntity)
 		return
@@ -162,6 +182,7 @@ func (s *Server) handlePolicy(w http.ResponseWriter, r *http.Request) {
 	// every click, because this route replaces the whole state.
 	changed := s.det.Substitution() != mode
 	s.det.SetSubstitution(mode)
+	s.det.SetSecretLevel(level)
 
 	// The mapping is what the mode is read against, and it is read first: a value
 	// the session has already seen keeps the shape it was first given, whatever the
@@ -186,6 +207,7 @@ func (s *Server) handlePolicy(w http.ResponseWriter, r *http.Request) {
 		"off", req.Off,
 		"locales", req.Locales,
 		"substitution", mode.String(),
+		"secret_level", level.String(),
 		"masking", s.det.Masking().String(),
 		// Said out loud because it is the one part of this request that discards
 		// state, and an unexpanded token in an answer is otherwise unexplainable.
@@ -308,7 +330,7 @@ func ReadControlKey(path string) string {
 
 // Policy is the whole of what a local surface can change about a running agent.
 //
-// All three together, because that is what the route takes: it replaces the state
+// All four together, because that is what the route takes: it replaces the state
 // rather than patching it, since an empty locale list is a valid state and could not
 // otherwise be told apart from "leave the locales alone". A caller therefore sends
 // what the agent currently reports with its own change applied — which every surface
@@ -323,6 +345,9 @@ type Policy struct {
 
 	// Locales are the country pattern sets to load. Empty means none.
 	Locales []string
+
+	// SecretLevel is "weak", "medium" or "strong". Required, as Substitution is.
+	SecretLevel string
 }
 
 // PolicyOf is the agent's current state as a Policy, for a caller about to change
@@ -335,6 +360,7 @@ func PolicyOf(s Status) Policy {
 		Off:          s.SwitchedOffCodes(),
 		Substitution: s.Substitution,
 		Locales:      s.Locales,
+		SecretLevel:  s.SecretLevel,
 	}
 }
 
@@ -347,6 +373,13 @@ func PolicyOf(s Status) Policy {
 func SubstitutionModes() []string {
 	return []string{detector.SubstitutionToken.String(), detector.SubstitutionFake.String()}
 }
+
+// SecretLevels are the levels this build offers, weakest first — the order the scale
+// runs in, so a row somebody reads top to bottom goes from most masking to least.
+//
+// Served from here for the reason SubstitutionModes is: a menu offering a level the
+// agent does not have would fail on a name the menu itself suggested.
+func SecretLevels() []string { return detector.SecretLevels() }
 
 func orEmpty(list []string) []string {
 	if list == nil {
@@ -384,6 +417,7 @@ func SetPolicy(ctx context.Context, addr, key string, want Policy, timeout time.
 		Off:          orEmpty(want.Off),
 		Substitution: want.Substitution,
 		Locales:      orEmpty(want.Locales),
+		SecretLevel:  want.SecretLevel,
 	})
 	if err != nil {
 		return status, err

@@ -23,7 +23,8 @@
     "switched_off": [
       "IP_ADDRESS",
       "MONGO_ID"
-    ]
+    ],
+    "secret_level": "strong"
   },
   "buckets": [
     {

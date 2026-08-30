@@ -34,6 +34,7 @@ func TestDocumentedEnvironmentMatchesTheCode(t *testing.T) {
 		detector.EnvLocale,
 		detector.EnvAllowList,
 		detector.EnvSubstitution,
+		detector.EnvSecretLevel,
 		proxy.EnvListen,
 		proxy.EnvProviders,
 		proxy.EnvEncryptionKey,

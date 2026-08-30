@@ -218,6 +218,18 @@ type State struct {
 	// Deliberately not a count. Two categories off is not a fact anybody can act
 	// on, and the names cost nothing that a value would.
 	SwitchedOff []string `json:"switched_off,omitempty"`
+
+	// SecretLevel is how far down the strength scale the catch-all secret pattern
+	// is masking: "weak", "medium" or "strong".
+	//
+	// It belongs beside SwitchedOff and for the same reason: it changes while the
+	// process runs, and it is the other way an agent can be masking less than its
+	// catalogue allows without anything being switched off. A fleet view showing
+	// "full" over a row of agents at "strong" would be telling somebody every
+	// credential is covered while the ordinary ones are not.
+	//
+	// One of three fixed words, never a value.
+	SecretLevel string `json:"secret_level,omitempty"`
 }
 
 // Counters are the tallies for one window.

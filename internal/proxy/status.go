@@ -29,7 +29,13 @@ type Health struct {
 	Version      string   `json:"version"`
 	Locales      []string `json:"locales"`
 	Substitution string   `json:"substitution"`
-	Providers    []string `json:"providers"`
+
+	// SecretLevel is the weakest named secret being masked: "weak", "medium" or
+	// "strong". A string rather than the Strength, for the reason Masking is one: a
+	// number would have the two sides agreeing about 2 and disagreeing about what 2
+	// means.
+	SecretLevel string   `json:"secret_level"`
+	Providers   []string `json:"providers"`
 
 	// Masking is how much of the catalogue is being applied: "full", "partial" or
 	// "none". A string rather than the Level, because this crosses a wire and a

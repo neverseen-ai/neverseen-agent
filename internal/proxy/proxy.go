@@ -192,6 +192,7 @@ func (s *Server) healthNow() Health {
 		Version:      Version,
 		Locales:      s.det.Locales(),
 		Substitution: s.det.Substitution().String(),
+		SecretLevel:  s.det.SecretLevel().String(),
 		Providers:    s.Providers(),
 		Masking:      s.det.Masking().String(),
 

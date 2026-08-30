@@ -202,6 +202,54 @@ together. `TestGenericSecretCheckRejectsSourceCode` carries the thirty values fr
 run; `TestGenericSecretCheckKeepsCredentials` carries what must still be caught,
 including both references in this tree. Neither is meaningful alone.
 
+#### The secret level
+
+`SECRET_GENERIC` is the one pattern whose evidence is a *name* beside the value, so the
+value itself may be a generated key or an ordinary word. The level says how far down
+that scale to mask, and `Detector.strongEnough` drops a match below it.
+
+| Level | Masks | For |
+|---|---|---|
+| `weak` | everything the pattern finds, passphrases of plain words included | the default — what the agent did before the level existed |
+| `medium` | values mixing two classes and up | ordinary use |
+| `strong` | three classes or more, or long enough that nobody typed it | reviewing source code: almost no identifier reaches it |
+
+**It grades one pattern and only one.** Every other credential here is identified by a
+prefix somebody can verify — `gsk_`, `sk-ant-`, `ghp_` — and a level that could stop
+masking a real key would be a setting whose only effect is to leak.
+`TestPolicySecretLevelGradesOnlyTheCatchAll` asserts both halves in one request.
+
+**Classes, not entropy.** Shannon entropy at gitleaks' threshold (3.5) was measured
+against this corpus and did worse than counting: it missed `hunter2-correct-horse`
+(3.31) and `p@ssw0rd!` (2.95) — real credentials, both short — while still claiming
+`security.authorize(plainUser` (4.01) and `process.env.LLM_API_KEY` (4.09). Entropy
+rewards length and character spread, which is what a long code expression has and a
+short password has not.
+
+**A separator is not a class.** Counting the hyphen, `troisieme-valeur-longue` scored a
+class above `troisiemevaleurlongue`, which put every passphrase of plain words into
+medium and left **weak unreachable** — a level in the menu that could never differ from
+the one below it. `-`, `_` and `.` say how a value is written, not how hard it is.
+
+**The default is weak**, because it is what the agent did before the level existed. A
+setting nobody has touched must not quietly mask less than it used to.
+
+#### Load order cannot decide a secret against a PII category
+
+`pickFromCluster` ranks a cluster on `(IsSecret ↓, Confidence ↓, length ↓, Start ↑)`.
+For a secret against anything else the **first** key already differs, so the comparison
+never reaches the tie-break that load order feeds. The guarantee is unconditional and
+needs no setting — which is stronger than a setting would be, because it cannot be
+configured wrong.
+
+Measured as well as argued: reversing the two sets in `newCatalogue` and running the
+whole corpus and the reference sample through both — 199 texts — produced **no
+difference at all**.
+
+Load order still decides between *locales*, which is what `Locale.Priority` is for: nine
+bare digits are a French SIREN and a US routing number, both non-secret, both scoring
+the same, so the tie-break is reached and the earlier locale names the value.
+
 `minConfidence` is 50 (`internal/detector/config.go:38`), set just at the level of the
 weakest category worth reporting so every registered category is reportable and the
 checksums do the discriminating. It is a constant, not a knob: a `TODO` records that a

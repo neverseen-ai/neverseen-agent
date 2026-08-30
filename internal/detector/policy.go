@@ -36,6 +36,11 @@ type policy struct {
 	// atomic offers. The test page's derived detectors override it; see
 	// Detector.Substitution.
 	sub atomic.Int32
+
+	// level is the weakest named secret this agent masks, held as an int32 for the
+	// reason sub is. Its zero value is pii.StrengthWeak — everything the pattern
+	// finds — so a detector that never heard of the level behaves as it always did.
+	level atomic.Int32
 }
 
 // catalogue is everything a locale selection decides, assembled together.
@@ -115,6 +120,48 @@ func (d *Detector) SetLocales(locales []string) error {
 // straddling the change round-trips either way.
 func (d *Detector) SetSubstitution(mode Substitution) {
 	d.policy.sub.Store(int32(mode))
+}
+
+// SecretLevel reports the weakest named secret this agent masks.
+func (d *Detector) SecretLevel() pii.Strength {
+	return pii.Strength(d.policy.level.Load())
+}
+
+// SetSecretLevel replaces it.
+//
+// Safe to change mid-session, and for a plainer reason than the substitution mode:
+// nothing here is stored. The level decides whether a value is a match at all, so it
+// applies from the next scan and leaves every mapping already minted alone.
+func (d *Detector) SetSecretLevel(level pii.Strength) {
+	d.policy.level.Store(int32(level))
+}
+
+// ParseSecretLevel reads the configured level.
+//
+// An empty spec is weak, which is what the agent did before the level existed: a
+// setting nobody has touched must not quietly mask less than it used to.
+func ParseSecretLevel(spec string) (pii.Strength, error) {
+	switch strings.ToLower(strings.TrimSpace(spec)) {
+	case "", "weak":
+		return pii.StrengthWeak, nil
+	case "medium":
+		return pii.StrengthMedium, nil
+	case "strong":
+		return pii.StrengthStrong, nil
+	default:
+		return 0, fmt.Errorf("unknown secret level %q (want weak, medium or strong)", spec)
+	}
+}
+
+// SecretLevels are the levels this build offers, weakest first, for the surfaces
+// that draw one row per level. Served rather than spelled out by each of them, for
+// the reason SubstitutionModes is.
+func SecretLevels() []string {
+	return []string{
+		pii.StrengthWeak.String(),
+		pii.StrengthMedium.String(),
+		pii.StrengthStrong.String(),
+	}
 }
 
 // disabled returns the set, or nil when nothing is switched off. nil is the
