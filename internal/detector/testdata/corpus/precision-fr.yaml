@@ -100,3 +100,18 @@ cases:
   - id: prec-email-one-character-mailbox
     text: "Destinataires : a@x.fr,b@y.fr"
     expect: []
+
+  # A date has no checksum, so its shape alone is satisfied by every deadline and
+  # renewal in a prompt. What separates a birth date from those is where it sits
+  # relative to today, which is the rule DOBCheck carries.
+  #
+  # The year is 2099 rather than "next year" on purpose: a case written near the
+  # boundary would age past it and start passing for the wrong reason. The
+  # boundary itself is exercised in TestDOBCheck, against a pinned day.
+  - id: prec-dob-future-day-first
+    text: "Le contrat court jusqu'au 31/12/2099 selon l'avenant."
+    expect: []
+
+  - id: prec-dob-future-month-name
+    text: "Échéance repoussée au 31 décembre 2099 par la commission."
+    expect: []

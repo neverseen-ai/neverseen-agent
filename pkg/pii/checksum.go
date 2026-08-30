@@ -2,7 +2,9 @@ package pii
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // The checksums a shape cannot express. Each one is what separates an
@@ -330,6 +332,87 @@ func luhn(number string) bool {
 		alt = !alt
 	}
 	return sum%10 == 0
+}
+
+// DOBCheck rejects a date that is not far enough in the past to be one somebody
+// was born on.
+//
+// Not a checksum: a date has none, and its shape is satisfied by every deadline,
+// meeting and invoice date in a prompt. What separates a birth date from those is
+// the one thing the regex cannot express — where it sits relative to today. So it
+// goes here, where a failure means "not this category" rather than a weak match,
+// and it guards all three date patterns at once: day-first, month-first and ISO
+// share CatDOB, and Score is the single place Verify is called.
+//
+// The threshold is a year rather than zero. "Not in the future" alone still admits
+// every date since January, which is where a renewal or a delivery lands.
+//
+// TODO: the cost is infants. Somebody born four months ago has a real date of
+// birth and it is personal data, and this drops it. The upgrade is a rule that
+// reads the words around the value rather than the value alone — which is a
+// different engine, not a wider expression.
+func DOBCheck(date string) bool { return dobCheckAt(date, time.Now()) }
+
+// dobCheckAt is DOBCheck against a given day, so a test can pin one. Reading
+// time.Now inside the rule would make the suite that exercises the boundary rot
+// into a pass — the failure it is there to catch would simply age out.
+func dobCheckAt(date string, now time.Time) bool {
+	fields := strings.FieldsFunc(strings.ToLower(date), func(r rune) bool {
+		return r == '/' || r == '-' || r == '.' || r == ' ' || r == '\t'
+	})
+	if len(fields) != 3 {
+		// A shape this does not read. Kept rather than dropped: the patterns and
+		// this rule are meant to agree, and where they do not, the safe direction
+		// for a masking agent is to go on masking.
+		return true
+	}
+
+	cutoff := now.AddDate(-1, 0, 0)
+
+	// Year first is the ISO form, and the only one that is unambiguous.
+	if len(fields[0]) == 4 {
+		return notAfter(fields[0], fields[1], fields[2], cutoff)
+	}
+
+	// A month spelled out fixes the order, whatever the locale.
+	if month, ok := frenchMonths[fields[1]]; ok {
+		// The ordinal the French first of the month carries: "1er mars 2004".
+		return notAfter(fields[2], month, strings.TrimSuffix(fields[0], "er"), cutoff)
+	}
+
+	// Numeric, and the locale that read it is not carried this far: "05/06/2024"
+	// is day-first in France and month-first in the US. Either reading being old
+	// enough is enough to go on masking — the two differ by months, and choosing
+	// wrong would drop a real birth date to spare an ordinary one.
+	return notAfter(fields[2], fields[1], fields[0], cutoff) ||
+		notAfter(fields[2], fields[0], fields[1], cutoff)
+}
+
+// notAfter reports whether the date these fields spell is at or before cutoff.
+func notAfter(year, month, day string, cutoff time.Time) bool {
+	y, errY := strconv.Atoi(year)
+	m, errM := strconv.Atoi(month)
+	d, errD := strconv.Atoi(day)
+	if errY != nil || errM != nil || errD != nil {
+		return true // unreadable: go on masking, as above
+	}
+	if m < 1 || m > 12 {
+		// The other reading of an ambiguous pair, which the caller ORs with this
+		// one. Not "keep masking": that would make every numeric date pass.
+		return false
+	}
+	return !time.Date(y, time.Month(m), d, 0, 0, 0, 0, time.UTC).After(cutoff)
+}
+
+// frenchMonths maps every spelling frMonthName accepts, accents included and
+// omitted, to its number. Lower case because dobCheckAt folds the input.
+var frenchMonths = map[string]string{
+	"janvier": "1",
+	"février": "2", "fevrier": "2",
+	"mars": "3", "avril": "4", "mai": "5", "juin": "6", "juillet": "7",
+	"août": "8", "aout": "8",
+	"septembre": "9", "octobre": "10", "novembre": "11",
+	"décembre": "12", "decembre": "12",
 }
 
 // GenericSecretCheck rejects a value that is the source code around a secret

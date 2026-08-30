@@ -1,6 +1,9 @@
 package pii
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 // The checksums are what let the shapes be loose. A checksum that accepts
 // everything turns every pattern into its widest reading — and reports nothing
@@ -327,6 +330,59 @@ func TestTrimToIBAN(t *testing.T) {
 				t.Errorf("trimToIBAN kept %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// The boundary is pinned to a fixed day on purpose. Against time.Now the cases
+// below would age out one by one and the suite would go green over a rule that
+// had stopped being exercised.
+func TestDOBCheck(t *testing.T) {
+	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		value string
+		want  bool
+		why   string
+	}{
+		// Old enough, in every notation the three patterns accept.
+		{"23/02/2004", true, "day-first, slashes"},
+		{"23-02-2004", true, "day-first, dashes"},
+		{"23.02.2004", true, "day-first, dots"},
+		{"23 03 2004", true, "day-first, spaces"},
+		{"23 février 2004", true, "month spelled out"},
+		{"5 aout 1999", true, "month spelled out, unaccented"},
+		{"1er mars 2004", true, "the French ordinal first"},
+		{"03/14/1987", true, "month-first"},
+		{"1987-03-14", true, "ISO"},
+		{"1987/03/14", true, "ISO with slashes"},
+
+		// The future is nobody's birth date, whatever the notation.
+		{"31/12/2099", false, "day-first, far future"},
+		{"12/31/2099", false, "month-first, far future"},
+		{"2099-12-31", false, "ISO, far future"},
+		{"31 décembre 2099", false, "month spelled out, far future"},
+
+		// The year is the whole point of the threshold: a date since January is
+		// a renewal or a deadline, not a birth.
+		{"2026-01-15", false, "earlier this year"},
+		{"15/01/2026", false, "earlier this year, day-first"},
+		{"2025-12-01", false, "within the last year"},
+
+		// Just either side of the cut-off.
+		{"2025-08-27", true, "a day past the threshold"},
+		{"2025-08-29", false, "a day short of it"},
+
+		// Ambiguous numerics: either reading being old enough is enough.
+		{"05/06/2024", true, "day-first or month-first, both old enough"},
+
+		// A shape this rule cannot read goes on being masked.
+		{"not a date at all", true, "unreadable, so kept"},
+	}
+
+	for _, tt := range tests {
+		if got := dobCheckAt(tt.value, now); got != tt.want {
+			t.Errorf("dobCheckAt(%q) = %v, want %v — %s", tt.value, got, tt.want, tt.why)
+		}
 	}
 }
 

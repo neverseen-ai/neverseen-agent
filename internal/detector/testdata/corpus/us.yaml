@@ -224,3 +224,9 @@ cases:
   - id: us-prec-commit-sha
     text: "commit a94a8fe5ccb19ba61c4c0873d391e987982fbbd3 merged to main"
     expect: []
+
+  # Month-first, and in the future: a renewal date, not a birth date. See
+  # prec-dob-future-day-first for why the year is 2099 rather than a near one.
+  - id: us-prec-dob-future
+    text: "The licence runs through 12/31/2099 under the amendment."
+    expect: []

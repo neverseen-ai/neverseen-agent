@@ -76,3 +76,9 @@ cases:
     text: "aws_access_key_id = AKIAIOSFODNN7EXAMPLE"
     expect:
       - {category: SECRET_AWS_ACCESS_KEY, value: "AKIAIOSFODNN7EXAMPLE"}
+
+  # ISO, and in the future. The rule guards all three date patterns at once,
+  # because Verify hangs off the category rather than off a pattern.
+  - id: intl-prec-dob-future
+    text: "Support ends 2099-12-31 per the published schedule."
+    expect: []

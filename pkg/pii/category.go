@@ -154,7 +154,7 @@ var categoryRegistry = map[Category]CategoryInfo{
 	CatIBAN:       {Prefix: "IBAN", Score: 95, Verify: IBANCheck, Group: GroupBanking, Label: "Bank account (IBAN)"},
 	CatIPAddr:     {Prefix: "IP", Score: 75, Group: GroupTechnical, Label: "IP address"},
 	CatMongoID:    {Prefix: "MONGOID", Score: 85, Group: GroupTechnical, Label: "Database identifier"},
-	CatDOB:        {Prefix: "DOB", Score: 75, Group: GroupPersonal, Label: "Date of birth"},
+	CatDOB:        {Prefix: "DOB", Score: 75, Verify: DOBCheck, Group: GroupPersonal, Label: "Date of birth"},
 
 	// --- France -------------------------------------------------------------
 	CatNIR:   {Prefix: "NIR", Score: 95, Verify: NIRCheck, Group: GroupPersonal, Label: "Social security number (fr)"},

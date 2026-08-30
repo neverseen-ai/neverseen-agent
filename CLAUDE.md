@@ -329,6 +329,44 @@ The catalogue, the locales and the substitution modes in full:
   `TestGenericSecretCheckRejectsSourceCode` and
   `TestGenericSecretCheckKeepsCredentials` are one pair, and neither is meaningful
   alone.
+- **`Verify` is not only for checksums — it is for any rule the regex cannot
+  express.** `DOBCheck` is the case that makes the point: a date has no checksum,
+  and its shape is satisfied by every deadline, renewal and invoice date in a
+  prompt. What separates a birth date from those is where it sits relative to
+  today, so the rule is a year in the past — "not in the future" alone still
+  admits every date since January. It hangs off the *category*, so it guards
+  day-first, month-first and ISO at once; a rule per pattern would have been
+  three, and the third would have been forgotten. Its known cost is recorded as
+  a `TODO`: an infant's date of birth is real personal data and this drops it.
+- **A `Verify` that reads the clock takes an injectable one.** `DOBCheck` calls
+  `dobCheckAt(value, time.Now())`, and the suite pins the day. Against `time.Now`
+  the boundary cases age out one by one and the suite goes green over a rule it
+  has stopped exercising. For the same reason a corpus negative uses a year far
+  out (2099) rather than a near one.
+- **`NAME=value` is evidence in configuration and noise in source code.**
+  `genericSecretRe` treats the name as the proof, which holds for a `.env` line and
+  collapses in a repository, where `password:` is a *field* name and the right side
+  is an expression, a type or an identifier. Pointed at one, it claimed
+  `newPassword`, `req.cookies.token`, `process.env.LLM_API_KEY` and
+  `CreationOptional<string` — and the model received a review of code whose
+  identifiers had been replaced by `[SECRET_n]`. `GenericSecretCheck` is the guard,
+  and both its rules are narrower than they look, because the tree already held a
+  case against each over-reach: **opening** brackets only (`PASSWORD=hunter2)` is a
+  real credential ending on a closer), and identifier-shaped **plus no digit**
+  (`Sup3rS3cr3tValue123` is a name by shape and a password in fact). The slash and
+  the plus are not code punctuation — base64 is made of them. What still leaks is
+  recorded as a `TODO`: a credential of nothing but letters.
+- **Where shape runs out, the keyword decides.** `reset-password` behind `password:`
+  has the *same shape* as `troisieme-valeur-longue`, the corpus's own credential —
+  lowercase words joined by hyphens, both of them — so no rule about form could
+  separate them. What does: **a passphrase does not name the thing it unlocks.** A
+  lowercase slug carrying `password`, `secret`, `token` or `api_key` is a route name.
+  Lowercase and hyphens only, which is what keeps `MyPassword123!` a credential.
+- **Narrowing a credential pattern is the change that leaks, so what must still be
+  caught is asserted beside what must not.**
+  `TestGenericSecretCheckRejectsSourceCode` and
+  `TestGenericSecretCheckKeepsCredentials` are one pair, and neither is meaningful
+  alone.
 - **RE2 has no lookbehind or backreference.** A pattern that must reject a
   preceding character consumes it and points `Group` at the value. Separators
   that have to agree ("23/02-2004" is not a date) need one alternative per
