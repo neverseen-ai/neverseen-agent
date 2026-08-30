@@ -38,6 +38,8 @@ type Store interface {
 	Load(session string) map[string]string
 	// Merge adds entries to the session's mapping and refreshes its lifetime.
 	Merge(session string, entries map[string]string, ttl time.Duration)
+	// Forget drops every session, so nothing minted earlier is served again.
+	Forget()
 }
 
 // Vault is a Store with the originals encrypted at rest.
@@ -125,6 +127,20 @@ func (v *Vault) Save(session string, entries map[string]string) error {
 	v.store.Merge(session, sealed, v.ttl)
 	return nil
 }
+
+// Forget drops every mapping this vault holds.
+//
+// It exists for one caller: a change of substitution mode. A mapping is consulted
+// before the mode is, so a value already seen keeps the shape it was first given —
+// which is what lets a conversation straddling the change round-trip. The cost is
+// that the change is invisible on the traffic somebody just clicked to change, on a
+// workstation where one unnamed session carries everything.
+//
+// So the mode is the one setting that clears the mapping, and the trade is stated
+// where it is made: replacements minted before the change stop being restored, and
+// an answer still in flight comes back carrying a token nothing expands. That window
+// is one exchange wide, against a control that otherwise appears not to work at all.
+func (v *Vault) Forget() { v.store.Forget() }
 
 // seal encrypts one original. The nonce is fresh per value and prefixed to the
 // box, so two identical originals under two tokens do not produce identical
@@ -218,6 +234,16 @@ func (m *Memory) Merge(session string, entries map[string]string, ttl time.Durat
 	}
 	maps.Copy(s.entries, entries)
 	s.expires = now.Add(ttl)
+}
+
+// Forget drops every session.
+func (m *Memory) Forget() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// A fresh map rather than clear(), so the memory the originals were in is
+	// released to the collector rather than kept in the buckets of the old one.
+	m.sessions = make(map[string]*memorySession)
 }
 
 // Sessions reports how many live sessions the store holds, for the agent's own

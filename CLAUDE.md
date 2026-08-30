@@ -143,10 +143,18 @@ area: the reasoning is what stops a tempting simplification being reintroduced.
 - **An unknown locale code is refused, not skipped.** `pii.LocalePatterns` skips one
   by design — it must not decide policy about a selection — so nothing below would
   notice, and an operator who mistyped "uk" would be told the change succeeded.
-- **The mode may change mid-session**, and the vault is what makes that safe: it
-  maps a replacement to its original and expansion accepts both shapes, so
-  stand-ins minted before the change go on being restored while new values get
-  tokens. A credential is tokenized in either mode.
+- **Changing the mode clears the session mappings, and it is the only setting that
+  does.** The mapping is consulted *before* the mode is — a value already seen keeps
+  the shape it was first given — so leaving it in place made a click on "fake" change
+  nothing anybody could observe: nothing sends a session header, so one unnamed
+  session carries every value the agent has handled since it started. The trade is
+  paid knowingly: replacements minted before the change stop being restored, and an
+  answer still in flight comes back carrying one nothing expands, one exchange wide.
+  The purge is guarded on the mode having *actually* changed, because every surface
+  resends the whole state on every click — purging on each would discard the mapping
+  when somebody merely switched off a category. A credential is tokenized in either
+  mode. `TestPolicyChangingTheModeClearsWhatWasAlreadyMinted` and
+  `TestPolicyResendingTheSameModeKeepsTheMapping` are the two halves.
 - **A category can be switched off, and `PUT /policy` is the only way.** It is the
   one route that changes what the agent does and the only authenticated one: a
   secret in `~/.cloakfleet/control.key` (0600), in a custom header, which is what a

@@ -585,6 +585,70 @@ func TestPolicyChangesTheSubstitutionMode(t *testing.T) {
 	}
 }
 
+// A change of mode has to show on the traffic that follows it, including for the
+// values the session has already seen.
+//
+// The regression this pins: the mapping is consulted before the mode is, so a value
+// already minted keeps the shape it was first given. Nothing here sends a session
+// header, so every exchange shares the one unnamed session — which made a click on
+// "fake" change nothing anybody could observe until the agent was restarted.
+func TestPolicyChangingTheModeClearsWhatWasAlreadyMinted(t *testing.T) {
+	up := newUpstream(t, echoJSON)
+	agent, _ := newControlledAgent(t, up, []string{"fr"})
+
+	// One exchange in token mode, so the value is in the session's mapping.
+	post(t, agent, "/anthropic/v1/messages", "mode", `{"prompt":"tél 06 12 34 56 78"}`)
+	bodies, _ := up.received()
+	if !strings.Contains(bodies[0], "[PHONE_") {
+		t.Fatalf("the first exchange was not masked with a token:\n%s", bodies[0])
+	}
+
+	got := putPolicy(t, agent, testControlKey, `{"substitution":"fake","locales":["fr"]}`)
+	if got.status != http.StatusOK {
+		t.Fatalf("status %d: %s", got.status, got.body)
+	}
+
+	// The same value again, on the same session.
+	post(t, agent, "/anthropic/v1/messages", "mode", `{"prompt":"tél 06 12 34 56 78"}`)
+	bodies, _ = up.received()
+	last := bodies[len(bodies)-1]
+	if strings.Contains(last, "[PHONE_") {
+		t.Errorf("the mode changed and the value kept its token:\n%s", last)
+	}
+	if strings.Contains(last, "06 12 34 56 78") {
+		t.Errorf("the value went out in clear:\n%s", last)
+	}
+}
+
+// Resending the mode the agent is already in must not clear anything.
+//
+// Every surface sends the whole state on every click, because this route replaces
+// rather than patches. Purging on each such request would discard the mapping when
+// somebody switched off a category — and the answer to that exchange would come back
+// carrying replacements nothing expands.
+func TestPolicyResendingTheSameModeKeepsTheMapping(t *testing.T) {
+	up := newUpstream(t, echoJSON)
+	agent, _ := newControlledAgent(t, up, []string{"fr"})
+
+	post(t, agent, "/anthropic/v1/messages", "keep", `{"prompt":"tél 06 12 34 56 78"}`)
+	bodies, _ := up.received()
+	first := bodies[0]
+
+	// The mode is unchanged; only the switched-off set moves.
+	got := putPolicy(t, agent, testControlKey,
+		`{"off":["EMAIL"],"substitution":"token","locales":["fr"]}`)
+	if got.status != http.StatusOK {
+		t.Fatalf("status %d: %s", got.status, got.body)
+	}
+
+	post(t, agent, "/anthropic/v1/messages", "keep", `{"prompt":"tél 06 12 34 56 78"}`)
+	bodies, _ = up.received()
+	if last := bodies[len(bodies)-1]; last != first {
+		t.Errorf("the value was minted again although the mode did not change:\n%s\nwant\n%s",
+			last, first)
+	}
+}
+
 func TestPolicyRefusesAModeThatDoesNotExist(t *testing.T) {
 	up := newUpstream(t, echoJSON)
 	agent, det := newControlledAgent(t, up, []string{"fr"})

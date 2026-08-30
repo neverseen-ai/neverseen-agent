@@ -140,6 +140,35 @@ The first column is a word rather than a tick, so `cloakfleet mask | grep "in cl
 answers the question the command exists for. A symbol would need a legend and would
 not survive a pipe.
 
+#### Changing the mode clears the session mappings
+
+`--substitution` is the one setting that discards state, and it has to be.
+
+A session's mapping is consulted *before* the mode is: `Pass.mask` returns the
+replacement a value was first given and only calls `Detector.render` — the one place
+the mode is read — when the value is new. That is what lets a conversation straddling
+the change round-trip, and on its own it is right.
+
+What made it wrong in practice is the session. Nothing a workstation runs sends
+`X-Session-Id` or `X-Request-Id`, so everything shares the one session named
+`default` (`proxy.go`), whose 30-minute lifetime is refreshed by every use and
+therefore never expires while somebody is working. Every value the agent had handled
+since it started was already minted as a token, so switching to `fake` changed
+nothing anybody could observe — the control appeared not to work at all.
+
+So `handlePolicy` calls `vault.Forget` when the mode actually changes. The cost is
+stated rather than hidden: replacements minted before the change stop being restored,
+and an exchange whose answer has not come back yet returns one nothing expands. That
+window is one exchange wide, against a control that otherwise looked broken.
+
+The purge is guarded on the mode having *changed*, not on the request naming one.
+Every surface resends the whole state on every click, because the route replaces
+rather than patches — purging on each would discard the mapping when somebody merely
+switched off a category, and the answer to the exchange in flight would come back
+unexpandable. `TestPolicyChangingTheModeClearsWhatWasAlreadyMinted` and
+`TestPolicyResendingTheSameModeKeepsTheMapping` are the two halves, and the second
+fails on a purge that is not guarded.
+
 ### `scan` — the offline check
 
 Reads a file or stdin, runs `detector.FromEnv`, and prints every value that would be masked

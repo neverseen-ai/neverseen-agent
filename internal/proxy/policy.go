@@ -157,7 +157,26 @@ func (s *Server) handlePolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Read before the change so the purge below can tell a real change from a
+	// request that resent the mode it was already in — which every surface does on
+	// every click, because this route replaces the whole state.
+	changed := s.det.Substitution() != mode
 	s.det.SetSubstitution(mode)
+
+	// The mapping is what the mode is read against, and it is read first: a value
+	// the session has already seen keeps the shape it was first given, whatever the
+	// mode now says. Left alone, a click on "fake" changed nothing anybody could see
+	// — every value in the conversation had already been minted as a token, and on a
+	// workstation where nothing sends a session header, that is every value the
+	// agent has handled since it started.
+	//
+	// Best effort, and worth naming: a request already past vault.Load will save its
+	// entries after this, and its own answer still expands. What the purge cannot do
+	// is reach an exchange whose response has not come back yet — that one returns a
+	// replacement nothing maps, one exchange wide.
+	if changed {
+		s.vault.Forget()
+	}
 
 	// Logged because it is the one request that changes what the agent does, and an
 	// operator reading a log after the fact has to be able to see when the masking
@@ -167,7 +186,10 @@ func (s *Server) handlePolicy(w http.ResponseWriter, r *http.Request) {
 		"off", req.Off,
 		"locales", req.Locales,
 		"substitution", mode.String(),
-		"masking", s.det.Masking().String())
+		"masking", s.det.Masking().String(),
+		// Said out loud because it is the one part of this request that discards
+		// state, and an unexpanded token in an answer is otherwise unexplainable.
+		"sessions_cleared", changed)
 
 	// The new state, from the agent rather than echoed back: a caller has to be
 	// able to redraw from what is true rather than from what it asked for.
