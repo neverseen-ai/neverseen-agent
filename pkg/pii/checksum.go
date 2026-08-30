@@ -120,6 +120,23 @@ func IBANCheck(iban string) bool {
 		}
 	}
 
+	// Mixed case is a CamelCase identifier, not an account.
+	//
+	// The expression carries (?i) so that an IBAN pasted in lower case is still
+	// read, and that tolerance is what let `ED25519KeyPairOpti` through: two
+	// letters, two digits and fourteen alphanumerics is the shape, "ED" is not a
+	// country the length table knows so the length check waves it past, and one
+	// arbitrary string in ninety-seven clears mod-97. Measured over third-party
+	// TypeScript it was 7% of every finding, all of it identifiers.
+	//
+	// An account number is written in one case or the other and never in both. The
+	// rule belongs here rather than in the expression because stating it there
+	// means two parallel branches for the compact and grouped forms in each case —
+	// four alternations to keep in step — where this is one question asked once.
+	if hasUpper(iban) && hasLower(iban) {
+		return false
+	}
+
 	s := compact.String()
 	if len(s) < 15 || len(s) > 34 {
 		return false
@@ -172,6 +189,26 @@ func trimToIBAN(text string, start, end int) int {
 		}
 	}
 	return end // nothing valid inside: leave the span, the score will reject it
+}
+
+// hasUpper and hasLower report which cases a value carries. ASCII only, which is
+// all an IBAN may contain.
+func hasUpper(v string) bool {
+	for i := 0; i < len(v); i++ {
+		if v[i] >= 'A' && v[i] <= 'Z' {
+			return true
+		}
+	}
+	return false
+}
+
+func hasLower(v string) bool {
+	for i := 0; i < len(v); i++ {
+		if v[i] >= 'a' && v[i] <= 'z' {
+			return true
+		}
+	}
+	return false
 }
 
 // NHSNumberCheck validates the trailing check digit of an NHS number: weight

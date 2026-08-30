@@ -26,8 +26,13 @@ const (
 
 	// StrengthStrong mixes three or more, or is long enough that nothing typed by
 	// hand reaches it. "Sup3rS3cr3tValue123", a base64 blob, a 64-character hex
-	// key. Almost nothing in source code looks like this, which is why an operator
-	// reviewing code can run here and keep their identifiers.
+	// key. Almost nothing in source code looks like this.
+	//
+	// It is **not** the answer to over-masking source code, and this comment used
+	// to say it was. Measured over four megabytes of real TypeScript, weak and
+	// strong claim the same values: the level grades one pattern, and almost all of
+	// what a code review over-masks is personal-data categories that no level
+	// touches. See plans/source-code-false-positives.md.
 	StrengthStrong
 )
 

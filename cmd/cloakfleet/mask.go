@@ -41,8 +41,12 @@ can never be switched off, whichever way they are named.
 --secret-level is weak, medium or strong, and grades only the catch-all pattern:
 a credential identified by a prefix ("gsk_", "sk-ant-") is masked at every level.
 weak masks every value the pattern finds, ordinary words included, which is what
-over-masks source code; strong masks only what nobody typed by hand, and is the
-level to run at while reviewing code.
+over-masks source code; strong masks only what nobody typed by hand.
+
+It is not the answer to over-masking source code, and used to say it was: measured
+over four megabytes of real TypeScript, moving from weak to strong removed none of
+the 187 values the catalogue claimed. The level grades one pattern; almost all of
+what a code review over-masks is personal-data categories, which no level touches.
 
 --substitution is token or fake. A token reads as [EMAIL_1] and is obvious in an
 answer; a stand-in reads as prose and cannot be told from a real value, which is why

@@ -248,7 +248,7 @@ func levelTitle(level string) string {
 	case "medium":
 		return "medium — values mixing two kinds of character"
 	case "strong":
-		return "strong — only what nobody typed; keeps code readable"
+		return "strong — only what nobody typed by hand"
 	default:
 		return level
 	}

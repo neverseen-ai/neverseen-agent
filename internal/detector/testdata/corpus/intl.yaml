@@ -212,3 +212,24 @@ cases:
     text: "Contact claire.moreau@example.fr about the invoice."
     expect:
       - {category: EMAIL, value: "claire.moreau@example.fr"}
+
+  # A CamelCase identifier that opens on two letters and two digits. The
+  # expression carries (?i) so a lower-cased IBAN is still read, and that
+  # tolerance let identifiers through: "ED" is not a country the length table
+  # knows, so the length check waves it past, and one arbitrary string in
+  # ninety-seven clears mod-97. Over third-party TypeScript it was 7% of every
+  # finding, all of it identifiers of this shape.
+  - id: intl-prec-camelcase-identifier
+    text: "Use ED25519KeyPairOptions when generating the signing key."
+    expect: []
+
+  - id: intl-prec-camelcase-identifier-second
+    text: "The type is RS256SignatureProvider in that module."
+    expect: []
+
+  # Both real cases still read. An account is written in one or the other, never
+  # in both, which is the whole rule.
+  - id: intl-iban-lowercase-is-still-an-account
+    text: "virement vers fr1420041010050500013m02606 effectué"
+    expect:
+      - {category: IBAN, value: "fr1420041010050500013m02606"}

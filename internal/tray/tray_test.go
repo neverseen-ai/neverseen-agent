@@ -828,7 +828,9 @@ func TestTheLevelRowsShowTheChoiceAndTheState(t *testing.T) {
 	if !strings.Contains(rows[0].title, "masks code too") {
 		t.Errorf("the weak row does not say what it costs: %q", rows[0].title)
 	}
-	if !strings.Contains(rows[2].title, "keeps code readable") {
+	// It says what the level does, not that it solves code review — that claim was
+	// measured and removed: weak and strong claim the same values over real source.
+	if !strings.Contains(rows[2].title, "only what nobody typed") {
 		t.Errorf("the strong row does not say what it buys: %q", rows[2].title)
 	}
 }
