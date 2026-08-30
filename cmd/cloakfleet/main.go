@@ -180,12 +180,6 @@ func printUsage(w io.Writer) {
 		proxy.EnvIdentityFile, proxy.DefaultIdentityFile)
 }
 
-// runProxy serves until it is signalled, then stops taking new requests and lets
-// the ones in flight finish.
-//
-// The graceful stop is not politeness: a request cut off mid-flight has been
-// masked and stored but never answered, so the caller loses the turn and the
-// mapping keeps values nothing will ask for again.
 // runProxy serves, optionally revealing what it replaced and recording it.
 //
 // One command rather than two, and that is a change from what came before: there
@@ -347,8 +341,18 @@ func printRevealBanner(w io.Writer, agent *proxy.Agent, reveal bool) {
 	fmt.Fprint(w, "Ctrl-C stops the agent.\n\n")
 }
 
-// serveAgent is the serving half, shared by `proxy` and `audit` so the two cannot
-// come to differ about shutdown, supervision or the last heartbeat.
+// serveAgent serves until it is signalled, then stops taking new requests and lets
+// the ones in flight finish.
+//
+// The graceful stop is not politeness: a request cut off mid-flight has been masked
+// and stored but never answered, so the caller loses the turn and the mapping keeps
+// values nothing will ask for again.
+//
+// It is a function of its own rather than the body of runProxy because it was once
+// shared with a second command — `audit`, which ran the same pipeline on a port of
+// its own and is now `proxy -a`. One caller today, and it stays separate: shutdown,
+// supervision and the last heartbeat are one thing to get right, and this is where
+// a second entrypoint would have to come to reuse it rather than reimplement it.
 func serveAgent(logger *slog.Logger, agent *proxy.Agent) error {
 	server := &http.Server{
 		Addr:              agent.Addr,
