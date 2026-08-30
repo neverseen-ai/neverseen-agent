@@ -177,6 +177,12 @@ func (d *Detector) candidates(text string) []Match {
 			if !d.strongEnough(p.Category, value) {
 				continue
 			}
+			// Last, because it is the only rule that reads outside the value and so
+			// the only one that costs a slice of the surrounding text. Everything
+			// cheaper has already had its chance to reject.
+			if pii.RejectedByPlacement(p.Category, value, pii.PlacementAt(text, span[0], span[1])) {
+				continue
+			}
 
 			out = append(out, Match{
 				Value:      value,

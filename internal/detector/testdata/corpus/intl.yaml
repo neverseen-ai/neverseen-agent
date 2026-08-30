@@ -233,3 +233,41 @@ cases:
     text: "virement vers fr1420041010050500013m02606 effectué"
     expect:
       - {category: IBAN, value: "fr1420041010050500013m02606"}
+
+  # --- where a value sits ---------------------------------------------------
+  #
+  # The rules that cannot be settled by the value alone. Each drops a match and
+  # none can create one, and none is ever asked about a credential — being the
+  # right-hand side of an assignment is what makes a secret a secret.
+
+  # A mask length makes it a network rather than a host. A range in an allow list
+  # is a routing decision, not somebody's machine.
+  - id: intl-prec-cidr-block
+    text: "Accept traffic from 10.0.0.0/8 and 172.16.0.0/12 only."
+    expect: []
+
+  - id: intl-prec-cidr-public-range
+    text: "The customer announces 203.0.113.0/24 to us."
+    expect: []
+
+  # A path is not a mask. "10.4.2.17/health" is a host with a URL after it.
+  - id: intl-address-with-a-path-is-still-a-host
+    text: "Probe http://10.4.2.17/healthz every ten seconds."
+    expect:
+      - {category: IP_ADDRESS, value: "10.4.2.17"}
+
+  # An ASN.1 object identifier is a syntactically perfect IPv4 address, and
+  # nothing inside the value separates them. What does is that the code says so.
+  - id: intl-prec-object-identifier
+    text: 'oidEd25519 = "1.3.101.112"'
+    expect: []
+
+  - id: intl-prec-object-identifier-comment
+    text: "The OID for X25519 is 1.3.101.110 per RFC 8410."
+    expect: []
+
+  # Without the word, the same shape is an address and stays masked.
+  - id: intl-address-without-the-word-is-masked
+    text: "The gateway answered from 1.3.101.110 this morning."
+    expect:
+      - {category: IP_ADDRESS, value: "1.3.101.110"}

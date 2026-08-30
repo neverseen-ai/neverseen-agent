@@ -230,3 +230,22 @@ cases:
   - id: us-prec-dob-future
     text: "The licence runs through 12/31/2099 under the amendment."
     expect: []
+
+  # A CSS length, not a telephone number. The NANP rules cannot say otherwise —
+  # area 214 and exchange 748 are both allocatable — so the shape is satisfied.
+  # What separates them is that nobody writes a number glued to a colon.
+  - id: us-prec-css-length
+    text: "banner.style.cssText = 'z-index:2147483647;position:fixed'"
+    expect: []
+
+  - id: us-prec-assigned-constant
+    text: "const MAX_INT32=2147483647 in that header"
+    expect: []
+
+  # The same digits with a space in front are a number somebody gave out. Only the
+  # separator-free notation can be a constant, and only when it is glued to an
+  # assignment.
+  - id: us-bare-number-in-prose-is-a-telephone
+    text: "Call the desk on 5552345678 before nine."
+    expect:
+      - {category: PHONE, value: "5552345678"}
