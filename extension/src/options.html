@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Cloakfleet</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body {
+        margin: 0 auto;
+        max-width: 42rem;
+        padding: 2.5rem 1.5rem 4rem;
+        font: 15px/1.55 system-ui, sans-serif;
+      }
+      h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
+      .sub { opacity: .7; margin: 0 0 2rem; }
+      .card {
+        border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+        border-radius: 10px;
+        padding: 1.1rem 1.25rem;
+        margin-bottom: 1.25rem;
+      }
+      .state { display: flex; gap: .6rem; align-items: baseline; font-weight: 600; }
+      .dot { width: .7rem; height: .7rem; border-radius: 50%; flex: none; align-self: center; }
+      .dot.full { background: #16a34a; }
+      .dot.partial { background: #d97706; }
+      .dot.none { background: #dc2626; }
+      p { margin: .55rem 0; }
+      code, pre {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: .88em;
+      }
+      pre {
+        background: color-mix(in srgb, currentColor 8%, transparent);
+        border-radius: 6px;
+        padding: .55rem .7rem;
+        overflow-x: auto;
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        align-items: center;
+      }
+      label { display: block; font-weight: 600; margin-bottom: .35rem; }
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: .5rem .6rem;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: .88rem;
+        border-radius: 6px;
+        border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+        background: transparent;
+        color: inherit;
+      }
+      .row { display: flex; gap: .6rem; margin-top: .8rem; align-items: center; }
+      button {
+        font: inherit;
+        padding: .45rem .9rem;
+        border-radius: 6px;
+        border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+      }
+      button.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+      .note { opacity: .75; font-size: .9em; }
+      .hint { margin-top: .5rem; }
+      details { margin-top: .6rem; }
+      summary { cursor: pointer; }
+      ul { margin: .4rem 0 0; padding-left: 1.2rem; }
+    </style>
+  </head>
+  <body>
+    <h1>Cloakfleet</h1>
+    <p class="sub">Your web chats, masked by the agent on this machine.</p>
+
+    <div class="card">
+      <div class="state"><span id="dot" class="dot none"></span><span id="headline">Checking…</span></div>
+      <div id="guidance"></div>
+    </div>
+
+    <div class="card">
+      <label for="key">Control key</label>
+      <input id="key" type="text" spellcheck="false" autocomplete="off"
+             placeholder="64 hexadecimal characters" />
+      <div class="row">
+        <button id="save" class="primary" type="button">Save</button>
+        <span id="saved" class="note"></span>
+      </div>
+      <p class="note hint">
+        The agent writes this key to <code>~/.cloakfleet/control.key</code>, readable
+        by you and nobody else. It stays in this browser profile and is never sent
+        anywhere but to the agent on this machine.
+      </p>
+
+      <details>
+        <summary>The agent is somewhere other than the default port</summary>
+        <div class="row">
+          <input id="baseUrl" type="text" spellcheck="false" autocomplete="off"
+                 placeholder="http://127.0.0.1:8787" />
+        </div>
+        <p class="note hint">
+          Only needed when <code>CLOAKFLEET_LISTEN</code> moved the agent. Saved with
+          the key.
+        </p>
+      </details>
+    </div>
+
+    <div class="card">
+      <p><strong>What this does not cover.</strong></p>
+      <ul>
+        <li>File uploads, images and voice: their contents reach the model unmasked.</li>
+        <li>A reloaded conversation shows the replacements, not the originals — the
+            past messages are fetched by a request this does not rewrite yet.</li>
+      </ul>
+      <p class="note">
+        Said here rather than left to be discovered. Everything else this extension
+        touches goes through the agent, and a send it cannot mask is blocked rather
+        than forwarded.
+      </p>
+    </div>
+
+    <script src="options.js"></script>
+  </body>
+</html>

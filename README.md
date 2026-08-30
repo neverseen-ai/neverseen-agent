@@ -208,6 +208,48 @@ That is a deliberate trade — availability over enforcement — and it is the r
 way round for a tool developers depend on. Supervision is what makes it safe: a
 stopped agent shows up in the dashboard as silent, rather than as nothing at all.
 
+## Web chats: the browser extension
+
+An agent is a proxy, and a proxy needs something to stand in front of. A tool takes
+`ANTHROPIC_BASE_URL`; claude.ai takes nothing — the traffic goes from the page to the
+site's own origin over a connection the page opened, and there is no variable to set.
+
+`extension/` is the answer, and it is deliberately thin. It replaces `window.fetch`
+before the site's script runs, hands what you typed to the agent on this machine, and
+puts your own values back into the answer as it streams in. It holds **no catalogue, no
+policy and no mappings** — the same detector that masks your terminal's traffic masks
+your browser's, with the same locales, the same substitution mode and the same switches.
+
+```bash
+make extension            # build it into extension/dist
+cloakfleet key            # print the control key, paste it into the options page
+```
+
+Then load `extension/dist` unpacked at `chrome://extensions`. The options page finds the
+agent on its default port by itself; it only asks for the key.
+
+Two things about it are worth knowing before you trust it:
+
+**A send that could not be masked is not sent.** If the agent is stopped, the message
+stays in the box and a banner says which command starts it. That is the same decision the
+proxy makes on a body it cannot read, and it is the one somebody will be tempted to
+soften — a blocked send looks like a broken site, and a forwarded one looks like nothing
+at all.
+
+**Restoration fails the other way, on purpose.** If the agent goes away mid-answer, the
+text arrives showing `[EMAIL_1]` rather than not arriving. An answer you have already
+paid for is worth more than tidiness, and a visible replacement is unreadable rather than
+unsafe.
+
+Not covered, and said here rather than left to be discovered: file uploads, images and
+voice reach the model unmasked, and reloading a conversation shows the replacements
+instead of your values. Both are declared on the extension's own options page too.
+
+`extension/e2e/run.test.mjs` is what makes any of this a claim you can check: it loads
+the built extension into a real Chrome, puts claude.ai on this machine, and asserts both
+halves of one exchange — that the site received the token and that the page rendered the
+address. Either half alone passes over a page that was never touched.
+
 ## Supervision
 
 Optional, and the agent is a complete product without it. Set
@@ -341,6 +383,11 @@ Written down rather than discovered later:
   day-first, the US month-first, and "05/06/2024" is genuinely both. With only
   one of the two enabled, the other country's dates go out in clear — the answer
   is to enable that locale, not to widen a pattern into ambiguity.
+- **The browser extension covers claude.ai and its message sends only.** File
+  uploads, images and voice reach the model unmasked; a reloaded conversation
+  renders the replacements rather than your values, because the request that
+  fetches past messages is not rewritten. ChatGPT is a second site adapter and
+  nothing else, and is not written.
 - **Mixing locales costs precision** where two countries issue identifiers of
   the same length. Nine bare digits are a French SIREN under one checksum and a
   US routing number under another; the earlier locale in the registry names it.

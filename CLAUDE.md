@@ -199,6 +199,51 @@ area: the reasoning is what stops a tempting simplification being reintroduced.
   read-modify-write. **A credential is refused by the detector**, not by the menu,
   so nothing can route around it; `pii.Switchable` is that rule.
 
+### The browser extension — `openwiki/architecture/browser-extension.md`
+
+- **The extension holds no engine.** No catalogue, no policy, no mappings, no
+  detector — it hands text to `POST /mask` and `POST /unmask` and puts back what
+  comes out. A WASM build or a TypeScript rewrite is a second answer to "what does
+  this agent mask", and JavaScript regexes have neither RE2's semantics nor the
+  corpus that was measured against them.
+- **It lives in this repository because the API is a contract.**
+  `extension/testdata/contract.json` is recorded once and replayed by both sides —
+  `internal/proxy/contract_test.go` against a real agent, `extension/test/contract.test.ts`
+  against the client — so a field renamed on either side fails on the other, in the
+  same commit. Regenerate with `make contract-update`, never casually.
+- **Fail closed on the way out, open on the way back, and the asymmetry is
+  deliberate.** A send that could not be masked is not sent: a value that reaches the
+  model cannot be recalled. A chunk that could not be restored is shown unexpanded:
+  failing closed there discards an answer already paid for and already arrived, to
+  prevent nothing — a visible `[EMAIL_1]` is unreadable, not unsafe. Every block also
+  raises a banner naming the command that fixes it; a rejected fetch alone reads as a
+  broken site.
+- **`/mask` takes a list, and that is not batching.** A send carries several text
+  fields, and one pass is what gives a value repeated across two of them one identity.
+- **`/unmask` is stateless: the tail travels with the client**, held back with
+  `detector.TailLen` — not `pii.TokenTailLen`, because a stand-in splits across two
+  events exactly as a token does. `final: true` is the protocol's explicit end;
+  without it a value masked at the very end of an answer is never shown.
+- **One shared auth helper** (`Server.authorised`), constant-time, for all three
+  authenticated routes. **`/unmask` is loopback only, hard**, whatever `-l` bound, and
+  checked before the key is read: it answers "what does this replacement stand for",
+  which is the mapping one question at a time. `/mask` is not — it exposes what
+  `/test` exposes. **No CORS headers on the agent, ever.**
+- **Neither route is captured by `-a` or `-v`**, structurally: the handler passes
+  `nil` where the proxy passes the audit callback. A trace of `/unmask` would put
+  originals on disk through a path the invariant never considered.
+- **The key never leaves the service worker**, and never a bare HTTP route. An
+  unauthenticated `GET /key` "to keep it simple" is the hole DNS rebinding exploits.
+- **A stream event is rewritten structurally, never as raw bytes**, and the calls are
+  serialised — chunk *n*'s tail prefixes chunk *n+1*, so two in flight is corruption.
+- **A transport that cannot be masked is refused**, not forwarded: `XMLHttpRequest.send`
+  and `sendBeacon` are synchronous and a `WebSocket` is open before there is anything
+  to inspect. A site that moved its chat onto one would otherwise keep working and
+  mask nothing.
+- **`extension/e2e/run.test.mjs` is the only test with nothing stubbed**, and it
+  asserts both halves: what the site received (masked) and what the page rendered
+  (restored). Either alone passes over a page that was never touched.
+
 ### Supervision — `openwiki/architecture/supervision.md`
 
 - **`pkg/telemetry` is public and the backend imports it — never the reverse.**

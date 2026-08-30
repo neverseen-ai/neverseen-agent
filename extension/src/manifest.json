@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "Cloakfleet",
+  "version": "0.1.0",
+  "description": "Mask personal data and credentials in web chats, through the Cloakfleet agent on this machine.",
+  "permissions": ["storage"],
+  "host_permissions": ["https://claude.ai/*", "http://127.0.0.1/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://claude.ai/*"],
+      "js": ["interceptor.js"],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": false
+    },
+    {
+      "matches": ["https://claude.ai/*"],
+      "js": ["relay.js"],
+      "run_at": "document_start",
+      "world": "ISOLATED",
+      "all_frames": false
+    }
+  ],
+  "options_page": "options.html",
+  "action": {
+    "default_title": "Cloakfleet"
+  }
+}

@@ -114,3 +114,105 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
           sh -n install.sh
           shellcheck --shell=sh install.sh
+
+  # Its own job, and the coverage gate above is the reason: that 80% is a fact
+  # about the Go packages, and folding a TypeScript bundle into the same run would
+  # either dilute the number or need a second gate pretending to be the first one.
+  # This job builds the extension on a clean checkout, which is the only way to
+  # find out that a file was never committed.
+  extension:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: extension/package-lock.json
+
+      - name: Build, typecheck and test the extension
+        working-directory: extension
+        # No browser here. This job builds and unit-tests; the end-to-end job below
+        # is the one that needs a Chrome, and downloading 150 MB into a job that
+        # never launches it is a minute added to every commit for nothing.
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+        run: |
+          npm ci
+          npm run check
+
+  # The contract between the extension and the agent, replayed against a real
+  # agent on every commit that touches either side.
+  #
+  # A job of its own rather than a line in the Go suite, because it is the only
+  # thing here that fails when *neither* side is broken: the two halves each pass
+  # their own tests and disagree about the wire. Running it where its name is
+  # visible is what makes that diagnosis readable at a glance.
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: extension/package-lock.json
+
+      - name: The agent's half — the real detector answers the recorded responses
+        run: go test ./internal/proxy/ -run 'TestExtensionContract|TestContractCovers' -v
+
+      - name: The extension's half — its client sends the recorded requests
+        working-directory: extension
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+        run: |
+          npm ci
+          node --test --experimental-strip-types test/contract.test.ts
+
+      - name: The recorded exchanges are committed, not regenerated in CI
+        run: git diff --exit-code extension/testdata/contract.json
+
+  # The one test with nothing stubbed: the built extension, in a real Chrome, in
+  # front of a page served on claude.ai's own origin, talking to an agent built
+  # from this commit.
+  #
+  # Separate from the extension job because it is the only one that needs a
+  # browser downloaded, a Go binary built and a certificate minted, and because
+  # its failures mean something different: the two unit suites can both be green
+  # while the seam between them is broken, and this is what notices.
+  extension-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: extension/package-lock.json
+
+      - name: Build the agent this test runs against
+        run: make build
+
+      - name: Build the extension this test loads
+        working-directory: extension
+        run: |
+          npm ci
+          npx puppeteer browsers install chrome
+          npm run build
+
+      - name: A value typed into a page, through the extension, through the agent
+        working-directory: extension
+        run: npm run e2e

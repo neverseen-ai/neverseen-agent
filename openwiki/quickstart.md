@@ -22,6 +22,7 @@ never import it, and must compile and run with no backend at all.
 | --- | --- |
 | [Request path](architecture/request-path.md) | `internal/proxy` — provider routing, masking a body, the session vault, response expansion, streaming |
 | [Detection engine](architecture/detection-engine.md) | `pkg/pii` catalogue + `internal/detector` engine — categories, locales, checksums, overlap arbitration, token vs. stand-in |
+| [Browser extension](architecture/browser-extension.md) | `extension/` + `POST /mask` and `POST /unmask` — masking a web chat by wrapping the page's own `fetch` |
 | [Supervision](architecture/supervision.md) | `pkg/telemetry` contract + `internal/telemetry` recorder, on-disk buffer, reporting loop |
 | [Configuration](operations/configuration.md) | The six environment variables, every CLI command, the test page, the audit console |
 | [Distribution](operations/distribution.md) | `install.sh`, launchd services, GoReleaser, the menu bar binary, `cloakfleet env` |
@@ -38,6 +39,7 @@ internal/detector/     the engine that runs the catalogue over text
 internal/vault/        per-session masked→original mapping, encrypted at rest
 internal/telemetry/    recorder, on-disk buffer, reporting loop
 internal/tray/         what the menu bar shows (toolkit-free, tested)
+extension/             the browser extension; holds no engine (see Browser extension)
 pkg/pii/               the catalogue: what is sensitive, how it is recognised
 pkg/telemetry/         the public supervision contract the backend imports
 install.sh             installer: binaries, launchd services, optional shell line

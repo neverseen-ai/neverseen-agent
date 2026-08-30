@@ -15,3 +15,7 @@ e2e-artefacts/
 # clear. Evidence of one run and nothing else — and unlike the artefacts above,
 # these hold somebody's real data, so committing one is a leak rather than noise.
 traces/
+
+# The browser extension's dependencies. Its lockfile is committed — CI installs
+# from it with `npm ci` — and what that installs is not.
+node_modules/

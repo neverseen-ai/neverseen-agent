@@ -1,4 +1,5 @@
-.PHONY: help build run test test-cover lint fmt tidy score score-update bench-accuracy e2e-claude clean
+.PHONY: help build run test test-cover lint fmt tidy score score-update bench-accuracy \
+	e2e-claude extension extension-e2e contract-update clean
 
 BIN     := bin/cloakfleet
 PKG     := ./cmd/cloakfleet
@@ -48,6 +49,15 @@ bench-accuracy: ## Per-category accuracy report over the corpus
 
 e2e-claude: ## End-to-end: the Claude CLI through the agent to the real provider (spends quota)
 	CLOAKFLEET_E2E_CLAUDE=1 go test ./internal/proxy/ -run TestE2EClaudeCode -v -timeout 10m
+
+extension: ## Typecheck, test and build the browser extension into extension/dist
+	cd extension && npm ci && npm run check
+
+extension-e2e: extension ## Drive the built extension through a real Chrome against a real agent
+	cd extension && npm run e2e
+
+contract-update: ## Rewrite the recorded extension exchanges from this run — explain the delta in the PR
+	go test ./internal/proxy/ -run TestExtensionContract -update-contract -v
 
 clean: ## Remove build artefacts
 	rm -rf bin dist coverage.out coverage.html

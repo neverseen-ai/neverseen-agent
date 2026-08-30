@@ -1,0 +1,21 @@
+{
+  "name": "cloakfleet-extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cloakfleet for web chats: the page's traffic, masked by the local agent.",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --experimental-strip-types test/*.test.ts",
+    "check": "npm run typecheck && npm run test && npm run build",
+    "e2e": "node --test e2e/run.test.mjs"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.287",
+    "@types/node": "^22.10.2",
+    "esbuild": "^0.24.2",
+    "puppeteer": "^25.9.0",
+    "typescript": "^5.7.2"
+  }
+}

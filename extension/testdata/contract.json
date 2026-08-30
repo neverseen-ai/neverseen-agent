@@ -1,0 +1,115 @@
+{
+  "comment": "The recorded exchanges between the browser extension and the agent. Read by internal/proxy/contract_test.go, which replays them against a real agent, and by extension/test/contract.test.ts, which drives the extension's client against them. Regenerate the responses with `make contract-update`; the requests and the `why` lines are written by hand.",
+  "detector": {
+    "locales": [
+      "fr"
+    ],
+    "substitution": "token",
+    "secret_level": "weak"
+  },
+  "session": "claude:9f1c0d2e-4b6a-4f31-8a5e-2c7d1e0b3a44",
+  "exchanges": [
+    {
+      "name": "mask two fields of one send",
+      "why": "One pass over both texts, so the address repeated across them keeps one identity — masked field by field it would leave as two different people. The credential is tokenized alongside it, and the count includes the repeat, because a value masked twice is two values that did not leave the machine.",
+      "route": "/mask",
+      "request": {
+        "texts": [
+          "Envoie le dossier à claire@example.fr",
+          "Rappelle claire@example.fr, ma clé est sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"
+        ]
+      },
+      "response": {
+        "texts": [
+          "Envoie le dossier à [EMAIL_1]",
+          "Rappelle [EMAIL_1], ma clé est [ANTHROPIC_KEY_1]"
+        ],
+        "masked": 3
+      }
+    },
+    {
+      "name": "expand a whole replacement in one chunk",
+      "why": "The ordinary case: a chunk carrying a complete token, nothing held back. A client that got this wrong would show the person their own bookkeeping.",
+      "route": "/unmask",
+      "request": {
+        "text": "J'écris à [EMAIL_1] maintenant",
+        "tail": "",
+        "final": false
+      },
+      "response": {
+        "expanded": "J'écris à claire@example.fr maintenant",
+        "tail": ""
+      }
+    },
+    {
+      "name": "hold back what could be the start of a replacement",
+      "why": "The chunk ends mid-token. Emitting those characters would put half a token on screen and make the other half unexpandable, so they come back as a tail for the caller to carry.",
+      "route": "/unmask",
+      "request": {
+        "text": "la clé est [ANTHROPIC",
+        "tail": "",
+        "final": false
+      },
+      "response": {
+        "expanded": "la clé est ",
+        "tail": "[ANTHROPIC"
+      }
+    },
+    {
+      "name": "complete a replacement split across two chunks",
+      "why": "The tail from the call before, prepended to this chunk. This is the whole reason the protocol carries one, and a client that dropped it would restore nothing at all in a streamed answer.",
+      "route": "/unmask",
+      "request": {
+        "text": "_KEY_1] voilà",
+        "tail": "[ANTHROPIC",
+        "final": false
+      },
+      "response": {
+        "expanded": "sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789 voilà",
+        "tail": ""
+      }
+    },
+    {
+      "name": "a replacement at the very end of the stream",
+      "why": "Half a token arriving as the last thing the model wrote. Without the flush below it is simply never shown: the person reads a sentence with its last word missing.",
+      "route": "/unmask",
+      "request": {
+        "text": "contact : [EMAIL",
+        "tail": "",
+        "final": false
+      },
+      "response": {
+        "expanded": "contact : ",
+        "tail": "[EMAIL"
+      }
+    },
+    {
+      "name": "the flush that ends the stream",
+      "why": "final:true expands the remaining tail and holds nothing back. It is the protocol's explicit end, and the one call a client is most likely to forget because everything looks right without it until a value lands last.",
+      "route": "/unmask",
+      "request": {
+        "text": "_1]",
+        "tail": "[EMAIL",
+        "final": true
+      },
+      "response": {
+        "expanded": "claire@example.fr",
+        "tail": ""
+      }
+    },
+    {
+      "name": "a token nothing expands is left visible",
+      "why": "What the agent's own response path does for an answer still in flight when the mode changed and the mapping was purged. Inventing a value would put data in front of somebody that nothing supports; hiding it would hide that something went wrong.",
+      "route": "/unmask",
+      "request": {
+        "text": "as [EMAIL_99] said",
+        "tail": "",
+        "final": true
+      },
+      "response": {
+        "expanded": "as [EMAIL_99] said",
+        "tail": ""
+      }
+    }
+  ]
+}
