@@ -102,7 +102,7 @@
    "fn": 0
   },
   "SECRET_GENERIC": {
-   "tp": 5,
+   "tp": 7,
    "fp": 0,
    "fn": 0
   },
@@ -137,7 +137,7 @@
    "fn": 0
   },
   "SECRET_JWT": {
-   "tp": 1,
+   "tp": 3,
    "fp": 0,
    "fn": 0
   },
@@ -152,7 +152,7 @@
    "fn": 0
   },
   "SECRET_PEM_KEY": {
-   "tp": 2,
+   "tp": 3,
    "fp": 0,
    "fn": 0
   },
@@ -172,7 +172,7 @@
    "fn": 0
   },
   "SECRET_SLACK_TOKEN": {
-   "tp": 2,
+   "tp": 3,
    "fp": 0,
    "fn": 0
   },
@@ -207,5 +207,5 @@
    "fn": 0
   }
  },
- "negatives": 75
+ "negatives": 77
 }

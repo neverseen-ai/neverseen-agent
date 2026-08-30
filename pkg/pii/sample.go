@@ -106,15 +106,20 @@ Google : AIzaabcdefghijklmnopqrstuvwxyzABCDEFGHI
 AWS : AKIAIOSFODNN7EXAMPLE, temporaire ASIAY34FZKBOKMUTVV7A, porteur ABIAY34FZKBOKMUTVV7A, lié au contexte ACCAY34FZKBOKMUTVV7A, ancien A3TY34FZKBOKMUTVV7AB, et aws_secret_access_key = abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN
 GitHub : ghp_abcdefghijklmnopqrstuvwxyz0123456789, gho_0123456789abcdefghijklmnopqrstuvwxyz, portée fine github_pat_11ABCDEFG0abcdefghijkl_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789AB
 GitLab : glpat-abcdefghijklmnopqrst
-Slack : xoxb-0123456789-a, applicatif xapp-0123456789-z
+Slack : xoxb-0123456789-a, applicatif xapp-0123456789-z, webhook https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX
 Stripe : sk_live_abcdefghijklmnopqrstuvwx, sk_test_abcdefghijklmnopqrstuvwx, sk_prod_abcdefghijklmnopqrstuvwx, restreinte rk_live_abcdefghijklmnopqrstuvwx
 SendGrid : SG.abcdefghijklmnopqrstuv.abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ
 Twilio : SK0123456789abcdef0123456789abcdef, en majuscules SKFEDCBA9876543210FEDCBA9876543210
 Registres : npm_abcdefghijklmnopqrstuvwx, pypi-abcdefghijklmnopqrstuvwx, dckr_pat_abcdefghijklmnopqrstuvwx
 Modèles : hf_abcdefghijklmnopqrstuvwx, r8_abcdefghijklmnopqrstuvwx
 Inférence : gsk_abcdefghijklmnopqrstuvwxyz012345, xai-abcdefghijklmnopqrstuvwxyz012345
-Clé privée : -----BEGIN OPENSSH PRIVATE KEY-----, bloc armé -----BEGIN PGP PRIVATE KEY BLOCK-----
-JWT : eyJabcdefghijkl.eyJabcdefghijklmn.abcdefghijklmnopqrst
+Clé privée collée en entier — le bloc est masqué corps compris, et il est écrit avant les mentions ci-dessous parce que sa fin est cherchée au plus court :
+-----BEGIN RSA PRIVATE KEY-----
+MIIEpQIBAAKCAQEAn6/O8li+SX4m98LLYt/PKSzEmQ++ZBD7Loh9P13f4yQ92EF3
+yxR5MsXFu9PRsrYQA7/4UTPHiC4y2sAVCBg4C2yyBpUEtMQjyCESi6Y=
+-----END RSA PRIVATE KEY-----
+Clé privée seulement mentionnée : -----BEGIN OPENSSH PRIVATE KEY-----, bloc armé -----BEGIN PGP PRIVATE KEY BLOCK-----
+JWT : eyJabcdefghijkl.eyJabcdefghijklmn.abcdefghijklmnopqrst, complété eyJabcdefghijkl==.eyJabcdefghijklmn==.abcdefghijklmnopqrst, indenté avant encodage ewogICJhbGciOiAiSFMyNTYiCn0.ewogICJzdWIiOiAiMTIzNCIKfQ.abcdefghijklmnopqrst
 Base : postgres://admin:s3cr3t@db.example.com:5432/app
 Broker : amqp://guest:gu3st@broker.internal:5672/
 Cache : redis://:p4ssonly@redis.internal:6379

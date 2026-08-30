@@ -74,6 +74,10 @@ var (
 	gitlabRe            = regexp.MustCompile(`glpat-[a-zA-Z0-9_-]{20,}`)
 	slackRe             = regexp.MustCompile(`xox[bpa]-[a-zA-Z0-9-]{10,}`)
 	slackAppRe          = regexp.MustCompile(`xapp-[a-zA-Z0-9-]{10,}`)
+	// A webhook URL is a credential — whoever holds it can post as the app — and
+	// it carries no "user:password@", so the connection-string pattern never saw
+	// it and nothing else did either. The host is the whole of the evidence.
+	slackWebhookRe = regexp.MustCompile(`https://hooks\.slack\.com/(?:services|workflows)/[A-Za-z0-9/]{20,}`)
 	// The leading \b is the whole point, and its absence corrupted ordinary text:
 	// with none, this matched *inside* a word, so "task_test_abcdef…" was reported
 	// as the Stripe key "sk_test_abcdef…" and an identifier came back with its
@@ -116,15 +120,50 @@ var (
 
 	// On "PRIVATE KEY", not on the delimiter shape: a certificate and a public
 	// key are meant to be shared, and masking them breaks the paste for nothing.
+	// Two patterns, and the first is the one that matters: the whole block,
+	// header to footer, body included.
+	//
+	// On its own the header pattern below masked "-----BEGIN RSA PRIVATE KEY-----"
+	// and forwarded every line of key material after it in clear — the delimiter
+	// replaced, the key itself sent to the provider. Both gitleaks and trufflehog
+	// match BEGIN through END for exactly this reason, and it is the one leak in
+	// this catalogue where the masked span was decoration around the secret.
+	//
+	// Overlap arbitration settles the pair: same category, so the longer span
+	// wins, which is the block wherever a block exists.
+	//
+	// TODO: the body is `[\s\S]*?`, as it is in gitleaks and trufflehog, so a text
+	// that *mentions* a header and then pastes a whole key further down is matched
+	// as one span from the mention to the footer, swallowing the prose between.
+	// The direction is safe — over-masking, and reversible — but the reader loses
+	// that prose. Narrowing the body to base64 does not fix it: prose is letters
+	// and spaces, which base64 admits. A real fix bounds the gap by line shape.
+	pemBlockRe = regexp.MustCompile(`-----BEGIN\s[A-Z\s]*PRIVATE\sKEY(?:\sBLOCK)?-----[\s\S]*?-----END\s[A-Z\s]*PRIVATE\sKEY(?:\sBLOCK)?-----`)
+
+	// The header alone, which is how a private key is *mentioned* rather than
+	// pasted: "the attachment starts with -----BEGIN OPENSSH PRIVATE KEY-----,
+	// which is why the push was refused". Dropping it once the block pattern
+	// exists would leave that sentence unmasked.
+	//
 	// The trailing BLOCK is what a PGP armour header carries, and requiring the
-	// line to end on "KEY-----" missed it: "-----BEGIN PGP PRIVATE KEY BLOCK-----"
-	// is a private key by any reading and reached nothing.
+	// line to end on "KEY-----" missed it.
 	pemRe = regexp.MustCompile(`-----BEGIN\s[A-Z\s]*PRIVATE\sKEY(?:\sBLOCK)?-----`)
 
-	// Three base64url segments, the first two starting with the "eyJ" that a
-	// base64-encoded "{"" always produces. Without that anchor any dotted blob
-	// of the right lengths matched — a checksum, a build id.
-	jwtRe = regexp.MustCompile(`eyJ[a-zA-Z0-9_-]{10,}\.eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}`)
+	// Three base64url segments, the first two starting with the run a
+	// base64-encoded "{" produces. Without that anchor any dotted blob of the
+	// right lengths matched — a checksum, a build id.
+	//
+	// "eyJ" is what a compact "{"" gives. A claim set encoded with a newline or
+	// indentation after the brace gives "ewo" instead, and its longer forms
+	// "ewogIC" and "ewoid" — the same token, pretty-printed before encoding.
+	//
+	// The padding is the other half, and its absence was not a partial match but
+	// no match at all: "=" is outside the segment class, so a padded first
+	// segment ended early, the "." that had to follow was an "=", and the whole
+	// expression failed. A padded JWT left in clear. RFC 7519 says unpadded, and
+	// encoders emit padding anyway.
+	jwtSeg = `[a-zA-Z0-9_-]{10,}={0,2}`
+	jwtRe  = regexp.MustCompile(`(?:eyJ|ewogIC|ewoid|ewo)` + jwtSeg + `\.(?:eyJ|ewo)` + jwtSeg + `\.[a-zA-Z0-9_-]{10,}={0,2}`)
 
 	// Any scheme://user:password@host.
 	//
@@ -176,7 +215,7 @@ var (
 	// the floor, and match nothing at all — the password would leave in clear. A
 	// narrowing that turns a caught credential into a silent miss is worse than
 	// the eaten bracket it set out to fix.
-	genericSecretRe = regexp.MustCompile(`(?i)(?:PASSWORD|PASSWD|SECRET|TOKEN|API_KEY|APIKEY|ACCESS_KEY|ENCRYPTION_KEY|PRIVATE_KEY|AUTH_TOKEN)['"]?\s*[=:]\s*['"]?` +
+	genericSecretRe = regexp.MustCompile(`(?i)(?:PASSWORD|PASSWD|SECRET|TOKEN|API_KEY|APIKEY|ACCESS_KEY|ENCRYPTION_KEY|PRIVATE_KEY|PRIV_KEY|AUTH_TOKEN|AUTH_KEY|CLIENT_KEY|SERVICE_KEY|ACCOUNT_KEY|DB_KEY|DATABASE_KEY|KEY_PASS|DB_PASS|DATABASE_PASS)['"]?\s*[=:]\s*['"]?` +
 		`([^` + quoteChars + `]{7,}[^` + quoteChars + noSentenceTail + `]|[^` + quoteChars + `]{8,})['"]?`)
 
 	// Sixty-four or more hex characters behind a key-shaped name. The floor is
@@ -218,6 +257,7 @@ func SecretPatterns() []Pattern {
 		{Regex: gitlabRe, Category: CatGitLabToken, Label: "GitLab personal access token"},
 		{Regex: slackRe, Category: CatSlackToken, Label: "Slack bot or user token"},
 		{Regex: slackAppRe, Category: CatSlackToken, Label: "Slack app-level token"},
+		{Regex: slackWebhookRe, Category: CatSlackToken, Label: "Slack webhook URL"},
 		{Regex: stripeRe, Category: CatStripeKey, Label: "Stripe API key"},
 		{Regex: sendGridRe, Category: CatSendGridKey, Label: "SendGrid API key"},
 		{Regex: twilioRe, Category: CatTwilioKey, Label: "Twilio API key"},
@@ -230,7 +270,8 @@ func SecretPatterns() []Pattern {
 		{Regex: xaiRe, Category: CatXAIKey, Label: "xAI API key"},
 
 		// structural
-		{Regex: pemRe, Category: CatPEMKey, Label: "PEM private key block"},
+		{Regex: pemBlockRe, Category: CatPEMKey, Label: "PEM private key, whole block"},
+		{Regex: pemRe, Category: CatPEMKey, Label: "PEM private key header"},
 		{Regex: jwtRe, Category: CatJWT, Label: "JSON Web Token"},
 		{Regex: connStrRe, Group: 1, Category: CatConnStr, Label: "URL carrying credentials"},
 

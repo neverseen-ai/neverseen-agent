@@ -71,6 +71,48 @@ the tool named for false-positive management in the user's global CLAUDE.md.
 - **secscan**, **sensitive-data-detector**, **secret-scanning-api** — personal or
   experimental projects, fewer than five stars each. Recorded for completeness.
 
+## What their test suites yielded
+
+Each project keeps its test cases beside its rules, and those cases are the
+valuable part: they are measured against live traffic rather than reasoned from
+a vendor's documentation page. Replayed against this catalogue they found ten
+things, in two passes.
+
+**gitleaks** (`cmd/generate/config/rules/*.go`, a `tps`/`fps` pair per rule) —
+six shapes reaching no pattern at all: OpenAI service-account and admin keys,
+GitHub's fine-grained token, AWS temporary and bearer keys, Stripe's prod
+environment, uppercase-hex Twilio, the PGP armour header. And one pattern
+corrupting ordinary text: Stripe had no left boundary, so `task_test_abcdef…`
+was reported as the key `sk_test_abcdef…`, two characters into an identifier.
+
+**trufflehog** (`pkg/detectors/`, one directory and one test file per provider) —
+the worst finding of the two passes. Its private-key detector matches BEGIN
+through END; ours matched the header line only, so `-----BEGIN RSA PRIVATE
+KEY-----` was masked and every line of key material after it was forwarded in
+clear. The masked span was decoration around the secret. It also named two JWT
+misses: base64 padding (`=` sat outside the segment class, so a padded token
+matched nothing at all rather than partially) and the `ewo` header a claim set
+indented before encoding produces. Its `slackwebhook` detector named a fourth:
+a webhook URL is a credential — whoever holds it can post as the app — and it
+carries no `user:password@`, so the connection-string pattern never saw it.
+
+**detect-secrets** (`detect_secrets/plugins/keyword.py` and its 11 KB of tests) —
+a name list, and a lesson about a name not to take. Its `DENYLIST` carries
+`auth_key`, `client_key`, `service_key`, `db_pass` and others this catalogue did
+not watch. It also carries `pwd`, which this catalogue deliberately refuses:
+detect-secrets reads files, where `pwd` is a password field, while this agent
+reads prompts, where `PWD` is the working directory and appears in every pasted
+environment dump. Taking the list wholesale would have masked a path on every
+`env` somebody shares.
+
+Its structural answer to the source-code false positive is worth recording even
+though it cannot be borrowed: detect-secrets requires the value to be **quoted**,
+and varies that requirement by file type — an unquoted right-hand side in Go or
+Objective-C is an expression, not a literal. This agent sees a prompt rather than
+a file and has no file type to read, which is why `GenericSecretCheck` reaches
+the same conclusion from the shape of the value instead. Two routes to one
+insight; only one of them is open here.
+
 ## What this changes for cloakfleet
 
 None of these libraries replaces `pkg/pii`: they detect credentials, not localised

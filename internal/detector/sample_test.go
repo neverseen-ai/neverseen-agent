@@ -422,6 +422,7 @@ func TestSampleShowsEveryCredential(t *testing.T) {
 		"glpat-abcdefghijklmnopqrst", pii.CatGitLabToken,
 		"xoxb-0123456789-a", pii.CatSlackToken,
 		"xapp-0123456789-z", pii.CatSlackToken,
+		"https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX", pii.CatSlackToken,
 		"sk_live_abcdefghijklmnopqrstuvwx", pii.CatStripeKey,
 		"sk_test_abcdefghijklmnopqrstuvwx", pii.CatStripeKey,
 		"sk_prod_abcdefghijklmnopqrstuvwx", pii.CatStripeKey,
@@ -436,7 +437,12 @@ func TestSampleShowsEveryCredential(t *testing.T) {
 		"r8_abcdefghijklmnopqrstuvwx", pii.CatReplicateToken,
 		"-----BEGIN OPENSSH PRIVATE KEY-----", pii.CatPEMKey,
 		"-----BEGIN PGP PRIVATE KEY BLOCK-----", pii.CatPEMKey,
+		// The whole block, body included. The header alone masked the delimiter
+		// and forwarded the key material after it.
+		"-----BEGIN RSA PRIVATE KEY-----\nMIIEpQIBAAKCAQEAn6/O8li+SX4m98LLYt/PKSzEmQ++ZBD7Loh9P13f4yQ92EF3\nyxR5MsXFu9PRsrYQA7/4UTPHiC4y2sAVCBg4C2yyBpUEtMQjyCESi6Y=\n-----END RSA PRIVATE KEY-----", pii.CatPEMKey,
 		"eyJabcdefghijkl.eyJabcdefghijklmn.abcdefghijklmnopqrst", pii.CatJWT,
+		"eyJabcdefghijkl==.eyJabcdefghijklmn==.abcdefghijklmnopqrst", pii.CatJWT,
+		"ewogICJhbGciOiAiSFMyNTYiCn0.ewogICJzdWIiOiAiMTIzNCIKfQ.abcdefghijklmnopqrst", pii.CatJWT,
 		// The scheme is consumed but left out of the span, so the line reads
 		// "postgres://[CONN_STR_1]" — the scheme is not a secret, and it is most
 		// of what makes the line answerable.
