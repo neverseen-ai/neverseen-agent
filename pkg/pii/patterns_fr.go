@@ -3,6 +3,7 @@ package pii
 import (
 	"fmt"
 	"regexp"
+	"strings"
 )
 
 // The French set. Every numeric identifier here carries a checksum, which is
@@ -125,6 +126,14 @@ var (
 // for fiction, and the postcode uses a department number that does not exist —
 // which also means the stand-in is not detected again on a second pass.
 var franceFakes = map[Category]Generator{
+	// The day-first notation this locale reads. Shared with the United Kingdom in
+	// shape and deliberately not in code: the shared table renders ISO, because
+	// that is what its own pattern reads, and a date that changed notation on the
+	// way through is the machine artefact fake mode exists to avoid.
+	CatDOB: {Capacity: 28 * 12, Make: func(i int64) string {
+		month, day, _ := strings.Cut(isoMonthDay(i), "-")
+		return day + "/" + month + "/1900"
+	}},
 	// 06 39 98 xx xx is reserved by ARCEP for use in fiction, so no number in it
 	// can ring anybody.
 	CatPhone: {Capacity: 10000, Make: func(i int64) string {

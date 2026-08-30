@@ -3,6 +3,7 @@ package pii
 import (
 	"fmt"
 	"regexp"
+	"strings"
 )
 
 // The United States set.
@@ -104,6 +105,15 @@ var (
 // reserves for fiction — so none of them can be anybody's real value, and this
 // catalogue's own checks reject them rather than masking them twice.
 var unitedStatesFakes = map[Category]Generator{
+	// Month first, which is this locale's reading of a date and nobody else's. Its
+	// own generator for exactly that reason: the shared one rendered day-first, so
+	// a US date came back as "28/12/1900" — a month of 28, which is not a date at
+	// all — and past the twelfth index it was unmistakably somebody else's
+	// notation.
+	CatDOB: {Capacity: 28 * 12, Make: func(i int64) string {
+		month, day, _ := strings.Cut(isoMonthDay(i), "-")
+		return month + "/" + day + "/1900"
+	}},
 	// Area 000 is never issued.
 	CatSSN: {Capacity: 999999, Make: func(i int64) string {
 		return fmt.Sprintf("000-%02d-%04d", i/10000%100, i%10000)

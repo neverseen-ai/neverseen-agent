@@ -341,3 +341,58 @@ func TestSharedStandInsAreUsedWhenALocaleHasNone(t *testing.T) {
 		}
 	}
 }
+
+// A date stand-in is written the way the locale that recognised it writes dates.
+//
+// The failure this holds is the one the per-locale tables were built for, which
+// the telephone number had already demonstrated: with a single shared generator, a
+// date matched by the US pattern came back day-first, so "03/14/1987" became
+// "28/12/1900" — a month of 28, which is not a date anybody writes — and an ISO
+// date came back with slashes. Fake mode exists to hand the model prose; a stand-in
+// in the wrong notation is the machine artefact it was meant to avoid.
+func TestDateStandInsFollowTheNotationOfTheirLocale(t *testing.T) {
+	// The index is past twelve deliberately. Below it, day and month are both
+	// small and every notation reads the same — which is exactly how a stand-in in
+	// the wrong order goes unnoticed.
+	const index = 336
+
+	for _, tc := range []struct {
+		locale string
+		want   string
+	}{
+		// The locale-independent pattern is the ISO one, so its stand-in is ISO.
+		{"", "1900-12-28"},
+		{"fr", "28/12/1900"},
+		{"gb", "28/12/1900"},
+		{"us", "12/28/1900"},
+	} {
+		name := tc.locale
+		if name == "" {
+			name = "locale-independent"
+		}
+		t.Run(name, func(t *testing.T) {
+			got, ok := FakeValue(CatDOB, tc.locale, index)
+			if !ok {
+				t.Fatalf("no stand-in for a date recognised by %q", tc.locale)
+			}
+			if got != tc.want {
+				t.Errorf("a date recognised by %q stands in as %q, want %q — a notation "+
+					"this locale does not write is a value the model reads as machine output",
+					tc.locale, got, tc.want)
+			}
+		})
+	}
+
+	// Every rendering of one index is the same day, so two locales loaded at once
+	// cannot mint two different stand-ins for one original.
+	for _, locale := range append([]string{""}, LocaleCodes()...) {
+		got, ok := FakeValue(CatDOB, locale, index)
+		if !ok {
+			t.Fatalf("no stand-in for %q", locale)
+		}
+		if !strings.Contains(got, "12") || !strings.Contains(got, "28") {
+			t.Errorf("index %d renders as %q for %q, which is not the same day as the others",
+				index, got, locale)
+		}
+	}
+}

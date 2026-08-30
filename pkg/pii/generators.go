@@ -142,11 +142,18 @@ var fakeGenerators = map[Category]Generator{
 		return fmt.Sprintf("FR00%023d", i)
 	}},
 
-	// A date in a fixed fictional decade. Any date belongs to somebody, so what
+	// A date in a fixed fictional year. Any date belongs to somebody, so what
 	// makes this safe is that it is not the one the caller wrote.
+	//
+	// ISO, because that is the notation the pattern in this table's own set reads:
+	// the shared generators serve the locale-independent patterns, and the two
+	// day-first locales and the month-first one each carry their own. Written
+	// day-first here, as it was, a date matched by the US pattern came back as
+	// "28/12/1900" — a month of 28, not a date anybody writes — and an ISO date
+	// changed notation on the way through. It is the failure the per-locale tables
+	// exist to prevent, which the telephone number had already demonstrated.
 	CatDOB: {Capacity: 28 * 12, Make: func(i int64) string {
-		i--
-		return fmt.Sprintf("%02d/%02d/1900", i%28+1, i/28+1)
+		return "1900-" + isoMonthDay(i)
 	}},
 
 	// Twenty-four hex characters opening on a run of zeroes, which a real
@@ -176,4 +183,17 @@ func luhnCheckDigit(body string) int {
 // it completes is guaranteed to fail its checksum.
 func invalidCheckDigit(correct int) string {
 	return fmt.Sprint((correct + 1) % 10)
+}
+
+// isoMonthDay is the month and day a DOB stand-in carries, as "MM-DD".
+//
+// One arithmetic shared by the four generators that render it, so the locales
+// cannot come to disagree about which day an index stands for — two of them
+// producing different dates for one index would be two stand-ins for one original
+// the moment a deployment loaded both.
+//
+// Twenty-eight days per month, so every index is a day that exists in every month.
+func isoMonthDay(index int64) string {
+	index--
+	return fmt.Sprintf("%02d-%02d", index/28+1, index%28+1)
 }

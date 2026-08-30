@@ -3,6 +3,7 @@ package pii
 import (
 	"fmt"
 	"regexp"
+	"strings"
 )
 
 // The United Kingdom set.
@@ -171,6 +172,14 @@ var (
 // numbers Ofcom reserves for drama, and an NHS number built to fail its own
 // check digit.
 var unitedKingdomFakes = map[Category]Generator{
+	// The day-first notation this locale reads. Shared with France in shape and
+	// deliberately not in code: the shared table renders ISO, because
+	// that is what its own pattern reads, and a date that changed notation on the
+	// way through is the machine artefact fake mode exists to avoid.
+	CatDOB: {Capacity: 28 * 12, Make: func(i int64) string {
+		month, day, _ := strings.Cut(isoMonthDay(i), "-")
+		return day + "/" + month + "/1900"
+	}},
 	// A check digit deliberately not the one the first nine produce.
 	CatNHSNumber: {Capacity: 999999999, Make: func(i int64) string {
 		body := fmt.Sprintf("%09d", i)
