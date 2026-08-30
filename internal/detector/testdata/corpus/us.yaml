@@ -123,9 +123,9 @@ cases:
   # --- locale-independent shapes stay on -----------------------------------
 
   - id: us-email-and-card-stay-on
-    text: "Billed j.doe@example.com on card 4532015112830366."
+    text: "Billed j.doe@example.us on card 4532015112830366."
     expect:
-      - {category: EMAIL, value: "j.doe@example.com"}
+      - {category: EMAIL, value: "j.doe@example.us"}
       - {category: CREDIT_CARD, value: "4532015112830366"}
 
   # === Precision: none of this may be flagged ===

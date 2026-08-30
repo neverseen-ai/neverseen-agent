@@ -159,7 +159,7 @@ func TestAuditReportsWhatWasMaskedAndRestored(t *testing.T) {
 	up := newUpstream(t, echoJSON)
 	agent, console := newAuditingAgent(t, up, []string{"fr"})
 
-	const email = "pierre.paul@example.com"
+	const email = "pierre.paul@example.fr"
 	body := fmt.Sprintf(`{"prompt":%q}`, "write to "+email+", that is "+email)
 	reply := post(t, agent, "/anthropic/v1/messages", "audit", body)
 	if reply.status != http.StatusOK {
@@ -224,7 +224,7 @@ func TestAuditReportsAValueRestoredInAStream(t *testing.T) {
 	})
 	agent, console := newAuditingAgent(t, up, []string{"fr"})
 
-	const email = "pierre.paul@example.com"
+	const email = "pierre.paul@example.fr"
 	reply := post(t, agent, "/anthropic/v1/messages", "audit-stream",
 		fmt.Sprintf(`{"prompt":%q}`, "write to "+email))
 	if reply.status != http.StatusOK {
@@ -262,7 +262,7 @@ func TestWithoutAConsoleNoValueIsWritten(t *testing.T) {
 	agent := httptest.NewServer(srv.Handler())
 	t.Cleanup(agent.Close)
 
-	const email = "pierre.paul@example.com"
+	const email = "pierre.paul@example.fr"
 	post(t, agent, "/anthropic/v1/messages", "quiet", fmt.Sprintf(`{"prompt":%q}`, email))
 
 	if out := logged.String(); strings.Contains(out, email) {
@@ -281,7 +281,7 @@ func TestTheConsoleIsPlainWhenItIsNotATerminal(t *testing.T) {
 	agent, console := newAuditingAgent(t, up, []string{"fr"})
 
 	post(t, agent, "/anthropic/v1/messages", "plain",
-		`{"prompt":"write to pierre.paul@example.com"}`)
+		`{"prompt":"write to pierre.paul@example.fr"}`)
 
 	if got := console.String(); strings.Contains(got, "\033[") {
 		t.Errorf("the console wrote escape sequences to a buffer:\n%q", got)
@@ -296,8 +296,8 @@ func TestTheConsolePaintsATerminal(t *testing.T) {
 	a := &auditor{w: io.Discard, colour: true}
 
 	masked := a.line(ansiYellow, "MASK",
-		a.paint(ansiBlue, "pierre.paul@example.com"), a.paint(ansiRed, "[EMAIL_1]"))
-	if !strings.Contains(masked, ansiBlue+"pierre.paul@example.com") {
+		a.paint(ansiBlue, "pierre.paul@example.fr"), a.paint(ansiRed, "[EMAIL_1]"))
+	if !strings.Contains(masked, ansiBlue+"pierre.paul@example.fr") {
 		t.Errorf("the value in clear is not marked as one: %q", masked)
 	}
 	if !strings.Contains(masked, ansiRed+"[EMAIL_1]") {
@@ -307,9 +307,9 @@ func TestTheConsolePaintsATerminal(t *testing.T) {
 	// The way back, in the same two colours: the replacement red and the value blue,
 	// whichever side of the exchange they are on.
 	restored := a.line(ansiGreen, "UNMASK",
-		a.paint(ansiRed, "[EMAIL_1]"), a.paint(ansiBlue, "pierre.paul@example.com"))
+		a.paint(ansiRed, "[EMAIL_1]"), a.paint(ansiBlue, "pierre.paul@example.fr"))
 	if !strings.Contains(restored, ansiRed+"[EMAIL_1]") ||
-		!strings.Contains(restored, ansiBlue+"pierre.paul@example.com") {
+		!strings.Contains(restored, ansiBlue+"pierre.paul@example.fr") {
 		t.Errorf("the two lines disagree about which half is a value: %q", restored)
 	}
 }
@@ -405,7 +405,7 @@ func TestTheConsoleCarriesNoBody(t *testing.T) {
 	up := newUpstream(t, echoJSON)
 	agent, console := newAuditingAgent(t, up, []string{"fr"})
 
-	const email = "pierre.paul@example.com"
+	const email = "pierre.paul@example.fr"
 	const missed = "matricule ZZ-4471"
 	post(t, agent, "/anthropic/v1/messages", "bodies",
 		fmt.Sprintf(`{"prompt":"write to %s about %s"}`, email, missed))
@@ -436,7 +436,7 @@ func TestATraceHoldsBothBodies(t *testing.T) {
 	up := newUpstream(t, echoJSON)
 	agent, console, dir := newTracingAgent(t, up, []string{"fr"})
 
-	const email = "pierre.paul@example.com"
+	const email = "pierre.paul@example.fr"
 	const missed = "matricule ZZ-4471"
 	post(t, agent, "/anthropic/v1/messages", "trace",
 		fmt.Sprintf(`{"prompt":"write to %s about %s"}`, email, missed))
@@ -488,7 +488,7 @@ func TestATraceHoldsALongBodyWhole(t *testing.T) {
 	const needle = "matricule ZZ-4471"
 	filler := strings.Repeat("x", 64*1024)
 	post(t, agent, "/anthropic/v1/messages", "long",
-		fmt.Sprintf(`{"prompt":"%s %s write to pierre.paul@example.com"}`, filler, needle))
+		fmt.Sprintf(`{"prompt":"%s %s write to pierre.paul@example.fr"}`, filler, needle))
 
 	trace := traceFiles(t, dir)[0]
 	if !strings.Contains(trace, filler) {
@@ -507,13 +507,13 @@ func TestATraceIndentsAJSONBody(t *testing.T) {
 	agent, _, dir := newTracingAgent(t, up, []string{"fr"})
 
 	post(t, agent, "/anthropic/v1/messages", "indent",
-		`{"model":"claude","prompt":"write to pierre.paul@example.com about ZZ-4471"}`)
+		`{"model":"claude","prompt":"write to pierre.paul@example.fr about ZZ-4471"}`)
 
 	trace := traceFiles(t, dir)[0]
 	if !strings.Contains(trace, "\n  \"model\": \"claude\"") {
 		t.Errorf("the body was not indented:\n%s", trace)
 	}
-	if !strings.Contains(trace, "pierre.paul@example.com") || strings.Count(trace, "ZZ-4471") < 2 {
+	if !strings.Contains(trace, "pierre.paul@example.fr") || strings.Count(trace, "ZZ-4471") < 2 {
 		t.Errorf("indenting lost a value that was sent:\n%s", trace)
 	}
 }
@@ -524,7 +524,7 @@ func TestATraceLeavesANonJSONBodyAsItArrived(t *testing.T) {
 	up := newUpstream(t, echoJSON)
 	agent, _, dir := newTracingAgent(t, up, []string{"fr"})
 
-	const body = "écris à pierre.paul@example.com, {ceci n'est pas du JSON"
+	const body = "écris à pierre.paul@example.fr, {ceci n'est pas du JSON"
 	post(t, agent, "/anthropic/v1/messages", "flat", body)
 
 	if trace := traceFiles(t, dir)[0]; !strings.Contains(trace, body) {
@@ -539,7 +539,7 @@ func TestATraceReportsTheSizesSent(t *testing.T) {
 	up := newUpstream(t, echoJSON)
 	agent, _, dir := newTracingAgent(t, up, []string{"fr"})
 
-	body := `{"model":"claude","prompt":"write to pierre.paul@example.com"}`
+	body := `{"model":"claude","prompt":"write to pierre.paul@example.fr"}`
 	post(t, agent, "/anthropic/v1/messages", "size", body)
 
 	trace := traceFiles(t, dir)[0]
@@ -596,14 +596,14 @@ func TestTracingWithoutAConsole(t *testing.T) {
 	t.Cleanup(agent.Close)
 
 	post(t, agent, "/anthropic/v1/messages", "quiet",
-		`{"prompt":"write to pierre.paul@example.com"}`)
+		`{"prompt":"write to pierre.paul@example.fr"}`)
 
 	trace := traceFiles(t, dir)[0]
-	if !strings.Contains(trace, "pierre.paul@example.com") {
+	if !strings.Contains(trace, "pierre.paul@example.fr") {
 		t.Errorf("nothing was recorded without a console:\n%s", trace)
 	}
 	// The MASK line is in the file, because the file is the only record of this run.
-	if !strings.Contains(trace, "MASK pierre.paul@example.com TO ") {
+	if !strings.Contains(trace, "MASK pierre.paul@example.fr TO ") {
 		t.Errorf("the trace does not record the transformation:\n%s", trace)
 	}
 }
@@ -614,7 +614,7 @@ func TestATraceIsPrivate(t *testing.T) {
 	up := newUpstream(t, echoJSON)
 	agent, _, dir := newTracingAgent(t, up, []string{"fr"})
 
-	post(t, agent, "/anthropic/v1/messages", "perm", `{"prompt":"pierre.paul@example.com"}`)
+	post(t, agent, "/anthropic/v1/messages", "perm", `{"prompt":"pierre.paul@example.fr"}`)
 
 	if info, err := os.Stat(dir); err != nil {
 		t.Fatal(err)
@@ -640,7 +640,7 @@ func TestASessionCannotEscapeTheTraceDirectory(t *testing.T) {
 	agent, _, dir := newTracingAgent(t, up, []string{"fr"})
 
 	post(t, agent, "/anthropic/v1/messages", "../../escaped",
-		`{"prompt":"pierre.paul@example.com"}`)
+		`{"prompt":"pierre.paul@example.fr"}`)
 
 	names, err := filepath.Glob(filepath.Join(dir, "*.txt"))
 	if err != nil {

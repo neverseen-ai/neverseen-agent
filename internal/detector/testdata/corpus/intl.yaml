@@ -123,19 +123,19 @@ cases:
   # operator who left it ticked believed their addresses were masked.
 
   - id: intl-ipv6-full
-    text: "The host 2001:0db8:85a3:0000:0000:8a2e:0370:7334 stopped answering."
+    text: "The host fd00:1234:5678:0000:0000:8a2e:0370:7334 stopped answering."
     expect:
-      - {category: IPV6_ADDRESS, value: "2001:0db8:85a3:0000:0000:8a2e:0370:7334"}
+      - {category: IPV6_ADDRESS, value: "fd00:1234:5678:0000:0000:8a2e:0370:7334"}
 
   - id: intl-ipv6-compressed
-    text: "Route traffic to 2001:db8::1 for now."
+    text: "Route traffic to fd00:1234::1 for now."
     expect:
-      - {category: IPV6_ADDRESS, value: "2001:db8::1"}
+      - {category: IPV6_ADDRESS, value: "fd00:1234::1"}
 
   - id: intl-ipv6-compressed-middle
-    text: "Peer 2001:db8:85a3::8a2e:370:7334 is up."
+    text: "Peer fd00:1234:5678::8a2e:370:7334 is up."
     expect:
-      - {category: IPV6_ADDRESS, value: "2001:db8:85a3::8a2e:370:7334"}
+      - {category: IPV6_ADDRESS, value: "fd00:1234:5678::8a2e:370:7334"}
 
   # A MAC address is six groups and carries no "::", so neither branch can reach
   # it. It is the nearest shape to an address that is not one.
@@ -159,3 +159,56 @@ cases:
   - id: intl-prec-ratio-and-range
     text: "Mixing ratio 1:2, port range 10:20:30 in the config."
     expect: []
+
+  # --- ranges that can name nobody ------------------------------------------
+  #
+  # The catalogue declining to mask what it hands out. fakeGenerators mints
+  # stand-ins from RFC 5737, RFC 3849 and RFC 2606 precisely because those ranges
+  # are never routed and can never be registered — and until this rule existed the
+  # detector claimed them back, so a documentation address in a comment was masked
+  # and replaced by another address from the same block.
+  #
+  # Measured over hand-written application code, a third of every finding was of
+  # this kind, and IP_ADDRESS — the largest category — was majority reserved.
+
+  - id: intl-prec-loopback
+    text: "The agent listens on 127.0.0.1:8787 by default."
+    expect: []
+
+  - id: intl-prec-unspecified
+    text: "Binding 0.0.0.0:8787 serves every interface."
+    expect: []
+
+  - id: intl-prec-documentation-block
+    text: "Point the client at 192.0.2.14 in the example above."
+    expect: []
+
+  - id: intl-prec-documentation-block-v6
+    text: "The example uses 2001:db8:85a3::8a2e:370:7334 throughout."
+    expect: []
+
+  - id: intl-prec-reserved-email-domain
+    text: "Write to support@example.com for the documented flow."
+    expect: []
+
+  - id: intl-prec-reserved-email-tld
+    text: "The fixture uses admin@service.test and admin@host.invalid."
+    expect: []
+
+  # A private address is deliberately still masked. An internal host in a pasted
+  # configuration is a topology, and a topology is exactly what should not reach a
+  # model — localAddresses reports private addresses as this agent's own for the
+  # same reason, and calling them noise here while reporting them there would be
+  # two answers to one question.
+  - id: intl-private-address-is-still-masked
+    text: "The database sits at 10.4.2.17 behind the VPN."
+    expect:
+      - {category: IP_ADDRESS, value: "10.4.2.17"}
+
+  # A registrable domain that merely looks like documentation. The rule is what
+  # the standards reserve and no more: example.fr can be bought, so an address
+  # there might belong to somebody.
+  - id: intl-registrable-example-domain-is-masked
+    text: "Contact claire.moreau@example.fr about the invoice."
+    expect:
+      - {category: EMAIL, value: "claire.moreau@example.fr"}

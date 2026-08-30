@@ -79,9 +79,13 @@ func TestSampleShowsEveryNotation(t *testing.T) {
 				"507f1f77bcf86cd799439011", pii.CatMongoID,
 				// Both families, because the category that held them was labelled
 				// "IP address" while only one of them was ever read.
-				"2001:0db8:85a3:0000:0000:8a2e:0370:7334", pii.CatIPv6,
-				"2001:db8::1", pii.CatIPv6,
-				"2001:db8:85a3::8a2e:370:7334", pii.CatIPv6,
+				// Unique local addresses, the IPv6 analogue of RFC 1918. The
+				// documentation block would have been the obvious choice and is
+				// exactly what IPAddressCheck now refuses: a sample cannot
+				// demonstrate detection with a range the detector declines.
+				"fd00:1234:5678:0000:0000:8a2e:0370:7334", pii.CatIPv6,
+				"fd00:1234::1", pii.CatIPv6,
+				"fd00:1234:5678::8a2e:370:7334", pii.CatIPv6,
 				"1987-03-14", pii.CatDOB,
 				"1987/03/14", pii.CatDOB,
 			),

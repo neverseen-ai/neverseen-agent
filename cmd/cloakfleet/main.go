@@ -300,8 +300,8 @@ func printRevealBanner(w io.Writer, agent *proxy.Agent, reveal bool) {
 	if reveal {
 		fmt.Fprint(w, "\nEvery value this agent replaces on the way out and restores on the way back\n")
 		fmt.Fprint(w, "is printed below, in clear:\n\n")
-		fmt.Fprint(w, "  MASK pierre.paul@example.com TO [EMAIL_1]\n")
-		fmt.Fprint(w, "  UNMASK [EMAIL_1] TO pierre.paul@example.com\n\n")
+		fmt.Fprint(w, "  MASK pierre.paul@example.fr TO [EMAIL_1]\n")
+		fmt.Fprint(w, "  UNMASK [EMAIL_1] TO pierre.paul@example.fr\n\n")
 	}
 
 	// Said either way. The bodies are what reveal a value the catalogue never

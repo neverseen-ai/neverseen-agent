@@ -536,7 +536,7 @@ func TestTheMaskedBodyKeepsItsKeyOrder(t *testing.T) {
 	// before "max_tokens", "system" before "messages", and inside the message
 	// "role" after "content".
 	const body = `{"model":"claude-opus-5","max_tokens":1024,` +
-		`"system":[{"type":"text","text":"écris à pierre.paul@example.com"}],` +
+		`"system":[{"type":"text","text":"écris à pierre.paul@example.fr"}],` +
 		`"messages":[{"content":"tél 06 12 34 56 78","role":"user"}]}`
 
 	got, ok := mapJSONStrings([]byte(body), func(s string) string { return s })

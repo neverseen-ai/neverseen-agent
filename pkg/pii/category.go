@@ -150,7 +150,7 @@ type CategoryInfo struct {
 // categoryRegistry is the whole catalogue, minus the regexes.
 var categoryRegistry = map[Category]CategoryInfo{
 	// --- locale-independent identifiers -------------------------------------
-	CatEmail:      {Prefix: "EMAIL", Score: 95, Group: GroupPersonal, Label: "Email address"},
+	CatEmail:      {Prefix: "EMAIL", Score: 95, Verify: DocumentationEmailCheck, Group: GroupPersonal, Label: "Email address"},
 	CatCreditCard: {Prefix: "CARD", Score: 95, Verify: LuhnCheck, Group: GroupBanking, Label: "Payment card"},
 	CatIBAN:       {Prefix: "IBAN", Score: 95, Verify: IBANCheck, Group: GroupBanking, Label: "Bank account (IBAN)"},
 	// Two categories rather than one, and the split is what makes fake mode

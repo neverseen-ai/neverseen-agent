@@ -469,9 +469,100 @@ var englishMonths = map[string]string{
 // the category: whatever a pattern claims, a value that does not parse is not an
 // address and is dropped outright rather than scored down.
 func IPAddressCheck(value string) bool {
-	_, err := netip.ParseAddr(value)
-	return err == nil
+	ip, err := netip.ParseAddr(value)
+	if err != nil {
+		return false
+	}
+	return !reservedAddress(ip)
 }
+
+// reservedAddress reports whether an address belongs to a range that cannot name
+// anybody's machine.
+//
+// This is the catalogue declining to mask what it already hands out. The stand-in
+// generators draw from RFC 5737 and RFC 3849 precisely because those blocks are
+// "never routed", and until now the detector claimed them back: `192.0.2.14` in a
+// comment was masked, and its replacement was another address from the same block.
+// Measured over hand-written application code, a third of everything the catalogue
+// found was of this kind.
+//
+// It is not a guess about likelihood. Every machine has 127.0.0.1, so it
+// distinguishes none of them; a link-local address names a network whose DHCP
+// failed; the documentation blocks belong to nobody by standard. That is the same
+// argument localAddresses makes when it refuses to report loopback and link-local
+// as this agent's own addresses.
+//
+// **Private ranges are deliberately not here.** 10.4.2.17 in a configuration
+// somebody pasted is an internal host, and an internal topology is exactly what
+// should not reach a model — localAddresses keeps private addresses for the same
+// reason, and calling them noise here while reporting them there would be two
+// answers to one question.
+func reservedAddress(ip netip.Addr) bool {
+	switch {
+	case ip.IsLoopback(), ip.IsUnspecified(), ip.IsMulticast():
+		return true
+	case ip.IsLinkLocalUnicast(), ip.IsLinkLocalMulticast():
+		return true
+	}
+	for _, block := range documentationBlocks {
+		if block.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// documentationBlocks are the ranges the standards set aside for examples,
+// documentation and benchmarking. None of them is routed on the internet.
+//
+// The first three are the blocks fakeGenerators draws IPv4 stand-ins from, and the
+// fourth is where the IPv6 ones come from — which is the whole point: a value this
+// catalogue would hand out as an unattributable replacement cannot also be
+// something worth replacing.
+var documentationBlocks = []netip.Prefix{
+	netip.MustParsePrefix("192.0.2.0/24"),    // RFC 5737 TEST-NET-1
+	netip.MustParsePrefix("198.51.100.0/24"), // RFC 5737 TEST-NET-2
+	netip.MustParsePrefix("203.0.113.0/24"),  // RFC 5737 TEST-NET-3
+	netip.MustParsePrefix("2001:db8::/32"),   // RFC 3849
+	netip.MustParsePrefix("192.0.0.0/24"),    // RFC 6890 IETF protocol assignments
+	netip.MustParsePrefix("198.18.0.0/15"),   // RFC 2544 benchmarking
+	netip.MustParsePrefix("100::/64"),        // RFC 6666 discard-only
+}
+
+// DocumentationEmailCheck rejects an address at a domain that can never be
+// registered, and therefore can never reach anybody.
+//
+// The same rule as reservedAddress and the same evidence: fakeGenerators mints
+// stand-ins at example.org because RFC 2606 reserves it, and the detector was
+// claiming those addresses back. An address at one of these is documentation
+// wherever it appears — in code, in prose, in a support ticket.
+//
+// Strictly what the standards reserve, and no more. "example.fr" is a real
+// registrable domain and stays masked even though this project's own fixtures use
+// it: a rule that read "anything beginning example." would be a judgement dressed
+// as a standard, and the value it would stop masking might belong to somebody.
+func DocumentationEmailCheck(value string) bool {
+	at := strings.LastIndexByte(value, '@')
+	if at < 0 {
+		return true
+	}
+	domain := strings.ToLower(value[at+1:])
+
+	switch domain {
+	case "example.com", "example.net", "example.org": // RFC 2606 §3
+		return false
+	}
+	for _, tld := range documentationTLDs {
+		if strings.HasSuffix(domain, tld) {
+			return false
+		}
+	}
+	return true
+}
+
+// documentationTLDs are the top-level domains RFC 2606 and RFC 6761 reserve. None
+// of them resolves, so no address under one can be delivered to.
+var documentationTLDs = []string{".test", ".example", ".invalid", ".localhost"}
 
 // GenericSecretCheck rejects a value that is the source code around a secret
 // rather than the secret.

@@ -141,7 +141,7 @@ func TestTheBannerPromisesLinesOnlyWithA(t *testing.T) {
 	printRevealBanner(&out, agent, false)
 	got := out.String()
 
-	if strings.Contains(got, "MASK pierre.paul@example.com") {
+	if strings.Contains(got, "MASK pierre.paul@example.fr") {
 		t.Errorf("the banner promises console lines that -v alone does not print:\n%s", got)
 	}
 	if !strings.Contains(got, "Both bodies of every exchange are written") {
