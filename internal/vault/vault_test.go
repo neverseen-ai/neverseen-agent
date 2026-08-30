@@ -186,8 +186,15 @@ func TestSessionsExpire(t *testing.T) {
 	if got := v.Load("s1"); len(got) != 0 {
 		t.Errorf("an expired session was still readable: %v", got)
 	}
-	if got := store.Sessions(); got != 0 {
-		t.Errorf("the store reports %d live sessions, want 0", got)
+
+	// Dropped rather than merely reported empty: the originals are what the
+	// lifetime is about, and a session kept in the map with an expiry in the past
+	// is the mapping still in memory.
+	store.mu.Lock()
+	_, stillThere := store.sessions["s1"]
+	store.mu.Unlock()
+	if stillThere {
+		t.Error("an expired session was read as empty but kept in the store")
 	}
 }
 
@@ -204,13 +211,18 @@ func TestWritingPurgesExpiredSessions(t *testing.T) {
 	store.Merge("new", map[string]string{"[EMAIL_2]": "y"}, time.Hour)
 
 	store.mu.Lock()
-	_, stillThere := store.sessions["old"]
+	_, oldThere := store.sessions["old"]
+	_, newThere := store.sessions["new"]
+	live := len(store.sessions)
 	store.mu.Unlock()
-	if stillThere {
+
+	if oldThere {
 		t.Error("an expired session survived a write")
 	}
-	if got := store.Sessions(); got != 1 {
-		t.Errorf("the store reports %d live sessions, want 1", got)
+	// The other half, because a purge that took everything with it would pass the
+	// assertion above: the session the write was for has to be there afterwards.
+	if !newThere || live != 1 {
+		t.Errorf("the store holds %d session(s) after the write, want only \"new\"", live)
 	}
 }
 

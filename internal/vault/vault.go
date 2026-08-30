@@ -245,18 +245,3 @@ func (m *Memory) Forget() {
 	// released to the collector rather than kept in the buckets of the old one.
 	m.sessions = make(map[string]*memorySession)
 }
-
-// Sessions reports how many live sessions the store holds, for the agent's own
-// status line.
-func (m *Memory) Sessions() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	now, live := time.Now(), 0
-	for _, s := range m.sessions {
-		if now.Before(s.expires) {
-			live++
-		}
-	}
-	return live
-}
