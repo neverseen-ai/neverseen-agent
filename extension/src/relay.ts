@@ -1,3 +1,5 @@
+import { acceptAsk } from './bridge.ts';
+import { noteMessage } from './guidance.ts';
 import {
   type PageMessage,
   type RelayMessage,
@@ -5,6 +7,7 @@ import {
   RELAY_SOURCE,
   type Reply,
 } from './protocol.ts';
+import { claudeAi } from './site/claude.ts';
 
 // The content script in the isolated world: the only hop between the page's own
 // globals and the service worker.
@@ -15,9 +18,43 @@ import {
 // one has chrome.runtime and no reach into the page's globals. So an ask crosses by
 // postMessage here and by extension messaging there.
 //
-// It also owns what the person sees when a send is blocked. The page's world could
-// write to the DOM too, but the banner is the extension talking about itself, and
-// keeping it out of the page's world keeps it out of reach of the site's own script.
+// # What it does not take from the page
+//
+// It is also the trust boundary, and that is why it decides two things the page used
+// to: **which session** an ask acts on, and **what a banner says**.
+//
+// Neither can be delegated to the page's world, because that world is the page: any
+// script the site loads can post what the interceptor posts and read the answer off
+// the same channel. Left to the page, the session field made this an oracle — a
+// script could name the agent's anonymous "default" session, which carries every
+// value masked for every tool that sends no session header, and read it back one
+// guessable token at a time. See bridge.ts for what remains and what does not.
+
+/**
+ * pageSession is the conversation this tab is showing, decided here and nowhere else.
+ *
+ * Recomputed per ask rather than captured once, because the site is a single-page app
+ * and moves between conversations without a reload.
+ */
+function pageSession(): string {
+  return claudeAi.sessionForPage(new URL(location.href)) ?? fallbackSession;
+}
+
+/**
+ * fallbackSession is for an address that names no conversation — a new chat, before
+ * the site has given it an id.
+ *
+ * Random, and minted once per page load, for two reasons. Pooled under a fixed name,
+ * every new chat in the browser would share one mapping and each could expand the
+ * others'. Guessable, it would be the "default" hole again in a smaller costume.
+ *
+ * TODO: a known ceiling. A value masked before the site rewrites the address to the
+ * conversation's own id belongs to this session, so a later turn asking under the real
+ * id will not expand it — the replacement shows as a bracket token rather than as the
+ * wrong value. Following the site's own navigation would fix it and means listening to
+ * history changes, which is more machinery than the case has earned.
+ */
+const fallbackSession = 'claude:page-' + crypto.randomUUID();
 
 window.addEventListener('message', (event: MessageEvent) => {
   // Same-window posts only. A message from an iframe or another origin arriving here
@@ -28,23 +65,50 @@ window.addEventListener('message', (event: MessageEvent) => {
   const message = event.data as PageMessage | undefined;
   if (!message || message.source !== PAGE_SOURCE) return;
 
-  if (message.ask.kind === 'blocked') {
-    showBanner(message.ask.message);
+  // Validated and rebuilt field by field, with the session stamped on here. A cast
+  // would let a `session` the page added ride along, which is the field this whole
+  // arrangement exists to take away from it.
+  const ask = acceptAsk(message.ask, pageSession());
+  if (!ask) {
+    // A message shaped like an ask but not one. Answered rather than dropped when it
+    // carries an id, because the interceptor is waiting on it and a silent drop is a
+    // send that never happens with nothing said about why.
+    if (typeof message.id === 'number' && message.id > 0) {
+      post(message.id, { ok: false, reason: 'refused', message: 'that is not a request this accepts' });
+    }
     return;
   }
 
-  chrome.runtime.sendMessage(message.ask, (reply: Reply<unknown> | undefined) => {
-    // A worker that was torn down mid-ask, or an extension that has just been
-    // reloaded. Reported as unreachable rather than swallowed: the interceptor is
-    // waiting on this to decide whether to send, and a silent drop is a send that
-    // never happens with nothing said about why.
-    const answered: Reply<unknown> = reply ?? {
+  if (ask.kind === 'blocked') {
+    // The relay's own words, chosen from the situation the note names. A sentence
+    // supplied by the page would be arbitrary text behind this extension's name.
+    showBanner(noteMessage(ask.note, ask.reason));
+    return;
+  }
+
+  try {
+    chrome.runtime.sendMessage(ask, (reply: Reply<unknown> | undefined) => {
+      // A worker that was torn down mid-ask. Reported as unreachable rather than
+      // swallowed: the interceptor is waiting on this to decide whether to send.
+      const answered: Reply<unknown> = reply ?? {
+        ok: false,
+        reason: 'unreachable',
+        message: chrome.runtime.lastError?.message ?? 'the extension did not answer',
+      };
+      post(message.id, answered);
+    });
+  } catch (err) {
+    // sendMessage throws synchronously when the extension context has been
+    // invalidated — an update or a reload with this tab still open. The callback
+    // above never runs in that case, so without this the ask is dropped and the send
+    // hangs for ever: neither masked nor refused, which is the one outcome this
+    // design must not have.
+    post(message.id, {
       ok: false,
       reason: 'unreachable',
-      message: chrome.runtime.lastError?.message ?? 'the extension did not answer',
-    };
-    post(message.id, answered);
-  });
+      message: err instanceof Error ? err.message : 'the extension was reloaded',
+    });
+  }
 });
 
 function post(id: number, reply: Reply<unknown>): void {
@@ -53,7 +117,7 @@ function post(id: number, reply: Reply<unknown>): void {
 }
 
 /**
- * showBanner says why a send did not happen.
+ * showBanner says why something did not happen.
  *
  * A send blocked and nothing said is the worst outcome this extension has: the person
  * retypes their message, or believes the site is broken, and either way the reason —

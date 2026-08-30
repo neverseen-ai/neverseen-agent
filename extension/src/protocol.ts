@@ -32,15 +32,29 @@ export type Reason =
   /** The agent answered, and said no. Its own words come with it. */
   | 'refused';
 
-export type MaskAsk = {
+/**
+ * A PageAsk is what the page's world may ask for, and it deliberately cannot name a
+ * session.
+ *
+ * That absence is the security boundary. The interceptor runs in the page's own
+ * world, which means everything it can do, a script the site loads can do too: post
+ * the same message, with the same tag, and read the answer. Nothing in that world can
+ * be authenticated — it *is* the page.
+ *
+ * So the page is not asked to be trustworthy about the one field that decides whose
+ * mapping is read. It says what it wants done; the relay, in the isolated world, says
+ * which conversation it is done for, from its own `location`. A page that named the
+ * session could name the agent's anonymous "default" one — the session every tool
+ * that sends no header shares, which on a workstation is every value the agent has
+ * masked since it started — and read it back one guessable token at a time.
+ */
+export type PageMaskAsk = {
   kind: 'mask';
-  session: string;
   texts: string[];
 };
 
-export type UnmaskAsk = {
+export type PageUnmaskAsk = {
   kind: 'unmask';
-  session: string;
   text: string;
   tail: string;
   final: boolean;
@@ -48,14 +62,46 @@ export type UnmaskAsk = {
 
 export type HealthAsk = { kind: 'health' };
 
-/** Told rather than asked: the page world blocked a send and the page must say so. */
+/**
+ * Told rather than asked: the page's world blocked something and the page must say
+ * so.
+ *
+ * It carries which situation it was, never the sentence. The banner is branded and
+ * the relay writes its own words for it, because a note carrying arbitrary text is a
+ * way for a script on the page to put whatever it likes behind this extension's name.
+ */
 export type BlockedNote = {
   kind: 'blocked';
   reason: Reason;
-  message: string;
+  note: Note;
 };
 
+/** Note is the closed set of situations a banner may report. */
+export type Note = 'send' | 'restore' | 'transport';
+
+export type PageAsk = PageMaskAsk | PageUnmaskAsk | HealthAsk | BlockedNote;
+
+/** MaskAsk and UnmaskAsk are a PageAsk with the session the relay decided on. */
+export type MaskAsk = PageMaskAsk & { session: string };
+export type UnmaskAsk = PageUnmaskAsk & { session: string };
+
 export type Ask = MaskAsk | UnmaskAsk | HealthAsk | BlockedNote;
+
+/**
+ * SESSION_NAMESPACES are the prefixes a session named by this extension may begin
+ * with — one per site adapter.
+ *
+ * Checked in the service worker as well as decided in the relay, and that duplication
+ * is deliberate: it is the last thing between a bug in the relay and the agent's own
+ * sessions. "default" carries no colon and matches none of these, which is the one
+ * name that must never be reachable from a browser.
+ */
+export const SESSION_NAMESPACES = ['claude:'] as const;
+
+/** namesAWebSession reports whether a session is one this extension may ask about. */
+export function namesAWebSession(session: string): boolean {
+  return SESSION_NAMESPACES.some((prefix) => session.startsWith(prefix) && session.length > prefix.length);
+}
 
 export type MaskAnswer = { texts: string[]; masked: number };
 export type UnmaskAnswer = { expanded: string; tail: string };
@@ -102,7 +148,7 @@ export type Reply<T> =
 export type PageMessage = {
   source: typeof PAGE_SOURCE;
   id: number;
-  ask: Ask;
+  ask: PageAsk;
 };
 
 /** The relay's answer, on its way back. */

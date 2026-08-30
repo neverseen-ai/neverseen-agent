@@ -1,4 +1,4 @@
-import { type Health, levelOf, type Reason } from './protocol.ts';
+import { type Health, levelOf, type Note, type Reason } from './protocol.ts';
 
 // What the options page says, decided apart from the page that draws it.
 //
@@ -138,7 +138,7 @@ export function diagnose(
  * and the person fixes it in one command. A banner that said "an error occurred"
  * would have them retyping their message or blaming the site.
  */
-export function blockedMessage(reason: Reason, detail: string): string {
+export function blockedMessage(reason: Reason, detail = ''): string {
   switch (reason) {
     case 'unreachable':
       return (
@@ -156,8 +156,41 @@ export function blockedMessage(reason: Reason, detail: string): string {
         'extension’s key. Run `cloakfleet key` and paste the current one into its options.'
       );
     default:
-      // The agent's own words, which say what it refused and why.
-      return 'Cloakfleet: your message was not sent — ' + detail;
+      // The agent's own words when there are any. There are none when this is
+      // rendering a banner: the relay writes those, from the situation alone, because
+      // a sentence supplied by the page is arbitrary text behind this extension's
+      // name. The options page is where the agent's answer can be read in full.
+      return detail
+        ? 'Cloakfleet: your message was not sent — ' + detail
+        : 'Cloakfleet: your message was not sent, because the agent refused to mask it. ' +
+          'The extension’s options page says what it answered.';
+  }
+}
+
+/**
+ * noteMessage is what a banner says, chosen from a closed set of situations.
+ *
+ * The set is closed on purpose. A note crossing from the page's world carries which
+ * situation it was and never the sentence, so that a script on the site cannot put
+ * words of its own behind this extension's name — see bridge.ts.
+ */
+export function noteMessage(note: Note, reason: Reason): string {
+  switch (note) {
+    case 'restore':
+      // Deliberately not a blocked send: nothing was lost and nothing leaked. Saying
+      // "your message was not sent" here would send somebody looking for a message
+      // that did in fact arrive.
+      return (
+        'Cloakfleet: the answer below could not be turned back into your own values, ' +
+        'so it shows the replacements instead. Nothing was lost, and nothing left this machine.'
+      );
+    case 'transport':
+      return (
+        'Cloakfleet: this page tried to send over a transport that cannot be masked, ' +
+        'so it was blocked. Nothing left this machine in clear.'
+      );
+    default:
+      return blockedMessage(reason);
   }
 }
 

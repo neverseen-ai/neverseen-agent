@@ -1,11 +1,12 @@
 import {
-  type Ask,
   type MaskAnswer,
+  type Note,
+  type PageAsk,
   type Reason,
   type Reply,
   type UnmaskAnswer,
 } from './protocol.ts';
-import { blockedMessage } from './guidance.ts';
+import { blockedMessage, noteMessage } from './guidance.ts';
 import { restoreStream } from './restore.ts';
 import { type Site } from './site/claude.ts';
 
@@ -28,18 +29,13 @@ import { type Site } from './site/claude.ts';
 // like nothing at all.
 
 /**
- * UNMASKABLE_TRANSPORT is what the three guards say.
+ * Send is one round trip to the service worker, through the relay.
  *
- * One sentence for the three, because it is one situation: the page reached for a way
- * of talking that offers no moment at which this could mask anything, and the only
- * safe answer is to refuse.
+ * A PageAsk, which cannot name a session: this code runs in the page's own world, so
+ * anything it could say about whose mapping to read, a script the site loads could say
+ * too. The relay decides that from its own location — see bridge.ts.
  */
-const UNMASKABLE_TRANSPORT =
-  'Cloakfleet: this page tried to send over a transport that cannot be masked, so it ' +
-  'was blocked. Nothing left this machine in clear.';
-
-/** Send is one round trip to the service worker, through the relay. */
-export type Send = (ask: Ask) => Promise<Reply<unknown>>;
+export type Send = (ask: PageAsk) => Promise<Reply<unknown>>;
 
 /** Blocked is what a refusal throws, so the caller can say why. */
 export class Blocked extends Error {
@@ -89,8 +85,6 @@ export function wrapFetch(original: typeof fetch, site: Site, send: Send): typeo
 
     if (!site.isSend(url, method)) return original(input, init);
 
-    const session = site.sessionFor(url);
-
     let raw: string;
     try {
       raw = await bodyText(input, init);
@@ -99,7 +93,7 @@ export function wrapFetch(original: typeof fetch, site: Site, send: Send): typeo
       // decision the agent makes on a body it cannot decode, and for the same reason:
       // forwarding what could not be inspected is the one failure a data-loss control
       // must never have.
-      throw block(send, 'refused',
+      throw block(send, 'refused', 'send',
         'Cloakfleet: your message was not sent — its contents could not be read, so nothing could mask them.',
         err);
     }
@@ -108,7 +102,7 @@ export function wrapFetch(original: typeof fetch, site: Site, send: Send): typeo
     try {
       body = JSON.parse(raw);
     } catch (err) {
-      throw block(send, 'refused',
+      throw block(send, 'refused', 'send',
         'Cloakfleet: your message was not sent — it is not in a shape this extension knows how to mask.',
         err);
     }
@@ -118,20 +112,20 @@ export function wrapFetch(original: typeof fetch, site: Site, send: Send): typeo
     if (texts.length > 0) {
       let masked: MaskAnswer;
       try {
-        masked = await ask<MaskAnswer>(send, { kind: 'mask', session, texts });
+        masked = await ask<MaskAnswer>(send, { kind: 'mask', texts });
       } catch (err) {
         // Every way the masking can fail comes through here, and every one of them
         // blocks the send *and* says why. A rejection on its own reads to the site as
         // a network failure and to the person as a broken page — while the actual
         // cause, most often an agent that is not running, is one command away.
         const reason = err instanceof Blocked ? err.reason : 'refused';
-        throw block(send, reason, blockedMessage(reason, describe(err)), err);
+        throw block(send, reason, 'send', blockedMessage(reason, describe(err)), err);
       }
       outgoing = JSON.stringify(site.withTexts(body, masked.texts));
     }
 
     const response = await original(rebuild(input, init, outgoing));
-    return restore(response, session, site, send);
+    return restore(response, site, send);
   };
 }
 
@@ -142,7 +136,7 @@ export function wrapFetch(original: typeof fetch, site: Site, send: Send): typeo
  * outlives the turn that minted it, so an answer echoing a value from three messages
  * ago still arrives with a replacement in it.
  */
-function restore(response: Response, session: string, site: Site, send: Send): Response {
+function restore(response: Response, site: Site, send: Send): Response {
   const type = response.headers.get('Content-Type') ?? '';
   if (!type.includes('text/event-stream') || response.body === null) return response;
 
@@ -156,7 +150,6 @@ function restore(response: Response, session: string, site: Site, send: Send): R
       try {
         return await ask<UnmaskAnswer>(send, {
           kind: 'unmask',
-          session,
           text: chunk.text,
           tail: chunk.tail,
           final: chunk.final,
@@ -171,14 +164,10 @@ function restore(response: Response, session: string, site: Site, send: Send): R
         if (!told) {
           told = true;
           const reason = err instanceof Blocked ? err.reason : 'refused';
-          void send({
-            kind: 'blocked',
-            reason,
-            message:
-              'Cloakfleet: the answer below could not be turned back into your own ' +
-              'values, so it shows the replacements instead. Nothing was lost, and ' +
-              'nothing left this machine.',
-          });
+          // The situation, never the sentence: the relay writes the words, so a
+          // script on the page cannot put text of its own behind this extension's
+          // name. See bridge.ts.
+          void send({ kind: 'blocked', reason, note: 'restore' });
         }
         return { expanded: chunk.tail + chunk.text, tail: '' };
       }
@@ -196,7 +185,7 @@ function restore(response: Response, session: string, site: Site, send: Send): R
 }
 
 /** ask sends one request through the relay and unwraps the reply, throwing Blocked. */
-async function ask<T>(send: Send, request: Ask): Promise<T> {
+async function ask<T>(send: Send, request: PageAsk): Promise<T> {
   const reply = await send(request);
   if (!reply.ok) throw new Blocked(reply.reason, reply.message);
   return reply.result as T;
@@ -207,8 +196,11 @@ async function ask<T>(send: Send, request: Ask): Promise<T> {
  * Both halves, always. A rejected fetch alone reads to the site as a network failure
  * and to the person as a site that is broken — and the actual cause, an agent that is
  * not running, is a thing they can fix in one command. */
-function block(send: Send, reason: Reason, message: string, cause?: unknown): Blocked {
-  void send({ kind: 'blocked', reason, message });
+function block(send: Send, reason: Reason, note: Note, message: string, cause?: unknown): Blocked {
+  // The note says which situation it was; the relay turns that into the sentence the
+  // banner shows. `message` stays here, on the error the site sees, where it is never
+  // rendered under this extension's name.
+  void send({ kind: 'blocked', reason, note });
   const error = new Blocked(reason, message);
   if (cause !== undefined) error.cause = cause;
   return error;
@@ -272,7 +264,7 @@ function guardXHR(target: Window & typeof globalThis, site: Site, send: Send): v
 
   proto.send = function (this: XMLHttpRequest, ...args: unknown[]) {
     if (marked.has(this)) {
-      throw block(send, 'refused', UNMASKABLE_TRANSPORT);
+      throw block(send, 'refused', 'transport', noteMessage('transport', 'refused'));
     }
     return (originalSend as (...a: unknown[]) => void).apply(this, args);
   } as typeof proto.send;
@@ -288,7 +280,7 @@ function guardBeacon(target: Window & typeof globalThis, site: Site, send: Send)
   target.navigator.sendBeacon = function (url: string | URL, data?: BodyInit | null): boolean {
     try {
       if (site.carriesChat(new URL(String(url), location.href))) {
-        block(send, 'refused', UNMASKABLE_TRANSPORT);
+        block(send, 'refused', 'transport', noteMessage('transport', 'refused'));
         return false;
       }
     } catch {
@@ -308,7 +300,7 @@ function guardWebSocket(target: Window & typeof globalThis, site: Site, send: Se
   const Guarded = function (this: unknown, url: string | URL, protocols?: string | string[]) {
     try {
       if (site.carriesChat(new URL(String(url), location.href))) {
-        throw block(send, 'refused', UNMASKABLE_TRANSPORT);
+        throw block(send, 'refused', 'transport', noteMessage('transport', 'refused'));
       }
     } catch (err) {
       if (err instanceof Blocked) throw err;

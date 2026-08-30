@@ -30,14 +30,22 @@ export type Site = {
   carriesChat(url: URL): boolean;
 
   /**
-   * sessionFor names the conversation, for the X-Session-Id header.
+   * sessionForPage names the conversation a tab is showing, from the address bar.
+   *
+   * Read from the page's own location rather than from the request the page asked
+   * about, and that is a security boundary rather than a convenience: the relay calls
+   * this, in the isolated world, so the page's message never gets to say whose mapping
+   * is read. See bridge.ts.
+   *
+   * Null when the address names no conversation — a new chat, a settings page — and
+   * the caller mints something unguessable rather than pooling them under one name.
    *
    * Per conversation rather than per browser, because a session is what scopes the
    * mapping: two conversations must not read each other's values, and one
    * conversation has to keep its own across turns. /mask and /unmask for one
-   * conversation must return the same name here, or the expansion finds nothing.
+   * conversation must name the same session, or the expansion finds nothing.
    */
-  sessionFor(url: URL): string;
+  sessionForPage(url: URL): string | null;
 
   /** texts pulls out every field of the body that carries typed text, in a fixed
    * order. */
@@ -69,12 +77,19 @@ export const claudeAi: Site = {
     return url.pathname.includes('/chat_conversations/');
   },
 
-  sessionFor(url: URL): string {
-    const match = /\/chat_conversations\/([^/]+)/.exec(url.pathname);
-    // Named rather than falling back to the agent's anonymous "default" session:
-    // that one collects every value the agent has handled since it started, and two
-    // tabs sharing it is two conversations able to expand each other's tokens.
-    return 'claude:' + (match ? match[1] : 'unknown');
+  sessionForPage(url: URL): string | null {
+    // Both shapes the conversation id appears in: the address bar while somebody
+    // reads a conversation, and the API path the site fetches it under. One function
+    // for the two, so a session derived from either is the same string — otherwise
+    // masking under one and expanding under the other finds nothing.
+    const match = /\/(?:chat|chat_conversations|recents)\/([0-9a-zA-Z_-]{1,80})/.exec(url.pathname);
+    if (!match) return null;
+
+    // Namespaced, and never the agent's anonymous "default": that one collects every
+    // value the agent has handled for every tool that sends no session header, and a
+    // browser able to name it could read a terminal's traffic back one token at a
+    // time. protocol.namesAWebSession is the service worker's copy of this rule.
+    return 'claude:' + match[1];
   },
 
   texts(body: unknown): string[] {

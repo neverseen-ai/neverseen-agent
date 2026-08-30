@@ -193,6 +193,108 @@ test('a credential is tokenized and restored alongside the address', async () =>
   await page.close();
 });
 
+test('a hostile script on the page cannot read another session back', async () => {
+  // The finding this fix exists for, in a real browser.
+  //
+  // The interceptor lives in the page's own world, so any script the site loads can
+  // post exactly what it posts and read the answer off the same channel. There is no
+  // way to authenticate that world — it *is* the page. What there is a way to do is
+  // stop believing it about the one field that decides whose mapping is read.
+  //
+  // The catastrophic case is the agent's anonymous "default" session: every tool that
+  // sends no session header shares it, so on a workstation it carries every value the
+  // agent has masked since it started — a terminal's traffic included. Tokens are
+  // guessable, so naming that session was enough.
+  const page = await browser.newPage();
+  await connect(page);
+  await page.goto(`https://claude.ai/chat/${CONVERSATION}`, { waitUntil: 'load' });
+
+  // Stand in for a tool talking to the agent through the proxy: it sends no session
+  // header, so it lands in "default", exactly as Claude Code does.
+  const terminalAddress = 'bruno.terminal@example.fr';
+  const masked = await (
+    await fetch(agent.baseUrl + '/mask', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Cloakfleet-Control': agent.key,
+        'X-Session-Id': 'default',
+      },
+      body: JSON.stringify({ texts: [`terminal traffic: ${terminalAddress}`] }),
+    })
+  ).json();
+
+  const terminalToken = /\[EMAIL_\d+\]/.exec(masked.texts[0])?.[0];
+  assert.ok(terminalToken, `nothing was masked for the terminal: ${masked.texts[0]}`);
+
+  // Now the attack, from a script running on claude.ai.
+  const stolen = await page.evaluate(
+    (session, token) => window.forge({ kind: 'unmask', session, text: token, tail: '', final: true }),
+    'default',
+    terminalToken,
+  );
+
+  const back = JSON.stringify(stolen);
+  assert.ok(!back.includes(terminalAddress),
+    `a page script read the terminal's traffic back: ${back}`);
+  assert.equal(stolen.ok && stolen.result.expanded, terminalToken,
+    'the forged session was ignored, so the token belongs to no mapping the page may see');
+
+  // And the same for another conversation, whose id a script on the site can obtain.
+  const otherAddress = 'other.conversation@example.fr';
+  const otherMasked = await (
+    await fetch(agent.baseUrl + '/mask', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Cloakfleet-Control': agent.key,
+        'X-Session-Id': 'claude:11111111-2222-3333-4444-555555555555',
+      },
+      body: JSON.stringify({ texts: [`another chat: ${otherAddress}`] }),
+    })
+  ).json();
+  const otherToken = /\[EMAIL_\d+\]/.exec(otherMasked.texts[0])?.[0];
+
+  const crossed = await page.evaluate(
+    (session, token) => window.forge({ kind: 'unmask', session, text: token, tail: '', final: true }),
+    'claude:11111111-2222-3333-4444-555555555555',
+    otherToken,
+  );
+  assert.ok(!JSON.stringify(crossed).includes(otherAddress),
+    'a page script read another conversation back');
+
+  await page.close();
+});
+
+test('what the fix does not close, held here so nobody thinks it did', async () => {
+  // The residual, asserted rather than described. A hostile script on the site can
+  // still ask about the conversation the tab is actually showing — whose values the
+  // page is already being handed, to render them. Closing this would mean
+  // authenticating the page's own world, which cannot be done: any secret placed
+  // there to prove "this is really the interceptor" is readable by the page.
+  //
+  // It is written as a passing test so that a future change which *does* close it
+  // fails here and is noticed, rather than being mistaken for a regression.
+  const page = await browser.newPage();
+  await connect(page);
+  await page.goto(`https://claude.ai/chat/${CONVERSATION}`, { waitUntil: 'load' });
+
+  const mine = 'mine.own@example.fr';
+  await page.evaluate((address) => window.send(`écris à ${address}`), mine);
+  await page.waitForFunction(
+    (address) => document.getElementById('out')?.textContent?.includes(address),
+    { timeout: 10_000 },
+    mine,
+  );
+
+  const own = await page.evaluate(() =>
+    window.forge({ kind: 'unmask', text: '[EMAIL_1]', tail: '', final: true }),
+  );
+  assert.ok(own.ok, `the relay refused an ask for this tab's own conversation: ${JSON.stringify(own)}`);
+
+  await page.close();
+});
+
 test('with the agent stopped, the send is blocked rather than forwarded', async () => {
   // Fail closed, in the browser, for real. This is the rule somebody will be tempted
   // to soften: a blocked send looks like a broken site, and a forwarded one looks like

@@ -1,6 +1,6 @@
 import { install, type Send } from './intercept.ts';
 import {
-  type Ask,
+  type PageAsk,
   type PageMessage,
   type RelayMessage,
   PAGE_SOURCE,
@@ -16,6 +16,21 @@ import { claudeAi } from './site/claude.ts';
 // without a browser — which is the same separation the menu bar keeps between what
 // decides what to show and the toolkit that shows it.
 
+/**
+ * ASK_TIMEOUT_MS bounds how long a send waits on the relay.
+ *
+ * It exists because the failure it prevents is the one outcome this design must not
+ * have: neither masked nor refused. The relay can go away between the post and the
+ * answer — an extension update or a reload leaves an open tab with content scripts
+ * whose runtime is gone — and a promise nobody settles leaves the site's fetch pending
+ * for ever, with no error, no banner and the message box spinning.
+ *
+ * Thirty seconds because the round trip is a local HTTP call over a few kilobytes and
+ * anything near that has already gone wrong; the agent's own client timeouts are of
+ * the same order.
+ */
+const ASK_TIMEOUT_MS = 30_000;
+
 let nextId = 1;
 const waiting = new Map<number, (reply: Reply<unknown>) => void>();
 
@@ -30,7 +45,7 @@ window.addEventListener('message', (event: MessageEvent) => {
   settle(message.reply);
 });
 
-const send: Send = (ask: Ask) =>
+const send: Send = (ask: PageAsk) =>
   new Promise<Reply<unknown>>((resolve) => {
     // A note needs no answer, and waiting for one would hold a send open on a message
     // the relay deliberately does not reply to.
@@ -41,11 +56,25 @@ const send: Send = (ask: Ask) =>
     }
 
     const id = nextId++;
-    waiting.set(id, resolve);
+    const timer = setTimeout(() => {
+      // Cleared from the map as well as answered, or a tab whose relay has gone would
+      // accumulate one dead entry per send for as long as it stays open.
+      waiting.delete(id);
+      resolve({
+        ok: false,
+        reason: 'unreachable',
+        message: 'the extension did not answer in time',
+      });
+    }, ASK_TIMEOUT_MS);
+
+    waiting.set(id, (reply) => {
+      clearTimeout(timer);
+      resolve(reply);
+    });
     postAsk(id, ask);
   });
 
-function postAsk(id: number, ask: Ask): void {
+function postAsk(id: number, ask: PageAsk): void {
   const message: PageMessage = { source: PAGE_SOURCE, id, ask };
   window.postMessage(message, window.location.origin);
 }

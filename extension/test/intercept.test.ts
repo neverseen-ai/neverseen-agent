@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { Blocked, install, wrapFetch, type Send } from '../src/intercept.ts';
-import { type Ask, type Reply } from '../src/protocol.ts';
+import { type PageAsk, type Reply } from '../src/protocol.ts';
 import { claudeAi } from '../src/site/claude.ts';
 
 // The outbound half, driven without a browser.
@@ -16,8 +16,8 @@ const SEND_URL =
   'https://claude.ai/api/organizations/org-1/chat_conversations/9f1c0d2e-4b6a-4f31-8a5e-2c7d1e0b3a44/completion';
 
 /** relay is a stub service worker: it answers asks and records them. */
-function relay(handlers: Partial<Record<Ask['kind'], (ask: Ask) => Reply<unknown>>>) {
-  const asked: Ask[] = [];
+function relay(handlers: Partial<Record<PageAsk['kind'], (ask: PageAsk) => Reply<unknown>>>) {
+  const asked: PageAsk[] = [];
   const send: Send = async (ask) => {
     asked.push(ask);
     const handler = handlers[ask.kind];
@@ -28,7 +28,7 @@ function relay(handlers: Partial<Record<Ask['kind'], (ask: Ask) => Reply<unknown
 
 /** masking answers /mask by bracketing every address it is given, so a test can see
  * what left without running a detector. */
-const masking = (ask: Ask): Reply<unknown> => {
+const masking = (ask: PageAsk): Reply<unknown> => {
   const texts = (ask as unknown as { texts: string[] }).texts;
   return {
     ok: true,
@@ -59,20 +59,36 @@ test('a send is masked before it leaves', async () => {
     'a field that is not typed text was rewritten; the site cannot route on it');
 });
 
-test('the session names the conversation, not the browser', async () => {
-  const original = (async () => new Response('{}')) as typeof fetch;
-  const { asked, send } = relay({ mask: masking });
+test('nothing leaving the page world names a session', async () => {
+  // The security property, asserted where it can regress. This code runs in the
+  // page's own world, so anything it says about whose mapping to read, a script the
+  // site loads can say too — by posting the same message on the same channel. The
+  // session is therefore not the page's to state: the relay decides it from its own
+  // location, and a field reappearing here would hand the choice straight back.
+  const original = (async () =>
+    new Response('data: {"delta":{"text":"[EMAIL_1]"}}\n\n', {
+      headers: { 'Content-Type': 'text/event-stream' },
+    })) as typeof fetch;
 
-  await wrapFetch(original, claudeAi, send)(SEND_URL, {
-    method: 'POST',
-    body: JSON.stringify({ prompt: 'hello claire@example.fr' }),
+  const { asked, send } = relay({
+    mask: masking,
+    unmask: () => ({ ok: true, result: { expanded: 'x', tail: '' } }),
   });
 
-  assert.equal(
-    (asked[0] as unknown as { session: string }).session,
-    'claude:9f1c0d2e-4b6a-4f31-8a5e-2c7d1e0b3a44',
-    "two conversations sharing one session can expand each other's replacements",
-  );
+  await (
+    await wrapFetch(original, claudeAi, send)(SEND_URL, {
+      method: 'POST',
+      body: JSON.stringify({ prompt: 'hello claire@example.fr' }),
+    })
+  ).text();
+
+  assert.ok(asked.length >= 2, 'the round trip asked nothing, so this proves nothing');
+  for (const ask of asked) {
+    assert.ok(
+      !Object.prototype.hasOwnProperty.call(ask, 'session'),
+      `a ${ask.kind} ask carried a session out of the page's world`,
+    );
+  }
 });
 
 test('a request that is not a send is left completely alone', async () => {

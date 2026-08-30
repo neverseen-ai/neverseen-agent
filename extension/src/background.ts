@@ -1,5 +1,5 @@
 import { AgentError, health, mask, unmask } from './agent.ts';
-import { type Ask, type Reply } from './protocol.ts';
+import { type Ask, namesAWebSession, type Reply } from './protocol.ts';
 import { load, type Storage } from './settings.ts';
 
 // The service worker: the one place that talks to the agent, and the one place that
@@ -28,6 +28,14 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
 async function answer(ask: Ask): Promise<Reply<unknown>> {
   const storage = chrome.storage.local as unknown as Storage;
   try {
+    // The relay is the only thing that names a session, and this is the check that
+    // holds even if it stops being. A browser must never be able to ask about the
+    // agent's anonymous "default" session — the one every tool that sends no header
+    // shares — so the namespace is asserted here too rather than trusted one hop away.
+    if ((ask.kind === 'mask' || ask.kind === 'unmask') && !namesAWebSession(ask.session)) {
+      return { ok: false, reason: 'refused', message: 'that is not a session this extension may name' };
+    }
+
     switch (ask.kind) {
       case 'mask': {
         const cfg = await load(storage);

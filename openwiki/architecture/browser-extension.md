@@ -113,7 +113,7 @@ Three worlds, because no two of them can reach each other:
 | File | World | What it does |
 | --- | --- | --- |
 | `src/interceptor.ts` → `src/intercept.ts` | page (`MAIN`) | replaces `fetch`; guards XHR, `sendBeacon`, `WebSocket` |
-| `src/relay.ts` | content (`ISOLATED`) | `postMessage` ⇄ `chrome.runtime`; draws the blocked banner |
+| `src/relay.ts` | content (`ISOLATED`) | the trust boundary: names the session, writes the banner's words, relays the rest |
 | `src/background.ts` → `src/agent.ts` | service worker | the only place that holds the key and talks to the agent |
 
 The page's world has no `chrome.runtime`. The isolated world has no reach into the page's
@@ -124,6 +124,50 @@ at all.
 
 **The key never leaves the service worker.** A key readable from the page is a key any
 script the site loads can read, and it opens `/unmask`.
+
+### The trust boundary, and what it is not
+
+The interceptor runs in `world: "MAIN"` because it has to — a copy of `fetch` in an
+isolated world is not the one the site calls. That world is the page's own, and
+everything in it is the page's: its globals, its listeners, and any message it posts.
+**A script the site loads can post exactly what the interceptor posts, on the same
+channel, and read the answer.**
+
+So the relay cannot ask "is this really our interceptor". There is no answer to that
+question, and any secret placed in the page's world to answer it is readable by the
+page. What it can do is stop trusting the page about the things that decide *whose
+data is read* and *what is said in this extension's name*:
+
+- **The session is not the page's to state.** `PageAsk` has no session field. The
+  relay derives it from its own `location` (`Site.sessionForPage`) and stamps it on.
+  Left to the page, this was an oracle: a script could name the agent's anonymous
+  `default` session — the one every tool that sends no session header shares, which on
+  a workstation carries every value the agent has masked since it started — and read a
+  terminal's traffic back one guessable token at a time.
+- **`bridge.acceptAsk` rebuilds every ask field by field.** Not a spread, not an
+  `as Ask` cast: either would let a `session` the page added ride along, which is
+  precisely the field this takes away.
+- **`protocol.namesAWebSession` is the service worker's copy of the rule**, checked
+  again there. It is the last thing between a bug in the relay and the agent's own
+  sessions, and `default` carries no namespace so it matches none.
+- **A banner note carries a situation, never a sentence.** `Note` is a closed set and
+  `guidance.noteMessage` writes the words, so a script cannot put arbitrary text
+  behind this extension's name in its own branded banner.
+- An address naming no conversation yields `null`, and the relay mints
+  `claude:page-<uuid>` once per load. A fixed fallback would pool every new chat in
+  the browser under one mapping; a guessable one would be `default` in a smaller
+  costume.
+
+**What this does not close, and is asserted as passing so nobody mistakes it for a
+regression:** a hostile script on the site can still ask about the conversation the
+tab is showing — whose values the page is already being handed, to render them. The
+two halves are `e2e/run.test.mjs`: *a hostile script on the page cannot read another
+session back*, and *what the fix does not close*.
+
+`TODO:` a script can also `history.pushState` to another conversation's path and ask
+under that id. It needs an id it must obtain from the site, and it cannot reach
+`default` or any session outside the namespace. Closing it means a session the page
+cannot influence at all, which costs the mapping its ability to survive a reload.
 
 ### The site adapter
 
@@ -234,6 +278,7 @@ network), and native messaging (structural auth, for fleet deployment).
 | `extension/test/restore.test.ts` | the stream: splits, flush, JSON escaping, serialisation |
 | `extension/test/intercept.test.ts` | outbound masking, fail closed, the three refused transports |
 | `extension/test/guidance.test.ts` | the four guidance states, kept apart |
+| `extension/test/bridge.test.ts` | the trust boundary: a session the page claims is discarded |
 | `extension/e2e/run.test.mjs` | **nothing stubbed**: built extension, real Chrome, real agent |
 
 The end-to-end test puts claude.ai on this machine with Chrome's

@@ -124,6 +124,28 @@ const PAGE = `<!doctype html>
 <pre id="error"></pre>
 <script>
   const conversation = location.pathname.split('/').pop();
+
+  // A script standing in for a hostile one on the site: it posts what the interceptor
+  // posts, on the same channel, and reads the answer. Nothing about this is exotic —
+  // it is what any script the page loads can do, which is precisely why the relay
+  // must not believe what such a message says about a session.
+  window.forge = (ask) =>
+    new Promise((resolve) => {
+      const id = 900000 + Math.floor(Math.random() * 10000);
+      const onMessage = (event) => {
+        if (event.source !== window) return;
+        const message = event.data;
+        if (!message || message.source !== 'cloakfleet:relay' || message.id !== id) return;
+        window.removeEventListener('message', onMessage);
+        resolve(message.reply);
+      };
+      window.addEventListener('message', onMessage);
+      window.postMessage({ source: 'cloakfleet:page', id, ask }, '*');
+      setTimeout(() => {
+        window.removeEventListener('message', onMessage);
+        resolve({ ok: false, reason: 'timeout', message: 'no answer' });
+      }, 5000);
+    });
   window.send = async (prompt) => {
     document.getElementById('out').textContent = '';
     document.getElementById('error').textContent = '';

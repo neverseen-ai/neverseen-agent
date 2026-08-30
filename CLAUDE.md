@@ -234,6 +234,16 @@ area: the reasoning is what stops a tempting simplification being reintroduced.
   originals on disk through a path the invariant never considered.
 - **The key never leaves the service worker**, and never a bare HTTP route. An
   unauthenticated `GET /key` "to keep it simple" is the hole DNS rebinding exploits.
+- **The page's world names no session, and it cannot be made trustworthy.** The
+  interceptor must run in `world: "MAIN"`, so any script the site loads can post what
+  it posts and read the answer — there is nothing there to authenticate with. So
+  `PageAsk` carries no session: the relay derives it from its own `location` and
+  `bridge.acceptAsk` rebuilds every ask field by field, never spreading and never
+  casting, or a `session` the page added rides along. `namesAWebSession` is the
+  worker's second copy of the rule, and the name it must always refuse is `default` —
+  the session every tool without a header shares, which carries a terminal's traffic.
+  A banner note carries a situation from a closed set, never a sentence, so nothing
+  can put its own words behind this extension's name.
 - **A stream event is rewritten structurally, never as raw bytes**, and the calls are
   serialised — chunk *n*'s tail prefixes chunk *n+1*, so two in flight is corruption.
 - **A transport that cannot be masked is refused**, not forwarded: `XMLHttpRequest.send`
