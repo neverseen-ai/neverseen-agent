@@ -215,13 +215,36 @@ var (
 	// the floor, and match nothing at all — the password would leave in clear. A
 	// narrowing that turns a caught credential into a silent miss is worse than
 	// the eaten bracket it set out to fix.
-	genericSecretRe = regexp.MustCompile(`(?i)(?:PASSWORD|PASSWD|SECRET|TOKEN|API_KEY|APIKEY|ACCESS_KEY|ENCRYPTION_KEY|PRIVATE_KEY|PRIV_KEY|AUTH_TOKEN|AUTH_KEY|CLIENT_KEY|SERVICE_KEY|ACCOUNT_KEY|DB_KEY|DATABASE_KEY|KEY_PASS|DB_PASS|DATABASE_PASS|SESSION|SESSION_ID|SESSION_KEY)['"]?\s*[=:]\s*['"]?` +
+	genericSecretRe = regexp.MustCompile(`(?i)(?:PASSWORD|PASSWD|SECRET|TOKEN|API_KEY|APIKEY|ACCESS_KEY|ENCRYPTION_KEY|PRIVATE_KEY|PRIV_KEY|AUTH_TOKEN|AUTH_KEY|CLIENT_KEY|SERVICE_KEY|ACCOUNT_KEY|DB_KEY|DATABASE_KEY|KEY_PASS|DB_PASS|DATABASE_PASS|SESSION_ID|SESSION_KEY)['"]?\s*[=:]\s*['"]?` +
 		`([^` + quoteChars + `]{7,}[^` + quoteChars + noSentenceTail + `]|[^` + quoteChars + `]{8,})['"]?`)
 
 	// Sixty-four or more hex characters behind a key-shaped name. The floor is
 	// what separates an encryption key from a commit SHA somebody assigned to a
 	// field: forty hex under "KEY=" is a truncated SHA, and masking it breaks a
 	// paste for nothing.
+	// A session token, which needs a length floor the shared keyword list cannot
+	// give it.
+	//
+	// "session" was in that list for one commit and came straight back out. The
+	// evidence there is the name, and the value is then held apart from source code
+	// by GenericSecretCheck — whose rule is that an identifier carrying a digit is a
+	// credential, because `Sup3rS3cr3tValue123` is one. A *type annotation* defeats
+	// that rule completely: `session: Http2Session` is an identifier with a digit,
+	// and so are `Http2Stream`, `Base64String` and every other type name built on a
+	// numbered standard. Measured over four megabytes of third-party TypeScript it
+	// claimed nine of them, and over a hand-written sample of ordinary application
+	// code it claimed one in ninety-five lines.
+	//
+	// What separates the two is length, not shape. A session token is a generated
+	// blob — thirty-two hex characters in the cookie this exists for — and a type
+	// name is a word or two. Twenty-four is above every type name in those two
+	// corpora and below every real token, and it is a floor the shared expression
+	// cannot carry because its keywords share one alternation and one group.
+	//
+	// GenericSecretCheck still applies, so a long expression behind `session:` is
+	// still rejected on its punctuation.
+	sessionSecretRe = regexp.MustCompile(`(?i)SESSION['"]?\s*[=:]\s*['"]?([A-Za-z0-9_./+-]{24,})['"]?`)
+
 	hexSecretRe = regexp.MustCompile(`(?i)(?:KEY|SECRET|ENCRYPTION_KEY|SIGNING_KEY|HMAC_KEY)['"]?\s*[=:]\s*['"]?([0-9a-f]{64,})['"]?`)
 )
 
@@ -277,6 +300,7 @@ func SecretPatterns() []Pattern {
 
 		// context-hinted generics, last
 		{Regex: genericSecretRe, Group: 1, Category: CatGenericSecret, Label: "Named secret or password"},
+		{Regex: sessionSecretRe, Group: 1, Category: CatGenericSecret, Label: "Session token"},
 		{Regex: hexSecretRe, Group: 1, Category: CatHexSecret, Label: "Hex-encoded key"},
 	}
 }
