@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -55,6 +57,46 @@ const DefaultIdentityFile = "~/.cloakfleet/agent.json"
 // control — so it is built for one person on one workstation. Bound to a
 // reachable interface it becomes a way to read another user's session.
 const DefaultListen = "127.0.0.1:8787"
+
+// BeyondLoopback reports whether an address puts this agent on an interface
+// something other than this workstation can reach.
+//
+// It exists because the answer decides what a warning says, and the address arrives
+// by two routes — CLOAKFLEET_LISTEN and `proxy -l` — which must not come to disagree
+// about what counts as reachable. One predicate, asked at the point the agent starts
+// listening, covers both.
+//
+// What it guards is not theoretical. /healthz and /test are unauthenticated, and they
+// are safe that way *because* of the loopback default: the worst they give a local
+// process is a description of the configuration. Reachable, /test is a masking oracle
+// for anybody on the network and the session mapping is scoped by a header the caller
+// chooses, so naming somebody else's session is enough to be handed their
+// replacements.
+func BeyondLoopback(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		// Not host:port at all. ListenAndServe refuses it a moment later with a
+		// better message than a warning about it would be.
+		return false
+	}
+
+	switch strings.TrimSpace(host) {
+	case "":
+		// ":8787" binds every interface. This is the shape where saying nothing
+		// would be worst: it reads as "no address given" and means "all of them".
+		return true
+	case "localhost":
+		return false
+	}
+
+	ip, err := netip.ParseAddr(host)
+	if err != nil {
+		// A name rather than a literal. It resolves to whatever DNS says, which is
+		// not something to assume is this machine.
+		return true
+	}
+	return !ip.IsLoopback()
+}
 
 // Agent is everything the proxy command runs.
 type Agent struct {

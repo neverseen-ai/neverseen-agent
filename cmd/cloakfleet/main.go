@@ -39,11 +39,13 @@ var version = "dev"
 const usage = `cloakfleet — mask sensitive values before they reach a model.
 
 Usage:
-  cloakfleet proxy [-a] [-v]
+  cloakfleet proxy [-a] [-v] [-l addr]
                            run the agent: mask what goes out, restore what comes
                            back. -a prints every value it replaces and restores,
                            in clear; -v writes both bodies of every exchange to
-                           ./%s. Neither belongs in a service definition
+                           ./%s. Neither belongs in a service definition.
+                           -l binds somewhere other than the loopback default,
+                           which makes /healthz and /test reachable
   cloakfleet scan [file]   report the sensitive values in a file, or in stdin
   cloakfleet status        report whether the agent is masking, and what
   cloakfleet mask          list what is masked, and switch a category or a family
@@ -211,11 +213,19 @@ func runProxy(args []string, stdout io.Writer) error {
 		"print every value replaced and restored, in clear")
 	verbose := fs.Bool("v", false,
 		"write both bodies of every exchange to a file under "+defaultTraceDir)
+	// The address the environment already carries, as a flag, because a container or
+	// a VM on this workstation cannot reach a loopback-bound agent and setting a
+	// variable to say so is a poor fit for a one-off run. It overrides
+	// CLOAKFLEET_LISTEN — the command's choice wins, as it does for every option here
+	// — and the agent warns on every start when the result is reachable, whichever of
+	// the two set it.
+	listen := fs.String("l", "",
+		"address to listen on (default "+proxy.DefaultListen+"); 0.0.0.0:8787 serves every interface")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
-	opts := proxy.Options{}
+	opts := proxy.Options{Listen: *listen}
 	if *reveal {
 		opts.Audit = stdout
 	}
@@ -375,6 +385,20 @@ func serveAgent(logger *slog.Logger, agent *proxy.Agent) error {
 			"providers", strings.Join(agent.Server.Providers(), ","),
 			"supervised", agent.Reporter != nil)
 
+		// Said on every start rather than written in a manual, for the reason the
+		// reveal banner is: the person who set this is not the person reading the
+		// log six months later, and the loopback default is what makes two
+		// unauthenticated routes safe. It is a warning rather than a refusal —
+		// serving a container or a VM on this workstation is a real thing to want,
+		// and an agent that refused would be one somebody patches out.
+		if proxy.BeyondLoopback(agent.Addr) {
+			logger.Warn("this agent is reachable beyond this workstation",
+				"address", agent.Addr,
+				"unauthenticated", "/healthz and /test",
+				"why_it_matters", "/test masks any text on request, and a session is named "+
+					"by a header the caller chooses, so a caller that guesses one is handed "+
+					"its replacements")
+		}
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errs <- err
 		}

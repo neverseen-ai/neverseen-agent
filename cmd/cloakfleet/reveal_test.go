@@ -201,3 +201,42 @@ func TestTheBannerDoesNotDenyTheFileItIsWriting(t *testing.T) {
 		t.Errorf("the banner no longer says what a run without -v keeps:\n%s", got)
 	}
 }
+
+// The flag has to win over the variable, because that is what makes it usable: an
+// operator serving a container for one run should not have to unset a profile.
+func TestTheListenFlagOverridesTheEnvironment(t *testing.T) {
+	t.Setenv(proxy.EnvListen, "127.0.0.1:8799")
+
+	agent, err := proxy.FromEnv(nil, proxy.Options{
+		Listen:         "0.0.0.0:8801",
+		ControlKeyFile: filepath.Join(t.TempDir(), "control.key"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if agent.Addr != "0.0.0.0:8801" {
+		t.Errorf("the agent listens on %q, want the address the flag named", agent.Addr)
+	}
+	if !proxy.BeyondLoopback(agent.Addr) {
+		t.Error("the address the flag named is not reported as reachable, so nothing warns")
+	}
+}
+
+// An agent left on the default must not warn. A warning on every ordinary start is
+// one nobody reads by the time it matters.
+func TestTheDefaultAddressDoesNotWarn(t *testing.T) {
+	agent, err := proxy.FromEnv(nil, proxy.Options{
+		ControlKeyFile: filepath.Join(t.TempDir(), "control.key"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if agent.Addr != proxy.DefaultListen {
+		t.Fatalf("the agent listens on %q, want the loopback default", agent.Addr)
+	}
+	if proxy.BeyondLoopback(agent.Addr) {
+		t.Error("the loopback default is reported as reachable")
+	}
+}

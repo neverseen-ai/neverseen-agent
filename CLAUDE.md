@@ -85,6 +85,18 @@ area: the reasoning is what stops a tempting simplification being reintroduced.
   command: `-a` alone keeps nothing, `-v` alone records and prints nothing, and
   `newAuditor` builds an auditor for either — requiring a console to record a
   trace would have made the quiet half silently do nothing.
+- **`-l` binds somewhere other than loopback, and the agent warns rather than
+  refuses.** The address already arrived by `CLOAKFLEET_LISTEN`; the flag is the
+  same setting where a one-off run can reach it, and the command's choice wins over
+  the environment as it does for every option. The guard is `proxy.BeyondLoopback`
+  asked at the point the agent starts listening, **not on the flag** — the variable
+  exposes exactly as much and warned nowhere. `:8787` counts as reachable: it reads
+  as "no address" and binds every interface. A warning rather than a refusal because
+  serving a container or a VM on this workstation is a real thing to want, and an
+  agent that refused is one somebody patches out. What it costs is the reason
+  `/healthz` and `/test` are unauthenticated at all: reachable, `/test` is a masking
+  oracle for anybody on the network, and a session is named by a header the caller
+  chooses.
 - **These replaced a separate `audit` command, and the guarantee it carried is
   gone.** As a command, printing in clear was a *mode* somebody entered, on a
   port of its own. As a flag it can go in a service definition — and the

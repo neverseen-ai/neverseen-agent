@@ -63,6 +63,45 @@ loses the turn and the mapping keeps values nothing will ask for again. `serveAg
 shared by `proxy` and `audit` so the two cannot come to differ about shutdown, supervision or
 the last heartbeat.
 
+#### `-l`, and what leaves the loopback default behind
+
+`cloakfleet proxy -l 0.0.0.0:8787` serves every interface. The address was already
+reachable through `CLOAKFLEET_LISTEN`; the flag is the same setting where a one-off run
+can reach it, and `Options.Listen` wins over the variable — the command's choice does,
+for every option, so an operator serving a container for one run does not have to unset
+a profile (`TestTheListenFlagOverridesTheEnvironment`).
+
+**The warning hangs off the address, not off the flag.** `proxy.BeyondLoopback` is asked
+in `serveAgent`, where the agent starts listening, so both routes to a reachable address
+go through one predicate and one message. Written on the flag, the variable — which
+exposes exactly as much — would have gone on warning nowhere.
+
+`:8787` counts as reachable, and that case is the reason the predicate is a function
+rather than a comparison against `DefaultListen`: it reads as "no address given" and
+binds every interface. A bare name counts too, because it resolves to whatever DNS says.
+
+**It warns; it does not refuse.** Serving a container or a VM on this workstation is a
+real thing to want, and an agent that refused is one somebody patches out — which ends
+with the same bind and no warning at all. The message names the exposure rather than
+scolding, because the person reading the log six months later is not the person who set
+it:
+
+```
+level=WARN msg="this agent is reachable beyond this workstation" address=0.0.0.0:8787
+  unauthenticated="/healthz and /test"
+  why_it_matters="/test masks any text on request, and a session is named by a header
+  the caller chooses, so a caller that guesses one is handed its replacements"
+```
+
+That is the whole cost, stated: `/healthz` and `/test` are unauthenticated **because**
+of the loopback default. Reachable, `/test` is a masking oracle for anybody on the
+network, and `sessionFrom` reads a header the caller controls — so naming somebody
+else's session is enough to be handed its replacements. `PUT /policy` is unaffected: it
+carries the control key whatever the interface.
+
+The default stays quiet (`TestTheDefaultAddressDoesNotWarn`). A warning on every
+ordinary start is one nobody reads by the time it matters.
+
 ### `status` — what is being *applied*, not that the process is up
 
 `runStatus` (`main.go:141`) calls `proxy.Query` and exits non-zero unless
