@@ -282,6 +282,30 @@ The catalogue, the locales and the substitution modes in full:
 - **A checksum lets a shape be loose; without one, the shape is all there is.**
   `CategoryInfo.Verify` is where a checksum goes, and a value that fails it is
   dropped outright rather than scored down.
+- **`NAME=value` is evidence in configuration and noise in source code.**
+  `genericSecretRe` treats the name as the proof, which holds for a `.env` line and
+  collapses in a repository, where `password:` is a *field* name and the right side
+  is an expression, a type or an identifier. Pointed at one, it claimed
+  `newPassword`, `req.cookies.token`, `process.env.LLM_API_KEY` and
+  `CreationOptional<string` — and the model received a review of code whose
+  identifiers had been replaced by `[SECRET_n]`. `GenericSecretCheck` is the guard,
+  and both its rules are narrower than they look, because the tree already held a
+  case against each over-reach: **opening** brackets only (`PASSWORD=hunter2)` is a
+  real credential ending on a closer), and identifier-shaped **plus no digit**
+  (`Sup3rS3cr3tValue123` is a name by shape and a password in fact). The slash and
+  the plus are not code punctuation — base64 is made of them. What still leaks is
+  recorded as a `TODO`: a credential of nothing but letters.
+- **Where shape runs out, the keyword decides.** `reset-password` behind `password:`
+  has the *same shape* as `troisieme-valeur-longue`, the corpus's own credential —
+  lowercase words joined by hyphens, both of them — so no rule about form could
+  separate them. What does: **a passphrase does not name the thing it unlocks.** A
+  lowercase slug carrying `password`, `secret`, `token` or `api_key` is a route name.
+  Lowercase and hyphens only, which is what keeps `MyPassword123!` a credential.
+- **Narrowing a credential pattern is the change that leaks, so what must still be
+  caught is asserted beside what must not.**
+  `TestGenericSecretCheckRejectsSourceCode` and
+  `TestGenericSecretCheckKeepsCredentials` are one pair, and neither is meaningful
+  alone.
 - **RE2 has no lookbehind or backreference.** A pattern that must reject a
   preceding character consumes it and points `Group` at the value. Separators
   that have to agree ("23/02-2004" is not a date) need one alternative per

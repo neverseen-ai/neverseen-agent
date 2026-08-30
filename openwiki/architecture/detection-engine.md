@@ -145,6 +145,63 @@ Checksums live in `pkg/pii/checksum.go`: `LuhnCheck` (cards), `IBANCheck`, `NIRC
 the first position, seven from the second, seven whole prefixes unissued), `SSNCheck`,
 `RoutingNumberCheck` (ABA weights).
 
+#### `GenericSecretCheck`, and the premise that fails in a repository
+
+`genericSecretRe` reads `NAME=value` and treats the **name** as the evidence: a run of
+characters after `PASSWORD=` is a password because of what precedes it. In a `.env`
+file, a YAML key or a shell export that is exactly right.
+
+In source code it collapses. `password:` there is a *field* name, and what follows is an
+expression, a type or an identifier. One real run against a repository produced, among
+others:
+
+```
+MASK newPassword                    TO [SECRET_16]
+MASK req.cookies.token              TO [SECRET_5]
+MASK process.env.LLM_API_KEY        TO [SECRET_21]
+MASK security.authorize(plainUser   TO [SECRET_27]
+MASK CreationOptional<string        TO [SECRET_31]
+```
+
+None is a credential, and the model received a review of code whose identifiers had been
+replaced by opaque tokens. The trailing `(` and the missing `>` are `noSentenceTail`
+trimming the closing half of what the pattern had already eaten.
+
+**Two rules, each narrower than the obvious version**, because the tree already held a
+case against each over-reach:
+
+| Rule | Rejects | Why not wider |
+|---|---|---|
+| An **opening** bracket, or `?;,` | `security.authorize({`, `CreationOptional<string`, `user.password?.replace(/./g` | Closing brackets are absent on purpose: `PASSWORD=hunter2)` is a real credential ending on one, held by `bound-generic-secret-eight-chars-ending-on-punctuation`. An opener cannot arrive that way |
+| Identifier-shaped **and** no digit | `newPassword`, `totpToken`, `req.cookies.token` | Shape alone rejected `Sup3rS3cr3tValue123`, which is a name by shape and a password in fact (`TestMaskKeepsJSONEscapingIntact`). Code names things in words; a credential almost always carries a digit |
+| A lowercase slug carrying the keyword | `reset-password`, `forgot-password`, `access-token` | Lowercase and hyphens only, so `MyPassword123!` — which carries the word too — stays a credential |
+
+The slash and the plus are deliberately **not** code punctuation: base64 is made of them,
+and a secret is often base64.
+
+**The third rule is where shape runs out.** `MASK reset-password TO [SECRET_2]`, behind
+`password:` in an object literal, is neither syntax nor an identifier — and it has the
+*same shape* as `troisieme-valeur-longue`, which is a real credential in this corpus.
+Lowercase words joined by hyphens describes both, so no rule about form was ever going
+to separate them.
+
+What does is the keyword: `reset-password` contains the very word that made the pattern
+look at it, and **a passphrase does not name the thing it unlocks**. So a lowercase slug
+carrying `password`, `secret`, `token` or `api_key` is a route name. It is restricted to
+lowercase, hyphens and underscores, and that restriction is what keeps a weak-but-real
+password out of it: `MyPassword123!` carries the word too, and its capitals, digits and
+punctuation say it was typed as a secret rather than written as a route.
+
+**What still leaks is recorded rather than hidden**: a credential of nothing but letters
+and dots — an unquoted `PASSWORD=correcthorse` — goes out in clear. The upgrade is to
+read whether the value was quoted where it was found, which `Verify` cannot see: it is
+handed the group, not its surroundings.
+
+Narrowing a credential pattern is the change that leaks, so the two halves are asserted
+together. `TestGenericSecretCheckRejectsSourceCode` carries the thirty values from that
+run; `TestGenericSecretCheckKeepsCredentials` carries what must still be caught,
+including both references in this tree. Neither is meaningful alone.
+
 `minConfidence` is 50 (`internal/detector/config.go:38`), set just at the level of the
 weakest category worth reporting so every registered category is reportable and the
 checksums do the discriminating. It is a constant, not a knob: a `TODO` records that a

@@ -202,7 +202,7 @@ var categoryRegistry = map[Category]CategoryInfo{
 	CatPEMKey:         {Prefix: "PEM_KEY", Score: 99, Secret: true, Group: GroupSecrets, Label: "Private key"},
 	CatJWT:            {Prefix: "JWT", Score: 92, Secret: true, Group: GroupSecrets, Label: "JSON web token"},
 	CatConnStr:        {Prefix: "CONN_STR", Score: 92, Secret: true, Group: GroupConnection, Label: "Connection string"},
-	CatGenericSecret:  {Prefix: "SECRET", Score: 80, Secret: true, Group: GroupSecrets, Label: "Secret in an assignment"},
+	CatGenericSecret:  {Prefix: "SECRET", Score: 80, Secret: true, Verify: GenericSecretCheck, Group: GroupSecrets, Label: "Secret in an assignment"},
 	// Above the generic secret: both patterns claim the same "KEY=value" span,
 	// and 64 hex characters behind that hint are not a coincidence, so the
 	// specific category is the one worth reporting.

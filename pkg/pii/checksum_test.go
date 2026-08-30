@@ -329,3 +329,61 @@ func TestTrimToIBAN(t *testing.T) {
 		})
 	}
 }
+
+// Every value here was observed on one real run: an agent pointed at a repository,
+// masking the source code around the secrets instead of the secrets. The model
+// received [SECRET_n] where the code said `newPassword`, which makes a review of
+// that code unreadable.
+func TestGenericSecretCheckRejectsSourceCode(t *testing.T) {
+	code := []string{
+		// Property chains and bare names — the half a shape rule alone would miss.
+		"publicKey", "newPassword", "newPasswordInString", "totpToken",
+		"updatedToken", "initialToken", "masked...",
+		"req.cookies.token", "query.current", "query.new", "query.repeat",
+		"body.new", "body.repeat", "headers.authorization", "user.totpSecret",
+		"process.env.LLM_API_KEY",
+
+		// Calls, and the syntax around them.
+		"utils.jwtFrom(req", "verify(utils.jwtFrom(req", "decode(userToken",
+		"generateSecret(", "security.authorize({", "security.authorize(plainUser",
+		"security.authorize(authenticatedUser", "security.authorize(userWithStatus",
+		"security.authenticatedUsers.tokenOf(user", "security.deluxeToken(user.email",
+		"${security.hash(req.body.password",
+		"user.password?.replace(/./g", "user.totpSecret?.replace(/./g",
+
+		// A TypeScript annotation, from a Sequelize model.
+		"CreationOptional<string",
+
+		// A route name behind `password:`. Neither syntax nor an identifier — it has
+		// the shape of troisieme-valeur-longue, which is a real credential in the
+		// corpus. What separates them is that this one names the thing it unlocks.
+		"reset-password", "forgot-password", "change-password", "reset_password",
+		"access-token", "refresh-token", "api_key",
+	}
+	for _, v := range code {
+		if GenericSecretCheck(v) {
+			t.Errorf("GenericSecretCheck(%q) = true, want false — this is code", v)
+		}
+	}
+}
+
+// The other half of the gate. Narrowing a credential pattern is the change that
+// leaks, so what must still be caught is asserted beside what must not.
+func TestGenericSecretCheckKeepsCredentials(t *testing.T) {
+	secrets := []struct{ value, why string }{
+		{"hunter2-correct-horse", "the reference in pkg/pii/sample.go"},
+		{"troisieme-valeur-longue", "the corpus case"},
+		{"hunter2)", "eight characters ending on a bracket — a closer is not syntax"},
+		{"Sup3rS3cr3tValue123", "identifier-shaped, but it carries digits"},
+		{"p@ssw0rd!", "punctuation a name never has"},
+		{"sk-ant-api03-AbCdEf", "separators"},
+		{"aGVsbG8gd29ybGQrLw==", "base64: the slash and the plus are not code"},
+		{"correct-horse-battery", "a passphrase does not name what it unlocks"},
+		{"MyPassword123!", "carries the word, but capitals and punctuation say it was typed as one"},
+	}
+	for _, s := range secrets {
+		if !GenericSecretCheck(s.value) {
+			t.Errorf("GenericSecretCheck(%q) = false, want true — %s", s.value, s.why)
+		}
+	}
+}

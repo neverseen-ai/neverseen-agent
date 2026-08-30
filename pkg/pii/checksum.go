@@ -1,6 +1,9 @@
 package pii
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
 
 // The checksums a shape cannot express. Each one is what separates an
 // identifier from any other run of digits of the same length, and the engine
@@ -328,3 +331,74 @@ func luhn(number string) bool {
 	}
 	return sum%10 == 0
 }
+
+// GenericSecretCheck rejects a value that is the source code around a secret
+// rather than the secret.
+//
+// genericSecretRe reads "NAME=value" and treats the name as the evidence. That
+// premise holds in configuration — a .env line, a YAML key, a shell export — and
+// collapses in source code, where `password:` is a *field* name and what follows is
+// an expression, a type or an identifier. Pointed at a repository the pattern
+// claimed `newPassword`, `req.cookies.token`, `process.env.LLM_API_KEY`,
+// `security.authorize(plainUser` and `CreationOptional<string`, none of which is a
+// credential and all of which the model then received as [SECRET_n] — a review of
+// code whose identifiers had been replaced by opaque tokens.
+//
+// Two rules, because the false positives came in two shapes, and each is narrower
+// than it first looks. The tree already held a case against each over-reach.
+//
+// One: an *opening* bracket, or the punctuation that only syntax uses. Closing
+// brackets are deliberately absent — `PASSWORD=hunter2)` is a real credential whose
+// last character is a bracket, which is the case bound-generic-secret-eight-chars-
+// ending-on-punctuation exists to hold. An opener cannot arrive that way.
+//
+// Two: identifier-shaped *and* carrying no digit. Shape alone was too much:
+// `Sup3rS3cr3tValue123` is a name by shape and a password in fact
+// (TestMaskKeepsJSONEscapingIntact). What separates it from `newPassword` and
+// `totpToken` is that code names things in words and a credential almost always
+// carries a digit.
+//
+// The slash and the plus are not code punctuation here: base64 is made of them, and
+// a secret is often base64.
+//
+// TODO: what remains is a credential of nothing but letters and dots — an unquoted
+// `PASSWORD=correcthorse` goes out in clear. The upgrade is to read whether the
+// value was quoted where it was found, which Verify cannot see: it is handed the
+// group and not its surroundings.
+func GenericSecretCheck(value string) bool {
+	// Openers only. A closing bracket is what a credential ends on; an opening one
+	// is what an expression begins.
+	if strings.ContainsAny(value, "([{<?;,") {
+		return false
+	}
+	if slugNamingItselfRe.MatchString(value) {
+		return false
+	}
+	if !identifierOnlyRe.MatchString(value) {
+		return true
+	}
+	return strings.ContainsAny(value, "0123456789")
+}
+
+// slugNamingItselfRe is a lowercase slug that contains the very word which made
+// genericSecretRe look at it: "reset-password" behind `password:`, a route name in an
+// object literal or a JSON body.
+//
+// It is the third rule because the first two cannot reach it. A slug is neither
+// syntax nor an identifier — `reset-password` has the shape of
+// `troisieme-valeur-longue`, which is a real credential in the corpus. Lowercase
+// words joined by hyphens describes both, so shape alone was never going to separate
+// them, and the keyword is what does: a passphrase does not name the thing it
+// unlocks.
+//
+// Restricted to lowercase, hyphens and underscores on purpose, which is what keeps a
+// weak-but-real password out of it. "MyPassword123!" carries the word too, and its
+// capitals, digits and punctuation say it was typed as a secret rather than written
+// as a route.
+var slugNamingItselfRe = regexp.MustCompile(
+	`^[a-z_-]*(?:password|passwd|secret|token|apikey|api_key|access_key)[a-z_-]*$`)
+
+// identifierOnlyRe is a name, or a chain of them: an identifier start, then nothing
+// but identifier characters and dots. Trailing dots are allowed on purpose, because
+// an elision ("masked...") is prose rather than a credential too.
+var identifierOnlyRe = regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$.]*$`)
