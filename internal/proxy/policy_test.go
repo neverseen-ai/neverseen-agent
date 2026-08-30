@@ -476,7 +476,11 @@ func TestStatusNamesWhatIsInClear(t *testing.T) {
 	status.Write(&out)
 
 	got := out.String()
-	if !strings.Contains(got, "1 category switched off") {
+	// "In clear" rather than "switched off", and the same words `cloakfleet mask`
+	// uses: the two commands report on one agent, and the hand-written pair had
+	// drifted into describing the same category two ways. Headline is the one
+	// sentence now; see TestBothSurfacesOpenOnTheSameSentence.
+	if !strings.Contains(got, "1 category in clear") {
 		t.Errorf("the summary does not count what is off:\n%s", got)
 	}
 	if !strings.Contains(got, "in clear       IP address") {

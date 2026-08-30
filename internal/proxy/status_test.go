@@ -101,3 +101,35 @@ func TestABadBodyStillCountsAsAnswering(t *testing.T) {
 		t.Error("an unparseable answer was reported as masking")
 	}
 }
+
+// Write opens on Headline, so the sentence a person reads is the shared one rather
+// than a second copy that drifts away from it.
+//
+// Asserted because the drift it prevents has already happened once: `cloakfleet
+// status` called a category "switched off" where `cloakfleet mask` called the same
+// category "in clear", and nothing failed. The command's half of the pair is held
+// by TestMaskOpensOnTheSharedSentence.
+func TestWriteOpensOnTheHeadline(t *testing.T) {
+	for name, status := range map[string]Status{
+		"stopped": {Addr: "127.0.0.1:8787"},
+		"no locale": {Addr: "127.0.0.1:8787", Answering: true, Health: Health{
+			Masking: "none"}},
+		"partial": {Addr: "127.0.0.1:8787", Answering: true, Health: Health{
+			Locales: []string{"fr"}, Masking: "partial",
+			Groups: []HealthGroup{{Code: "technical", Label: "Technical identifiers",
+				Categories: []HealthCategory{{Code: "IP_ADDRESS", Label: "IP address", Off: true}}}},
+		}},
+		"full": {Addr: "127.0.0.1:8787", Answering: true, Health: Health{
+			Locales: []string{"fr"}, Masking: "full"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var out strings.Builder
+			status.Write(&out)
+
+			first, _, _ := strings.Cut(out.String(), "\n")
+			if first != status.Headline() {
+				t.Errorf("the report opens on %q, but the shared sentence is %q", first, status.Headline())
+			}
+		})
+	}
+}

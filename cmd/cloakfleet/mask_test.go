@@ -457,3 +457,36 @@ func TestMaskSaysWhenNoCountryIsLoaded(t *testing.T) {
 		t.Errorf("the listing does not report the empty selection:\n%s", got)
 	}
 }
+
+// The catalogue listing opens on the same sentence `cloakfleet status` prints.
+//
+// The other half of the pair proxy's TestWriteOpensOnTheHeadline holds. The two
+// commands report on one agent, and written apart they had already drifted: this
+// one called a category "in clear" where the other called it "switched off", so a
+// person running both was told two things about one state. What follows the
+// sentence is each command's own — only this one is about to list the catalogue.
+func TestMaskOpensOnTheSharedSentence(t *testing.T) {
+	for name, status := range map[string]proxy.Status{
+		"no locale": {Addr: "127.0.0.1:8787", Answering: true, Health: proxy.Health{
+			Masking: "none"}},
+		"partial": {Addr: "127.0.0.1:8787", Answering: true, Health: proxy.Health{
+			Locales: []string{"fr"}, Masking: "partial",
+			Groups: []proxy.HealthGroup{{Code: "technical", Label: "Technical identifiers",
+				Categories: []proxy.HealthCategory{
+					{Code: "IP_ADDRESS", Label: "IP address", Off: true}}}},
+		}},
+		"full": {Addr: "127.0.0.1:8787", Answering: true, Health: proxy.Health{
+			Locales: []string{"fr"}, Masking: "full"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var out strings.Builder
+			writeCatalogue(&out, status)
+
+			first, _, _ := strings.Cut(out.String(), "\n")
+			if first != status.Headline() {
+				t.Errorf("the listing opens on %q, but the shared sentence is %q",
+					first, status.Headline())
+			}
+		})
+	}
+}

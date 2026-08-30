@@ -211,38 +211,68 @@ func Query(ctx context.Context, addr string, timeout time.Duration) Status {
 	return status
 }
 
+// Headline is the one sentence that says what this agent is doing, for whichever
+// surface is about to report on it.
+//
+// One sentence rather than one per surface, because the two that print it were
+// written apart and had already drifted: `cloakfleet status` called a category
+// "switched off" where `cloakfleet mask` called the same category "in clear", so
+// the two commands describing the same agent disagreed about what had happened to
+// it. Which is the failure the single /healthz type prevents on the wire, arrived
+// at through prose instead.
+//
+// "In clear" is what survived. It says the consequence rather than the mechanism —
+// somebody reading "switched off" learns that a setting moved, and somebody reading
+// "in clear" learns that their data is leaving — and it is already the word the
+// per-category lines below use.
+//
+// The menu bar keeps its own wording, and deliberately: it has a tooltip's worth of
+// room and no address to name, so it says "Masking, with 2 categories in clear"
+// where these say a sentence. What the three share is the decision, and that is
+// Level, which all three already read.
+func (s Status) Headline() string {
+	off := s.SwitchedOff()
+
+	switch {
+	case !s.Answering:
+		return fmt.Sprintf("cloakfleet is not answering on %s.", s.Addr)
+	case len(s.Locales) == 0:
+		return fmt.Sprintf("cloakfleet is answering on %s but masking almost nothing.", s.Addr)
+	case s.Level() == detector.LevelPartial:
+		return fmt.Sprintf("cloakfleet is masking on %s, with %d categor%s in clear.",
+			s.Addr, len(off), plural(len(off), "y", "ies"))
+	default:
+		return fmt.Sprintf("cloakfleet is masking on %s. Every category its locales loaded is on.",
+			s.Addr)
+	}
+}
+
 // Write reports the status in words an operator can act on.
 //
 // It says what is being masked rather than that the agent is up, and it says what
 // the consequence is when it is not — a stopped agent means unmasked traffic, not
 // a broken workstation, and somebody reading this has to know which.
 func (s Status) Write(w io.Writer) {
+	fmt.Fprintf(w, "%s\n\n", s.Headline())
+
 	switch {
 	case !s.Answering:
-		fmt.Fprintf(w, "cloakfleet is not answering on %s.\n\n", s.Addr)
 		fmt.Fprintf(w, "Your tools are reaching their provider directly, unmasked — which is\n")
 		fmt.Fprintf(w, "deliberate: a stopped agent leaves them working rather than broken.\n")
 		fmt.Fprintf(w, "Start it with `cloakfleet proxy`, or `./install.sh --restart`.\n")
 		return
 
 	case len(s.Locales) == 0:
-		fmt.Fprintf(w, "cloakfleet is answering on %s but masking almost nothing.\n\n", s.Addr)
 		fmt.Fprintf(w, "No country pattern set is loaded, so only the locale-independent\n")
 		fmt.Fprintf(w, "identifiers and credentials are recognised. Set %s.\n\n", detector.EnvLocale)
 
 	case s.Level() == detector.LevelPartial:
-		off := s.SwitchedOff()
-		fmt.Fprintf(w, "cloakfleet is masking on %s, with %d categor%s switched off.\n\n",
-			s.Addr, len(off), plural(len(off), "y", "ies"))
 		// Named, not counted. "Two categories are off" sends somebody looking; the
 		// names are what tells them whether the one they care about is among them.
-		for _, name := range off {
+		for _, name := range s.SwitchedOff() {
 			fmt.Fprintf(w, "  in clear       %s\n", name)
 		}
 		fmt.Fprint(w, "\n")
-
-	default:
-		fmt.Fprintf(w, "cloakfleet is masking on %s.\n\n", s.Addr)
 	}
 
 	fmt.Fprintf(w, "  version        %s\n", or(s.Version, "unknown"))
@@ -252,11 +282,11 @@ func (s Status) Write(w io.Writer) {
 	fmt.Fprintf(w, "\nhttp://%s/test shows what would be masked, in this configuration.\n", s.Addr)
 }
 
-// plural is the one-or-many ending of a word. Three packages carry their own copy of
-// this, which is the right amount of duplication for five lines: a shared package
-// for it would be a dependency between the request path, the menu bar and the
-// command, all three of which are deliberately kept from importing each other's
-// concerns.
+// plural is the one-or-many ending of a word. The menu bar carries its own copy,
+// which is the right amount of duplication for five lines: a shared package for it
+// would be a dependency between the request path and the menu bar, which are
+// deliberately kept from importing each other's concerns. The command had a third
+// copy until the sentence that used it moved into Headline.
 func plural(n int, one, many string) string {
 	if n == 1 {
 		return one

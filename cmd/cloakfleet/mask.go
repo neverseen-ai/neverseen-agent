@@ -276,20 +276,18 @@ func writeCatalogue(w io.Writer, status proxy.Status) {
 	// The three states, and the first one matters most: with no country pattern set
 	// loaded the agent is up and recognises almost nothing, and a header saying
 	// "every category is on" over that would be true and useless — every category of
-	// a catalogue that holds almost nothing. It is the same distinction Status.Write
-	// draws, and the reason Level exists.
-	off := status.SwitchedOff()
-	switch {
-	case len(status.Locales) == 0:
-		fmt.Fprintf(w, "cloakfleet is answering on %s but masking almost nothing.\n\n", status.Addr)
+	// a catalogue that holds almost nothing.
+	//
+	// The sentence comes from proxy.Status rather than from here, because this
+	// command and `cloakfleet status` are two surfaces reporting on one agent: the
+	// hand-written pair had already drifted, one calling a category "switched off"
+	// where the other called it "in clear". What follows it is this command's own,
+	// since only this one is about to list the catalogue underneath.
+	fmt.Fprintf(w, "%s\n\n", status.Headline())
+
+	if len(status.Locales) == 0 {
 		fmt.Fprint(w, "No country pattern set is loaded, so only the locale-independent\n")
 		fmt.Fprint(w, "identifiers and the credentials below are recognised at all.\n\n")
-	case len(off) > 0:
-		fmt.Fprintf(w, "cloakfleet is masking on %s, with %d categor%s in clear.\n\n",
-			status.Addr, len(off), plural(len(off), "y", "ies"))
-	default:
-		fmt.Fprintf(w, "cloakfleet is masking on %s. Every category its locales loaded is on.\n\n",
-			status.Addr)
 	}
 
 	fmt.Fprintf(w, "  substitution   %s\n", or(status.Substitution, "unknown"))
@@ -334,11 +332,4 @@ func or(value, fallback string) string {
 		return fallback
 	}
 	return value
-}
-
-func plural(n int, one, many string) string {
-	if n == 1 {
-		return one
-	}
-	return many
 }
