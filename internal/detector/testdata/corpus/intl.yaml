@@ -82,3 +82,36 @@ cases:
   - id: intl-prec-dob-future
     text: "Support ends 2099-12-31 per the published schedule."
     expect: []
+
+  # A short git object id, masked as a bank account before the per-country length
+  # was checked. It opens on "AE", which is a real country code, and its mod-97 key
+  # happens to verify — one arbitrary string in ninety-seven does. An Emirati IBAN
+  # is twenty-three characters; this is sixteen.
+  - id: intl-prec-hex-blob-is-not-an-iban
+    text: "Le cache porte l'objet ae5917ce58a7f1e2 depuis le dernier build."
+    expect: []
+
+  # Fourteen digits opening on a 4, and it passes Luhn — a tenth of arbitrary runs
+  # do. No Visa card has ever had fourteen digits, so before the shape fixed the
+  # length this was masked as a payment card.
+  - id: intl-prec-fourteen-digits-is-not-a-card
+    text: "La référence interne 43333333333338 figure au bordereau."
+    expect: []
+
+  # A nineteen-digit Visa, in both the notations the pattern accepts. This was the
+  # last gap in the card shape and it was a miss — a real card forwarded in clear,
+  # which is the worse direction than a reference masked for nothing.
+  - id: intl-card-nineteen-digits
+    text: "Paiement avec la carte 4532015112830366120 hier soir."
+    expect:
+      - {category: CREDIT_CARD, value: "4532015112830366120"}
+
+  - id: intl-card-nineteen-digits-grouped
+    text: "La carte 4532 0151 1283 0366 120 a été refusée."
+    expect:
+      - {category: CREDIT_CARD, value: "4532 0151 1283 0366 120"}
+
+  - id: intl-card-thirteen-digits
+    text: "Ancienne carte 4222222222222 encore au dossier."
+    expect:
+      - {category: CREDIT_CARD, value: "4222222222222"}

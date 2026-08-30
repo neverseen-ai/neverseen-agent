@@ -91,9 +91,21 @@ func NIRCheck(nir string) bool {
 //
 // Case-insensitive, because an IBAN pasted in lowercase is still an IBAN.
 //
-// TODO: the per-country length table is not checked, so a well-formed key on a
-// body of the wrong length still passes — one string in 97 of the right shape.
-// Add the table if IBAN false positives show up in the corpus.
+// The per-country length is checked, and the false positive that earned it is worth
+// recording: "ae5917ce58a7f1e2" — sixteen hex characters, a short git object id —
+// was masked as an account. It opens on "AE", which is a real country code, and its
+// mod-97 key happens to verify. One string in ninety-seven of the right shape does.
+//
+// Length is what kills that class, because a hex blob can only open on letters a–f
+// and almost none of those pairs is a country whose IBAN is as short as the blob:
+// AE is 23, AD 24, BA 20, DE 22, EE 20. Only BE, at 16, still collides — and a
+// sixteen-character string opening "BE" whose key verifies has every property a
+// Belgian account has.
+//
+// An unknown country code keeps the old behaviour rather than being refused. The
+// registry gains members, and refusing one would silently stop masking a real
+// account the day a country joined — a leak, against false positives on the handful
+// of two-letter prefixes that are not countries at all and must still clear mod-97.
 func IBANCheck(iban string) bool {
 	var compact strings.Builder
 	for _, r := range strings.ToUpper(iban) {
@@ -109,6 +121,9 @@ func IBANCheck(iban string) bool {
 
 	s := compact.String()
 	if len(s) < 15 || len(s) > 34 {
+		return false
+	}
+	if want, known := ibanLengths[s[:2]]; known && len(s) != want {
 		return false
 	}
 
@@ -485,3 +500,43 @@ var slugNamingItselfRe = regexp.MustCompile(
 // but identifier characters and dots. Trailing dots are allowed on purpose, because
 // an elision ("masked...") is prose rather than a credential too.
 var identifierOnlyRe = regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$.]*$`)
+
+// ibanLengths is the length ISO 13616 fixes for each country that issues IBANs,
+// including the two check digits.
+//
+// A table rather than a range, because the range is the whole problem: every length
+// from 15 to 34 is valid *somewhere*, so without knowing the country the only
+// evidence left is the mod-97 key, which one arbitrary string in ninety-seven
+// clears. The country code is in the value itself and costs nothing to read.
+//
+// TODO: transcribed from the ISO 13616 registry rather than generated from it. A
+// country joining needs a line here, and the symptom of forgetting is a real account
+// masked as before — the safe direction, because an unknown code is not refused.
+var ibanLengths = map[string]int{
+	"AD": 24, "AE": 23, "AL": 28, "AT": 20, "AZ": 28,
+	"BA": 20, "BE": 16, "BG": 22, "BH": 22, "BI": 27, "BR": 29, "BY": 28,
+	"CH": 21, "CR": 22, "CY": 28, "CZ": 24,
+	"DE": 22, "DJ": 27, "DK": 18, "DO": 28,
+	"EE": 20, "EG": 29, "ES": 24,
+	"FI": 18, "FK": 18, "FO": 18, "FR": 27,
+	"GB": 22, "GE": 22, "GI": 23, "GL": 18, "GR": 27, "GT": 28,
+	"HN": 28, "HR": 21, "HU": 28,
+	"IE": 22, "IL": 23, "IQ": 23, "IS": 26, "IT": 27,
+	"JO": 30,
+	"KW": 30, "KZ": 20,
+	"LB": 28, "LC": 32, "LI": 21, "LT": 20, "LU": 20, "LV": 21, "LY": 25,
+	"MC": 27, "MD": 24, "ME": 22, "MK": 19, "MN": 20, "MR": 27, "MT": 31,
+	"MU": 30, "MZ": 25,
+	"NI": 28, "NL": 18, "NO": 15,
+	"OM": 23,
+	"PK": 24, "PL": 28, "PS": 29, "PT": 25,
+	"QA": 29,
+	"RO": 24, "RS": 22, "RU": 33,
+	"SA": 24, "SC": 31, "SD": 18, "SE": 24, "SI": 19, "SK": 24, "SM": 27,
+	"SO": 23, "ST": 25, "SV": 28,
+	"TL": 23, "TN": 24, "TR": 26,
+	"UA": 29,
+	"VA": 22, "VG": 24,
+	"XK": 20,
+	"YE": 30,
+}

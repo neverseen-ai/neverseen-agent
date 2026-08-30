@@ -7,7 +7,7 @@
    "fn": 0
   },
   "CREDIT_CARD": {
-   "tp": 6,
+   "tp": 9,
    "fp": 0,
    "fn": 0
   },
@@ -207,5 +207,5 @@
    "fn": 0
   }
  },
- "negatives": 70
+ "negatives": 72
 }

@@ -34,8 +34,26 @@ var (
 	// pasted in. A digits-only expression missed "4532 0151 1283 0366"
 	// entirely. Luhn is what keeps this looser shape from claiming arbitrary
 	// runs of digits — an odometer reading, a counter.
+	//
+	// Luhn is only one digit of evidence: a tenth of arbitrary runs clear it,
+	// measured. So the length has to be the other half, exactly as the per-country
+	// table is for the IBAN. The Visa branch used to end on \d{1,4}, which admits
+	// thirteen, fourteen, fifteen and sixteen digits — and no Visa card has ever had
+	// fourteen or fifteen. Two lengths of pure false positive, each catching a tenth
+	// of the numbers that reached them. The other three branches were already exact:
+	// Mastercard and Discover sixteen, Amex fifteen.
+	//
+	// Each branch now carries exactly the lengths its network issues: Visa 13, 16
+	// and 19, Amex 15, Mastercard and Discover 16. The nineteen-digit Visa was the
+	// last gap and it was a *miss*, the worse direction — a real card forwarded in
+	// clear rather than a reference masked for nothing.
+	//
+	// Discover is left at sixteen deliberately. ISO/IEC 7812 permits up to nineteen
+	// and the network is widely said to use only sixteen; a length nobody could
+	// confirm is a guess, and a guessed length here either misses real cards or
+	// claims references, both silently.
 	creditCardRe = regexp.MustCompile(`\b(?:` +
-		`4\d{3}(?:[ \-]?\d{4}){2}[ \-]?\d{1,4}` + // Visa
+		`4\d{3}(?:[ \-]?\d{4}){2}[ \-]?(?:\d{4}(?:[ \-]?\d{3})?|\d)` + // Visa: 16, 19, or the older 13
 		`|5[1-5]\d{2}(?:[ \-]?\d{4}){3}` + // Mastercard
 		`|3[47]\d{2}[ \-]?\d{6}[ \-]?\d{5}` + // Amex
 		`|6(?:011|5\d{2})(?:[ \-]?\d{4}){3}` + // Discover

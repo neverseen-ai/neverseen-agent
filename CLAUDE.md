@@ -302,33 +302,36 @@ The full procedure, and which test fails on each forgotten step:
 The catalogue, the locales and the substitution modes in full:
 `openwiki/architecture/detection-engine.md`.
 
+- **A checksum on its own is not evidence of a category — the length is the other
+  half.** Measured across every checksummed category: Luhn clears ~10% of arbitrary
+  runs, NHS mod-11 ~9%, ABA ~4%, the NIR key ~0.9%. That is all a checksum promises,
+  so wherever the real identifier fixes a length, the shape must fix it too. Five of
+  the six already did; the two that did not are recorded below, and both were found
+  by asking this question rather than by a report. `ae5917ce58a7f1e2`, a short git object id, was masked as a bank account: it
+  opens on "AE", a real country code, and one arbitrary string in ninety-seven clears
+  mod-97. `ibanLengths` is what kills that class, because a hex blob can only open on
+  letters a–f and almost none of those pairs names a country whose IBAN is that
+  short. An **unknown** country code is still accepted: the registry gains members,
+  and refusing one would silently stop masking a real account the day a country
+  joined. The generic lesson is the one the file already carried as a `TODO` — where
+  a category fixes a length, check it, or the checksum is doing all the work alone.
+- **The card shape fixes the length per brand, and the Visa branch is why.** It
+  ended on `\d{1,4}`, admitting thirteen, fourteen, fifteen and sixteen digits — and
+  no Visa card has ever had fourteen or fifteen. Two lengths of pure false positive,
+  each catching a tenth of the numbers that reached them, which is the IBAN failure in
+  another costume. `TestCreditCardShapeRejectsLengthsNoVisaHas` uses values that all
+  pass Luhn, so it tests the shape rather than the checksum — a case that failed Luhn
+  would go green for the wrong reason, and the test refuses to run on one.
+- **Each card branch now carries exactly the lengths its network issues**: Visa 13, 16
+  and 19, Amex 15, Mastercard and Discover 16. The nineteen-digit Visa was the last
+  gap and it was a **miss** — a real card forwarded in clear, the worse direction than
+  a reference masked for nothing. Seventeen, eighteen and twenty sit between real
+  lengths and are none of them. **Discover stays at sixteen deliberately**: ISO/IEC
+  7812 permits nineteen and no source confirms the network issues one, and a guessed
+  length either misses real cards or claims references — both silently.
 - **A checksum lets a shape be loose; without one, the shape is all there is.**
   `CategoryInfo.Verify` is where a checksum goes, and a value that fails it is
   dropped outright rather than scored down.
-- **`NAME=value` is evidence in configuration and noise in source code.**
-  `genericSecretRe` treats the name as the proof, which holds for a `.env` line and
-  collapses in a repository, where `password:` is a *field* name and the right side
-  is an expression, a type or an identifier. Pointed at one, it claimed
-  `newPassword`, `req.cookies.token`, `process.env.LLM_API_KEY` and
-  `CreationOptional<string` — and the model received a review of code whose
-  identifiers had been replaced by `[SECRET_n]`. `GenericSecretCheck` is the guard,
-  and both its rules are narrower than they look, because the tree already held a
-  case against each over-reach: **opening** brackets only (`PASSWORD=hunter2)` is a
-  real credential ending on a closer), and identifier-shaped **plus no digit**
-  (`Sup3rS3cr3tValue123` is a name by shape and a password in fact). The slash and
-  the plus are not code punctuation — base64 is made of them. What still leaks is
-  recorded as a `TODO`: a credential of nothing but letters.
-- **Where shape runs out, the keyword decides.** `reset-password` behind `password:`
-  has the *same shape* as `troisieme-valeur-longue`, the corpus's own credential —
-  lowercase words joined by hyphens, both of them — so no rule about form could
-  separate them. What does: **a passphrase does not name the thing it unlocks.** A
-  lowercase slug carrying `password`, `secret`, `token` or `api_key` is a route name.
-  Lowercase and hyphens only, which is what keeps `MyPassword123!` a credential.
-- **Narrowing a credential pattern is the change that leaks, so what must still be
-  caught is asserted beside what must not.**
-  `TestGenericSecretCheckRejectsSourceCode` and
-  `TestGenericSecretCheckKeepsCredentials` are one pair, and neither is meaningful
-  alone.
 - **`Verify` is not only for checksums — it is for any rule the regex cannot
   express.** `DOBCheck` is the case that makes the point: a date has no checksum,
   and its shape is satisfied by every deadline, renewal and invoice date in a

@@ -25,6 +25,7 @@ const internationalSample = `=== Contact et comptes ===
 Email : claire.moreau@example.fr, avec alias claire+juridique@example.fr
 Email accentué : andré.muller@example.fr
 Carte : 4532015112830366, aussi écrite 4532 0151 1283 0366 ou 4532-0151-1283-0366
+Cartes des autres longueurs : 4222222222222 (13), 4532015112830366120 (19), 4532 0151 1283 0366 120 (19 groupée)
 IBAN : FR1420041010050500013M02606, groupé FR14 2004 1010 0505 0001 3M02 606
 IBAN étrangers : DE89370400440532013000, BE68539007547034, NL91ABNA0417164300
 Serveur : 192.168.13.42, et 10.0.0.1 en secours

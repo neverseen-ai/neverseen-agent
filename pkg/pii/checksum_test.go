@@ -39,6 +39,74 @@ func TestLuhnCheck(t *testing.T) {
 	}
 }
 
+// The length a country fixes is what separates an account from a hash whose key
+// happens to verify. One arbitrary string in ninety-seven does.
+// Luhn is one digit of evidence — a tenth of arbitrary runs clear it — so the length
+// has to be the other half, exactly as the per-country table is for the IBAN.
+//
+// Every value here passes Luhn. What separates them is that no Visa card has ever had
+// fourteen or fifteen digits, so those two lengths were pure false positive catching a
+// tenth of the numbers that reached them.
+func TestCreditCardShapeRejectsLengthsNoVisaHas(t *testing.T) {
+	tests := []struct {
+		value string
+		want  bool
+		why   string
+	}{
+		{"4333333333335", true, "thirteen — the older Visa"},
+		{"43333333333338", false, "fourteen — no card has this"},
+		{"433333333333336", false, "fifteen — nor this"},
+		{"4333333333333339", true, "sixteen — the usual Visa"},
+		{"4532015112830366120", true, "nineteen — issued, and missed until the third group"},
+		{"4532 0151 1283 0366 120", true, "nineteen, grouped 4-4-4-4-3"},
+
+		// Seventeen and eighteen sit between two real lengths and are neither.
+		{"43333333333333337", false, "seventeen"},
+		{"433333333333333330", false, "eighteen"},
+
+		{"4532 0151 1283 0366", true, "grouped by four"},
+		{"4532-0151-1283-0366", true, "grouped with dashes"},
+		{"5555555555554444", true, "Mastercard, sixteen"},
+		{"371449635398431", true, "Amex, fifteen"},
+	}
+
+	for _, tt := range tests {
+		if !LuhnCheck(tt.value) {
+			t.Fatalf("%q does not pass Luhn, so this case proves nothing", tt.value)
+		}
+		got := creditCardRe.FindString("carte "+tt.value+" fin") != ""
+		if got != tt.want {
+			t.Errorf("the card shape claims %q = %v, want %v — %s", tt.value, got, tt.want, tt.why)
+		}
+	}
+}
+
+func TestIBANCheckAppliesThePerCountryLength(t *testing.T) {
+	tests := []struct {
+		value string
+		want  bool
+		why   string
+	}{
+		// The short git object id that was masked as an account. "AE" is a real
+		// country code and the mod-97 key verifies; an Emirati IBAN is 23.
+		{"ae5917ce58a7f1e2", false, "sixteen characters under a country that fixes 23"},
+		{"AE5917CE58A7F1E2", false, "the same, in the case it was stored as"},
+
+		// Real accounts, at the length their country fixes.
+		{"FR1420041010050500013M02606", true, "France, 27"},
+		{"DE89370400440532013000", true, "Germany, 22"},
+		{"GB33BUKB20201555555555", true, "United Kingdom, 22"},
+		{"BE68539007547034", true, "Belgium, 16 — the one length a hex blob can still reach"},
+		{"NL91ABNA0417164300", true, "Netherlands, 18"},
+	}
+
+	for _, tt := range tests {
+		if got := IBANCheck(tt.value); got != tt.want {
+			t.Errorf("IBANCheck(%q) = %v, want %v — %s", tt.value, got, tt.want, tt.why)
+		}
+	}
+}
+
 func TestIBANCheck(t *testing.T) {
 	tests := []struct {
 		name  string

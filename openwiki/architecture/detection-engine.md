@@ -143,7 +143,124 @@ Checksums live in `pkg/pii/checksum.go`: `LuhnCheck` (cards), `IBANCheck`, `NIRC
 (including the Corsica case, `TestNIRCheck_Corsica`), `SIRENCheck`, `SIRETCheck`,
 `NHSNumberCheck`, `NINOCheck` (letter rules, not a checksum — six letters excluded from
 the first position, seven from the second, seven whole prefixes unissued), `SSNCheck`,
-`RoutingNumberCheck` (ABA weights).
+`RoutingNumberCheck` (ABA weights), `DOBCheck` (a year in the past).
+
+#### How much work each checksum does alone
+
+Measured, by generating random runs of the length each shape admits and counting how
+many clear the check:
+
+| Check | Clears | Length fixed by the shape? |
+|---|---|---|
+| Luhn (SIREN, SIRET, card) | ~10% | SIREN 9, SIRET 14 — yes. Card: **no**, see below |
+| NHS mod-11 | ~9% | 10 — yes |
+| ABA weights + district | ~4% | 9 — yes |
+| NIR mod-97 | ~0.9% | 15 — yes |
+| IBAN mod-97 | ~1% | **no**, see below |
+
+A checksum is one or two digits of evidence and nothing more. Where the real
+identifier fixes a length, the shape has to fix it too, or the check is carrying the
+whole category on its own. Two did not, and both were found by asking that question
+of every row rather than by a report.
+
+#### The card shape, and the two Visa lengths that do not exist
+
+`creditCardRe`'s Visa branch ended on `\d{1,4}`, which admits **thirteen, fourteen,
+fifteen and sixteen** digits. Visa issues thirteen and sixteen. Fourteen and fifteen
+are not short cards or rare cards; they are not cards. Each was catching a tenth of
+the numbers that reached it — an order reference, an account line, any long run
+opening on a 4.
+
+The other three branches were already exact: Mastercard and Discover sixteen, Amex
+fifteen. Only the branch written with a range was wrong, which is the lesson worth
+keeping — a range in a shape that has no range is where this class of bug lives.
+
+`TestCreditCardShapeRejectsLengthsNoVisaHas` asserts on values that **all pass Luhn**,
+so it exercises the shape rather than the checksum; a case that failed Luhn would go
+green for the wrong reason.
+
+**The branch now carries every length Visa issues**, which closes the other half of the
+finding. Nineteen-digit numbers were missed — the repetition was fixed at two groups —
+and a missed card is forwarded in clear, which is worse than a reference masked for
+nothing. The optional trailing group of three is what covers it:
+
+```
+4\d{3}(?:[ \-]?\d{4}){2}[ \-]?(?:\d{4}(?:[ \-]?\d{3})?|\d)
+                                   └ 16 ┘ └── 19 ──┘   └ 13 ┘
+```
+
+| Length | Verdict | |
+|---|---|---|
+| 13, 16, 19 | masked | the lengths Visa issues, run together or grouped |
+| 14, 15 | ignored | no card has them |
+| 17, 18, 20 | ignored | between real lengths, and none of them |
+
+**Discover stays at sixteen deliberately.** ISO/IEC 7812 permits up to nineteen, and no
+source confirms the network issues one. A guessed length here either misses real cards
+or claims references, and both are silent — the same reason Mistral, Together and
+DeepInfra have no key pattern of their own.
+
+#### The IBAN length table, and why a key alone was not enough
+
+`MASK ae5917ce58a7f1e2 TO [IBAN_2]` — a short git object id, masked as a bank account.
+It opens on `AE`, which is a real country code, and its mod-97 key verifies. One
+arbitrary string in ninety-seven of the right shape does; that is what a two-digit
+check is.
+
+`ibanLengths` closes it. ISO 13616 fixes a length per country — Emirati accounts are
+23 characters, this was 16 — and the country code is in the value, free to read. The
+reason length works so well against this particular class is arithmetic: a hex blob
+can only open on letters `a`–`f`, and of those pairs `AE` is 23, `AD` 24, `BA` 20,
+`DE` 22, `EE` 20. **Only `BE`, at 16, still collides** — and a sixteen-character string
+opening `BE` whose key verifies has every property a Belgian account has.
+
+**An unknown country code is accepted, not refused.** The registry gains members, and
+refusing an unknown one would silently stop masking real accounts the day a country
+joined — a leak, weighed against false positives on the few two-letter prefixes that
+are not countries and must still clear mod-97. The transcription is a `TODO`: a
+country joining needs a line, and the symptom of forgetting is masking as before.
+
+The file had carried the fix as a `TODO` since the check was written — *"add the table
+if IBAN false positives show up in the corpus"* — and this is the one that showed up.
+
+#### `DOBCheck`, the one that is not a checksum
+
+A date has none, and nothing about its shape distinguishes a birth date from a deadline,
+a renewal, an invoice date or a delivery slot. Left unverified, `DOB` claims all of them —
+which is a lot of ordinary text replaced in a prompt somebody is asking a question about.
+
+What separates the two is the one thing a regex cannot see: where the value sits relative
+to today. The rule is **at least a year in the past**. "Not in the future" alone would
+still admit every date since January, which is exactly where a renewal lands.
+
+It hangs off the **category**, not off a pattern, which is the whole reason it is one
+function. `Score` is the single place `Verify` is called, and `CatDOB` is shared by
+day-first (`fr`), month-first (`us`) and ISO (locale-independent) — so one rule guards
+three expressions. Written per pattern it would have been three, and the third would have
+been forgotten the day a fourth locale landed.
+
+The parsing is the awkward part, and it is deliberately shallow. Three fields split on any
+of the separators the patterns accept; year-first means ISO; a spelled-out month fixes the
+order whatever the locale; and a bare numeric triple is genuinely ambiguous — `05/06/2024`
+is day-first in France and month-first in the US, and the locale that read it is not
+carried as far as `Verify`. **Either reading being old enough is enough to go on masking.**
+The two differ by months, and choosing wrong would drop a real birth date to spare an
+ordinary one. A shape it cannot read at all is kept, for the same reason.
+
+**The clock is injectable** (`dobCheckAt`), and that is not a testing nicety. Against
+`time.Now` every boundary case ages past the threshold and starts passing for the wrong
+reason — the suite would go green over a rule it had stopped exercising. `TestDOBCheck`
+pins 2026-08-28 and checks both sides of the cut-off; the corpus negatives use 2099, which
+is permanently in the future, rather than a near year that would rot.
+
+**The known cost is infants**, recorded as a `TODO` on the function. Somebody born four
+months ago has a real date of birth and it is personal data, and this drops it. The upgrade
+is a rule that reads the words around the value rather than the value alone — a different
+engine, not a wider expression.
+
+One false positive this does *not* fix, and it is in the baseline: `precision-fr.yaml`
+flags `1 12 2019` in "La version 1 12 2019 du document". A version string in the day-first
+spaced notation, comfortably in the past. Only context separates it from a birth date.
 
 #### `GenericSecretCheck`, and the premise that fails in a repository
 
