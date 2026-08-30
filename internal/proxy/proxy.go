@@ -161,7 +161,7 @@ func (s *Server) reverseProxy(base *url.URL) *httputil.ReverseProxy {
 // reservedRoutes are the paths the agent answers itself. A provider may not take
 // one of these codes: "/healthz" would reach the agent while "/healthz/v1/…"
 // reached the provider, which is a routing table nobody could reason about.
-var reservedRoutes = []string{"healthz", "test", "policy"}
+var reservedRoutes = []string{"healthz", "test", "policy", "mask", "unmask"}
 
 // Handler returns the agent's routes.
 func (s *Server) Handler() http.Handler {
@@ -169,6 +169,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/healthz", s.health)
 	mux.HandleFunc("/policy", s.handlePolicy)
 	mux.HandleFunc("/test", s.handleTest)
+	mux.HandleFunc("/mask", s.handleMask)
+	mux.HandleFunc("/unmask", s.handleUnmask)
 	mux.HandleFunc("/", s.forward)
 	return mux
 }

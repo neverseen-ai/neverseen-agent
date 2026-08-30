@@ -264,3 +264,55 @@ func TestOneBatchCarriesABoundedSlice(t *testing.T) {
 			queue.buckets[0].Counters.Requests, maxBucketsPerRequest)
 	}
 }
+
+// A queue file that cannot be read is a loss, and a loss has to be counted.
+//
+// The counter exists to keep a gap in the record from looking like a quiet period,
+// and this is the path where that mattered most and did not happen: loadBuffer
+// returned the error, NewReporter logged it and carried on, and the next save found
+// nothing queued and no loss declared — so it deleted the file and nothing anywhere
+// recorded that a backlog had existed.
+//
+// Counted as one, deliberately. The file did not parse, so how many buckets it held
+// is exactly what cannot be known; one is not the true figure, it is the difference
+// between "some counters were lost" and silence.
+func TestAnUnreadableQueueCountsItsLoss(t *testing.T) {
+	for name, content := range map[string]string{
+		"truncated mid-object": `{"buckets":[{"window":`,
+		"not JSON at all":      "\x00\x00\x00\x00",
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "buffer.json")
+			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			b, err := loadBuffer(path)
+			if err == nil {
+				t.Fatal("an unreadable queue was read without complaint")
+			}
+			if got := b.takeDropped(); got != 1 {
+				t.Errorf("an unreadable queue reported %d losses, want 1 — a loss nobody "+
+					"counted looks exactly like a quiet period", got)
+			}
+		})
+	}
+
+	// The live file beside it has always counted its own, and the two must not come
+	// apart again: this is one function, and half of it counting was the bug.
+	path := filepath.Join(t.TempDir(), "buffer.json")
+	if err := os.WriteFile(path, []byte(`{"buckets":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(livePathFor(path), []byte(`{"live":`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	b, err := loadBuffer(path)
+	if err == nil {
+		t.Fatal("an unreadable live bucket was read without complaint")
+	}
+	if got := b.takeDropped(); got != 1 {
+		t.Errorf("an unreadable live bucket reported %d losses, want 1", got)
+	}
+}

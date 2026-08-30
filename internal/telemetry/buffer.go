@@ -106,14 +106,24 @@ type liveFile struct {
 func loadBuffer(path string) (*buffer, error) {
 	b := &buffer{path: path}
 
+	// A queue that cannot be read costs everything it held, and the loss is counted
+	// rather than passed over. Counted as one, because the file did not parse and
+	// how many buckets were in it is exactly what is unknown — one is not the true
+	// figure, it is the difference between a gap in the record and a period that
+	// looks quiet. That distinction is the whole reason the counter exists, and the
+	// live file five lines below had it while this one did not: the caller logs the
+	// error and carries on, save() then finds nothing queued and no loss declared,
+	// and deletes the evidence.
 	raw, err := os.ReadFile(filepath.Clean(path))
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 	case err != nil:
+		b.dropped++
 		return b, fmt.Errorf("read the buffered buckets: %w", err)
 	default:
 		var stored bufferFile
 		if err := json.Unmarshal(raw, &stored); err != nil {
+			b.dropped++
 			return b, fmt.Errorf("parse %s: %w", path, err)
 		}
 		b.dropped = stored.Dropped

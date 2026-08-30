@@ -50,6 +50,7 @@ Usage:
   cloakfleet status        report whether the agent is masking, and what
   cloakfleet mask          list what is masked, and switch a category or a family
                            off for this run
+  cloakfleet key           print the control key, for the browser extension
   cloakfleet env [--force] print the shell exports that point a tool at the agent
   cloakfleet version       print the version
 
@@ -123,6 +124,8 @@ func run(args []string, stdin io.Reader, stdout io.Writer) error {
 		return runStatus(stdout)
 	case "mask":
 		return runMask(args[1:], stdout)
+	case "key":
+		return runKey(stdout)
 	case "env":
 		return runEnv(args[1:], stdout)
 	case "version":

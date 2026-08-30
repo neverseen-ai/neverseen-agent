@@ -3,6 +3,7 @@ package proxy
 import (
 	"bytes"
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -37,6 +38,39 @@ import (
 // headers: that key authenticates this workstation to a backend, and reusing it
 // would put a key with a remote meaning into a local exchange.
 const controlHeader = "X-Cloakfleet-Control"
+
+// authorised reports whether a request carries the control secret, and writes the
+// refusal itself when it does not.
+//
+// One helper rather than the check written out per handler, because there are three
+// routes behind it now and they are not equally forgiving of a drift. PUT /policy
+// switches masking off, which is a future leak; POST /unmask reads the session
+// mapping — token in, original out — which is an immediate one. A second copy of
+// this check is the copy that comes to differ from the first, and the difference
+// would be silent on exactly the route that matters most.
+//
+// Constant-time, because == on a secret returns at the first differing byte and this
+// socket is reachable by every process on the workstation: a caller that can time a
+// few thousand requests can walk the key out of it a byte at a time.
+//
+// An agent with no key refuses everything here. That is inherited from the route
+// this was extracted from, and it is the safe direction: a key that could not be read
+// or written must not degrade into accepting anything.
+func (s *Server) authorised(w http.ResponseWriter, r *http.Request) bool {
+	if s.controlKey == "" {
+		http.Error(w, "cloakfleet: no control key on this agent, so this route refuses everything",
+			http.StatusServiceUnavailable)
+		return false
+	}
+
+	// Deliberately says nothing about what was wrong. A local process probing this
+	// does not need to be told whether the header was missing or merely incorrect.
+	if subtle.ConstantTimeCompare([]byte(r.Header.Get(controlHeader)), []byte(s.controlKey)) != 1 {
+		http.Error(w, "cloakfleet: not authorised", http.StatusForbidden)
+		return false
+	}
+	return true
+}
 
 // policyRequest is what a surface sends to change what is masked.
 //
@@ -75,19 +109,7 @@ func (s *Server) handlePolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if s.controlKey == "" {
-		// No key, no route. An agent that could not read or write its key must not
-		// fall back to accepting anything: that is the failure this route's whole
-		// design is about.
-		http.Error(w, "cloakfleet: no control key on this agent, so nothing may change what it masks",
-			http.StatusServiceUnavailable)
-		return
-	}
-	if r.Header.Get(controlHeader) != s.controlKey {
-		// Deliberately says nothing about what was wrong. A local process probing
-		// this does not need to be told whether the header was missing or merely
-		// incorrect.
-		http.Error(w, "cloakfleet: not authorised to change what this agent masks", http.StatusForbidden)
+	if !s.authorised(w, r) {
 		return
 	}
 

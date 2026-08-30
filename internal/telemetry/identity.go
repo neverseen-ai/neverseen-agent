@@ -50,17 +50,16 @@ func LoadIdentity(path string) (Identity, bool, error) {
 // The directory is created with the same restriction. The file holds a signing
 // key, and a key that is world-readable on a shared workstation is a key
 // anybody can file reports with.
+//
+// Through writeFile, so it is written to a neighbour and renamed over the target
+// — and of the three files this agent keeps, this is the one that most needed it
+// and was the only one without it. A torn control key is regenerated on the next
+// start; a torn buffer costs some counters. A torn identity cannot be repaired at
+// all: LoadIdentity refuses it, the reporter falls back to enrolling, and the
+// enrolment token it would present is single-use by design. The workstation is
+// then off the fleet view until somebody re-provisions it by hand.
 func SaveIdentity(path string, id Identity) error {
-	clean := filepath.Clean(path)
-	if err := os.MkdirAll(filepath.Dir(clean), 0o700); err != nil {
-		return fmt.Errorf("create the identity directory: %w", err)
-	}
-
-	raw, err := json.MarshalIndent(id, "", "  ")
-	if err != nil {
-		return fmt.Errorf("encode the identity: %w", err)
-	}
-	if err := os.WriteFile(clean, append(raw, '\n'), 0o600); err != nil {
+	if err := writeFile(path, id); err != nil {
 		return fmt.Errorf("write the identity file: %w", err)
 	}
 	return nil
