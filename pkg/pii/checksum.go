@@ -506,6 +506,18 @@ func IPAddressCheck(value string) bool {
 // `PASSWORD=correcthorse` goes out in clear. The upgrade is to read whether the
 // value was quoted where it was found, which Verify cannot see: it is handed the
 // group and not its surroundings.
+//
+// TODO: a credential given as a command-line pair — `curl -u admin:hunter2` — is
+// not read either, and it is deliberately not a pattern. There is nothing in the
+// shape to separate it from `docker run -u 1000:1000`, which is a user and a
+// group, or from any other `a:b` argument: the flag is the same, the position is
+// the same, and only the strength of the right-hand side differs. Grading it on
+// SecretStrength would work and would put a second, hidden floor under
+// SECRET_GENERIC — one the secret level does not control and nobody could see in
+// the menu — while masking `1000` on every `docker run` at the default level. The
+// upgrade is a rule that reads the command the flag belongs to, which means
+// knowing that `curl` and `docker` want different things from `-u`; that is a
+// different engine, not a wider expression.
 func GenericSecretCheck(value string) bool {
 	// Openers only. A closing bracket is what a credential ends on; an opening one
 	// is what an expression begins.

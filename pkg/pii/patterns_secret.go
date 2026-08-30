@@ -215,7 +215,7 @@ var (
 	// the floor, and match nothing at all — the password would leave in clear. A
 	// narrowing that turns a caught credential into a silent miss is worse than
 	// the eaten bracket it set out to fix.
-	genericSecretRe = regexp.MustCompile(`(?i)(?:PASSWORD|PASSWD|SECRET|TOKEN|API_KEY|APIKEY|ACCESS_KEY|ENCRYPTION_KEY|PRIVATE_KEY|PRIV_KEY|AUTH_TOKEN|AUTH_KEY|CLIENT_KEY|SERVICE_KEY|ACCOUNT_KEY|DB_KEY|DATABASE_KEY|KEY_PASS|DB_PASS|DATABASE_PASS)['"]?\s*[=:]\s*['"]?` +
+	genericSecretRe = regexp.MustCompile(`(?i)(?:PASSWORD|PASSWD|SECRET|TOKEN|API_KEY|APIKEY|ACCESS_KEY|ENCRYPTION_KEY|PRIVATE_KEY|PRIV_KEY|AUTH_TOKEN|AUTH_KEY|CLIENT_KEY|SERVICE_KEY|ACCOUNT_KEY|DB_KEY|DATABASE_KEY|KEY_PASS|DB_PASS|DATABASE_PASS|SESSION|SESSION_ID|SESSION_KEY)['"]?\s*[=:]\s*['"]?` +
 		`([^` + quoteChars + `]{7,}[^` + quoteChars + noSentenceTail + `]|[^` + quoteChars + `]{8,})['"]?`)
 
 	// Sixty-four or more hex characters behind a key-shaped name. The floor is
