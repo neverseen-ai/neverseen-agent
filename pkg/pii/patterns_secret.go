@@ -64,6 +64,23 @@ var (
 	hfRe        = regexp.MustCompile(`hf_[a-zA-Z0-9]{20,}`)
 	replicateRe = regexp.MustCompile(`r8_[a-zA-Z0-9]{20,}`)
 
+	// Groq and xAI: the two of the eight providers this agent proxies whose key
+	// carries a prefix somebody can verify. The prefix is the whole of the
+	// evidence and it is enough — "gsk_" or "xai-" followed by thirty-odd
+	// alphanumerics is not a shape ordinary text produces.
+	//
+	// The tail is {32,} rather than an exact count on purpose: neither vendor
+	// documents a length, and a count taken from one observed key is a pattern
+	// that stops matching the day they lengthen it — silently, which is the
+	// failure mode a credential pattern must not have. Open-ended costs nothing
+	// here because the prefix already did the discriminating.
+	//
+	// TODO: replace {32,} with the real length if either vendor ever documents
+	// one. The three remaining providers — Mistral, Together, DeepInfra — have no
+	// pattern here at all: see the note above SecretPatterns.
+	groqRe = regexp.MustCompile(`\bgsk_[a-zA-Z0-9]{32,}`)
+	xaiRe  = regexp.MustCompile(`\bxai-[a-zA-Z0-9]{32,}`)
+
 	// --- structural shapes -------------------------------------------------
 
 	// On "PRIVATE KEY", not on the delimiter shape: a certificate and a public
@@ -135,6 +152,21 @@ var (
 	hexSecretRe = regexp.MustCompile(`(?i)(?:KEY|SECRET|ENCRYPTION_KEY|SIGNING_KEY|HMAC_KEY)['"]?\s*[=:]\s*['"]?([0-9a-f]{64,})['"]?`)
 )
 
+// Three of the eight providers this agent proxies have no pattern of their own, and
+// that is a decision rather than an omission.
+//
+// A Mistral key is thirty-two bare alphanumerics with no prefix. Written as a
+// pattern it claims every MD5 digest, every abbreviated commit id and every
+// thirty-two character session id there is — measured, not supposed. Together and
+// DeepInfra document no format at all, and a pattern guessed from one key somebody
+// posted is one that fails after an operator has trusted it.
+//
+// What covers them is the context: genericSecretRe reads MISTRAL_API_KEY=… and
+// TOGETHER_API_KEY=… and masks the value, which is how an unprefixed key actually
+// appears — in a .env, an export, a pasted configuration. A bare key in prose is not
+// distinguishable from a hash by anything this engine can see, and claiming it would
+// cost more than it saves.
+
 // SecretPatterns returns the credential set. It is locale-independent: a
 // deployment that scans no country's identifiers still must not paste its keys
 // into a model.
@@ -159,6 +191,8 @@ func SecretPatterns() []Pattern {
 		{Regex: dockerRe, Category: CatDockerToken, Label: "Docker personal access token"},
 		{Regex: hfRe, Category: CatHFToken, Label: "Hugging Face token"},
 		{Regex: replicateRe, Category: CatReplicateToken, Label: "Replicate API token"},
+		{Regex: groqRe, Category: CatGroqKey, Label: "Groq API key"},
+		{Regex: xaiRe, Category: CatXAIKey, Label: "xAI API key"},
 
 		// structural
 		{Regex: pemRe, Category: CatPEMKey, Label: "PEM private key block"},

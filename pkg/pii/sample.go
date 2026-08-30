@@ -111,6 +111,7 @@ SendGrid : SG.abcdefghijklmnopqrstuv.abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ
 Twilio : SK0123456789abcdef0123456789abcdef
 Registres : npm_abcdefghijklmnopqrstuvwx, pypi-abcdefghijklmnopqrstuvwx, dckr_pat_abcdefghijklmnopqrstuvwx
 Modèles : hf_abcdefghijklmnopqrstuvwx, r8_abcdefghijklmnopqrstuvwx
+Inférence : gsk_abcdefghijklmnopqrstuvwxyz012345, xai-abcdefghijklmnopqrstuvwxyz012345
 Clé privée : -----BEGIN OPENSSH PRIVATE KEY-----
 JWT : eyJabcdefghijkl.eyJabcdefghijklmn.abcdefghijklmnopqrst
 Base : postgres://admin:s3cr3t@db.example.com:5432/app

@@ -93,6 +93,8 @@ const (
 	CatDockerToken    Category = "SECRET_DOCKER_TOKEN"
 	CatHFToken        Category = "SECRET_HF_TOKEN"
 	CatReplicateToken Category = "SECRET_REPLICATE_TOKEN"
+	CatGroqKey        Category = "SECRET_GROQ_KEY"
+	CatXAIKey         Category = "SECRET_XAI_KEY"
 	CatPEMKey         Category = "SECRET_PEM_KEY"
 	CatJWT            Category = "SECRET_JWT"
 	CatConnStr        Category = "SECRET_CONN_STR"
@@ -199,6 +201,8 @@ var categoryRegistry = map[Category]CategoryInfo{
 	CatDockerToken:    {Prefix: "DOCKER_TOKEN", Score: 96, Secret: true, Group: GroupSecrets, Label: "Docker token"},
 	CatHFToken:        {Prefix: "HF_TOKEN", Score: 95, Secret: true, Group: GroupSecrets, Label: "Hugging Face token"},
 	CatReplicateToken: {Prefix: "REPLICATE_TOKEN", Score: 95, Secret: true, Group: GroupSecrets, Label: "Replicate token"},
+	CatGroqKey:        {Prefix: "GROQ_KEY", Score: 95, Secret: true, Group: GroupSecrets, Label: "Groq API key"},
+	CatXAIKey:         {Prefix: "XAI_KEY", Score: 95, Secret: true, Group: GroupSecrets, Label: "xAI API key"},
 	CatPEMKey:         {Prefix: "PEM_KEY", Score: 99, Secret: true, Group: GroupSecrets, Label: "Private key"},
 	CatJWT:            {Prefix: "JWT", Score: 92, Secret: true, Group: GroupSecrets, Label: "JSON web token"},
 	CatConnStr:        {Prefix: "CONN_STR", Score: 92, Secret: true, Group: GroupConnection, Label: "Connection string"},
