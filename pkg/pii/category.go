@@ -145,6 +145,28 @@ type CategoryInfo struct {
 	// app token, and those need different labels under one category. This is the
 	// one name the category itself carries.
 	Label string
+
+	// NoisyInCode marks a category whose shape is satisfied by things source code
+	// is made of, so a value found inside code is not reported.
+	//
+	// Per category rather than a global sensitivity, because the answer differs by
+	// category and one knob would have to be wrong for most of them. What is *not*
+	// marked matters as much as what is:
+	//
+	//   - **No credential is ever marked.** A key in a `.env` a coding agent has
+	//     just read is the most valuable thing this agent will see all day, and a
+	//     rule that relaxed secrets in code would fire exactly there.
+	//   - **EMAIL is not marked.** An address in a fixture is still somebody's
+	//     address, and measuring third-party packages found real maintainers'
+	//     addresses in their metadata.
+	//   - **IP_ADDRESS is not marked**, which is a decision against the obvious: it
+	//     is the largest category in every code measurement here. IPAddressCheck
+	//     already declines the ranges that name nobody, and what it deliberately
+	//     keeps is the private ranges, because an internal host in a pasted
+	//     configuration is a topology — which is what must not reach a model. A
+	//     pasted configuration *is* code, so marking this would undo that decision
+	//     in the one place it was made for.
+	NoisyInCode bool
 }
 
 // categoryRegistry is the whole catalogue, minus the regexes.
@@ -167,7 +189,12 @@ var categoryRegistry = map[Category]CategoryInfo{
 	CatIPv6: {Prefix: "IPV6", Score: 75, Verify: IPAddressCheck, Group: GroupTechnical,
 		Label: "IPv6 address"},
 	CatMongoID: {Prefix: "MONGOID", Score: 85, Group: GroupTechnical, Label: "Database identifier"},
-	CatDOB:     {Prefix: "DOB", Score: 75, Verify: DOBCheck, Group: GroupPersonal, Label: "Date of birth"},
+	// Marked noisy in code: a date in source is a changelog entry, a copyright
+	// year or a fixture. Sixteen of the hundred and twenty findings left in
+	// third-party TypeScript were dates of this kind, and DOBCheck cannot help —
+	// a release date last March is as far in the past as a birth date.
+	CatDOB: {Prefix: "DOB", Score: 75, Verify: DOBCheck, Group: GroupPersonal,
+		Label: "Date of birth", NoisyInCode: true},
 
 	// --- France -------------------------------------------------------------
 	CatNIR:   {Prefix: "NIR", Score: 95, Verify: NIRCheck, Group: GroupPersonal, Label: "Social security number (fr)"},
@@ -187,10 +214,20 @@ var categoryRegistry = map[Category]CategoryInfo{
 	CatRoutingNumber: {Prefix: "ABA", Score: 90, Verify: RoutingNumberCheck, Group: GroupBanking, Label: "Bank routing number (us)"},
 
 	// --- shapes several locales contribute to -------------------------------
-	CatPhone:      {Prefix: "PHONE", Score: 90, Group: GroupPersonal, Label: "Telephone"},
-	CatAddress:    {Prefix: "ADDR", Score: 85, Group: GroupPersonal, Label: "Postal address"},
-	CatPostalCode: {Prefix: "POSTCODE", Score: 80, Group: GroupPersonal, Label: "Postcode"}, // anchored on a commune, a state or an outward code
-	CatLicPlate:   {Prefix: "PLATE", Score: 80, Group: GroupPersonal, Label: "Vehicle registration"},
+	// Marked noisy in code: a byte array is a telephone number by shape. "01 02 03
+	// 04 05" in a buffer example is exactly the French notation, and eighteen of
+	// the hundred and twenty were runs like it. In prose the same digits really
+	// are a number somebody gave out, which is why this is a placement question
+	// rather than a narrower pattern.
+	CatPhone: {Prefix: "PHONE", Score: 90, Group: GroupPersonal, Label: "Telephone",
+		NoisyInCode: true},
+	CatAddress: {Prefix: "ADDR", Score: 85, Group: GroupPersonal, Label: "Postal address"},
+	// Marked noisy in code for the reason the telephone is: the shape is a short
+	// run of digits and letters anchored on a capitalised word, and an identifier
+	// followed by a constant satisfies it.
+	CatPostalCode: {Prefix: "POSTCODE", Score: 80, Group: GroupPersonal, Label: "Postcode",
+		NoisyInCode: true}, // anchored on a commune, a state or an outward code
+	CatLicPlate: {Prefix: "PLATE", Score: 80, Group: GroupPersonal, Label: "Vehicle registration"},
 
 	// Declared by the deployment rather than guessed, so it outscores every
 	// pattern. Which span it actually takes is arbitrated separately — see the
@@ -343,3 +380,9 @@ func Categories() []Category {
 	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
 	return out
 }
+
+// NoisyInCode reports whether a category should be left alone inside source code.
+//
+// Asked by the engine, which is the only thing that knows whether the text it is
+// scanning is code. The catalogue states the property; it does not detect it.
+func NoisyInCode(cat Category) bool { return categoryRegistry[cat].NoisyInCode }

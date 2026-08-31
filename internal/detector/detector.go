@@ -156,6 +156,14 @@ func (d *Detector) Scan(text string) []Match {
 func (d *Detector) candidates(text string) []Match {
 	var out []Match
 
+	// Asked once for the whole text rather than per match, and the grain is what
+	// makes it safe: the proxy masks a JSON document value by value, so this is
+	// already one question per string a caller sent — the system prompt, the
+	// person's turn and a tool result carrying a file are each judged on their own.
+	// A body-level answer would relax the sentence somebody typed because a file
+	// travelled beside it.
+	inCode := looksLikeCode(text)
+
 	for _, p := range d.catalogue().patterns {
 		for _, span := range patternSpans(p, text) {
 			value := text[span[0]:span[1]]
@@ -181,6 +189,12 @@ func (d *Detector) candidates(text string) []Match {
 			// the only one that costs a slice of the surrounding text. Everything
 			// cheaper has already had its chance to reject.
 			if pii.RejectedByPlacement(p.Category, value, pii.PlacementAt(text, span[0], span[1])) {
+				continue
+			}
+			if inCode && pii.NoisyInCode(p.Category) {
+				// A category whose shape source code satisfies, in text that is
+				// source code. No credential is ever marked, so this cannot reach
+				// a key in a configuration file the agent has just read.
 				continue
 			}
 
