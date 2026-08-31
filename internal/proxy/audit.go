@@ -125,7 +125,7 @@ func (a *auditor) paint(colour, text string) string {
 // finds things. Two tools talking to the agent at once would otherwise interleave
 // their bodies, and a body read half from one exchange and half from another is
 // the reading an audit must never allow.
-func (a *auditor) request(session, provider, received, sent string, replaced [][2]string) {
+func (a *auditor) request(session, provider, received, sent string, count int, replaced [][2]string) {
 	if a == nil {
 		return
 	}
@@ -133,7 +133,7 @@ func (a *auditor) request(session, provider, received, sent string, replaced [][
 	// Written before anything is printed, so the console can name the file it went
 	// to — and so a -v run with no console still records, which is half of what the
 	// two flags are for.
-	path, err := a.traces.write(session, provider, received, sent, replaced)
+	path, err := a.traces.write(session, provider, received, sent, count, replaced)
 	if !a.writes() {
 		return
 	}
@@ -143,6 +143,15 @@ func (a *auditor) request(session, provider, received, sent string, replaced [][
 	for _, pair := range replaced {
 		b.WriteString(a.line(ansiYellow, "MASK",
 			a.paint(ansiBlue, pair[0]), a.paint(ansiRed, pair[1])))
+	}
+	// The count, because the MASK lines above are first sightings and the console
+	// showed nothing at all for an exchange whose every value the session had
+	// already seen — which reads as "nothing was masked" over a body in which
+	// three values were. Printed whenever anything was replaced, so the absence of
+	// a MASK line is explained rather than left to be interpreted.
+	if count > 0 {
+		b.WriteString(a.paint(ansiDim,
+			fmt.Sprintf("     %s\n", replacedSummary(count, len(replaced)))))
 	}
 	b.WriteString(a.rule("OUT  to "+provider, session, sent))
 

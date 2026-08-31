@@ -313,6 +313,11 @@ func (s *Server) maskRequest(session, provider string, r *http.Request) error {
 	// the whole outbound half of one exchange in a single block: what arrived,
 	// what was replaced in it, and what left. Two tools talking to the agent at
 	// once would otherwise interleave their bodies on the screen.
+	//
+	// These are first sightings only — Reveal fires at minting — which is why the
+	// count below is handed over separately. A body whose every value was already
+	// in the session mapping produces no pair at all and is still a body in which
+	// three values were replaced.
 	var replaced [][2]string
 	if s.audit != nil {
 		pass.Reveal = func(original, replacement string) {
@@ -341,7 +346,7 @@ func (s *Server) maskRequest(session, provider string, r *http.Request) error {
 	// what an operator reads to see that the value they typed is not in the one
 	// that left. The clear half is the reason this is a mode of its own — see
 	// audit.go.
-	s.audit.request(session, provider, string(body), masked, replaced)
+	s.audit.request(session, provider, string(body), masked, count, replaced)
 
 	if err := s.vault.Save(session, pass.Minted()); err != nil {
 		// The mapping is what makes the answer readable again. Masking without

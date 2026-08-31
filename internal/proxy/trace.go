@@ -94,7 +94,7 @@ func (t *tracer) Dir() string {
 // The path is returned rather than logged from here, so the console prints it in the
 // same block as the rest of the exchange: a filename on a line of its own, arriving
 // between two exchanges, belongs to neither.
-func (t *tracer) write(session, provider, received, sent string, replaced [][2]string) (string, error) {
+func (t *tracer) write(session, provider, received, sent string, count int, replaced [][2]string) (string, error) {
 	if t == nil {
 		return "", nil
 	}
@@ -106,7 +106,7 @@ func (t *tracer) write(session, provider, received, sent string, replaced [][2]s
 	name := t.filename(session, provider)
 	path := filepath.Join(t.dir, name)
 
-	body := traceBody(session, provider, received, sent, replaced)
+	body := traceBody(session, provider, received, sent, count, replaced)
 	if err := os.WriteFile(path, []byte(body), traceFilePerm); err != nil {
 		return "", fmt.Errorf("write %s: %w", path, err)
 	}
@@ -166,14 +166,14 @@ func safeForFilename(name string) string {
 //
 // A JSON body is indented, so the two halves line up field by field and a diff points
 // at the field rather than at one enormous line.
-func traceBody(session, provider, received, sent string, replaced [][2]string) string {
+func traceBody(session, provider, received, sent string, count int, replaced [][2]string) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "session:  %s\n", session)
 	fmt.Fprintf(&b, "provider: %s\n", provider)
 	fmt.Fprintf(&b, "in:       %d bytes\n", len(received))
 	fmt.Fprintf(&b, "out:      %d bytes\n", len(sent))
-	fmt.Fprintf(&b, "replaced: %d value(s)\n", len(replaced))
+	fmt.Fprintf(&b, "replaced: %s\n", replacedSummary(count, len(replaced)))
 
 	// The transformations before the bodies, so the file opens on the answer to
 	// "what changed" and the bodies are there for "what did not".
@@ -226,4 +226,25 @@ func indented(body string) string {
 		return body
 	}
 	return out.String()
+}
+
+// replacedSummary is the one sentence both audit surfaces use to say how much of a
+// body changed.
+//
+// Two numbers, because they answer different questions and the file used to carry
+// only the second while claiming to answer the first. A trace read "replaced: 0
+// value(s)" above a body holding [SECRET_12], [EMAIL_8] and [EMAIL_9]: those three
+// values were replaced here, and none of them was *minted* here — the session had
+// seen each of them in an earlier exchange, so the mapping was reused and Reveal,
+// which fires at minting, fired for none of them.
+//
+// The first number is what left the machine transformed, repeats included, which is
+// the number somebody checking the control is looking at. The second is how many of
+// them are listed below as MASK lines, so a body with replacements and no lines is
+// explained by the header rather than read as a contradiction.
+//
+// Both are printed even when equal: a trace is evidence, and a header whose fields
+// appear and disappear is one a reader has to parse rather than scan.
+func replacedSummary(count, minted int) string {
+	return fmt.Sprintf("%d value(s), %d of them first seen in this session", count, minted)
 }

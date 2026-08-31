@@ -478,6 +478,59 @@ func TestATraceHoldsBothBodies(t *testing.T) {
 	}
 }
 
+// The count in the header is what was replaced in this body, not what was minted in
+// it, and the two differ for every exchange after the first.
+//
+// The trace that failed read "replaced: 0 value(s)" above a body carrying
+// [SECRET_12], [EMAIL_8] and [EMAIL_9]. All three values were replaced there; none
+// was minted there — the session had seen each of them in an earlier exchange, so
+// the mapping was reused and Reveal, which fires at minting, fired for none. The
+// header counted the transformations it could list and reported them as the whole.
+func TestATraceCountsWhatWasReplacedNotWhatWasMinted(t *testing.T) {
+	up := newUpstream(t, echoJSON)
+	agent, _, dir := newTracingAgent(t, up, []string{"fr"})
+
+	const email = "pierre.paul@example.fr"
+	body := fmt.Sprintf(`{"prompt":"write to %s about the invoice"}`, email)
+
+	// The same session and the same value twice: the second exchange replaces it
+	// from the mapping the first one stored.
+	post(t, agent, "/anthropic/v1/messages", "reuse", body)
+	post(t, agent, "/anthropic/v1/messages", "reuse", body)
+
+	files := traceFiles(t, dir)
+	if len(files) != 2 {
+		t.Fatalf("wrote %d traces, want 2", len(files))
+	}
+
+	const first = "replaced: 1 value(s), 1 of them first seen in this session"
+	if !strings.Contains(files[0], first) {
+		t.Errorf("the first trace does not say %q:\n%s", first, header(files[0]))
+	}
+
+	// The line the bug was: one value replaced, none of them new.
+	const second = "replaced: 1 value(s), 0 of them first seen in this session"
+	if !strings.Contains(files[1], second) {
+		t.Errorf("the second trace does not say %q:\n%s", second, header(files[1]))
+	}
+
+	// And the body it sits above does carry the token, so the header is not
+	// describing an exchange in which nothing happened.
+	out := files[1][strings.Index(files[1], "OUT  to anthropic"):]
+	if strings.Contains(out, email) || !strings.Contains(out, "[EMAIL_") {
+		t.Errorf("the sent half is not the masked body this header describes:\n%s", out)
+	}
+}
+
+// header is the trace's first lines, for a failure message that does not print a
+// whole body.
+func header(trace string) string {
+	if i := strings.Index(trace, "\n\n"); i > 0 {
+		return trace[:i]
+	}
+	return trace
+}
+
 // A body is written whole, however long. A ceiling would be the trace choosing which
 // part of the traffic is worth keeping, and the part it cut is exactly where a value
 // nothing recognised would be.
