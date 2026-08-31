@@ -292,11 +292,44 @@ func (d *Detector) Masking() Level {
 		// credentials are still scanned, but almost nothing else is, and calling
 		// that "masking" is what the status route refuses to do.
 		return LevelNone
-	case len(d.policy.disabled()) > 0:
+	case d.disabledInPlay() > 0:
 		return LevelPartial
 	default:
 		return LevelFull
 	}
+}
+
+// disabledInPlay counts the switched-off categories the loaded patterns can
+// actually emit.
+//
+// The raw disabled set is the wrong number for a *level*, and the two disagreeing
+// produced a sentence with no reading: with only "fr" loaded and a US category
+// switched off, Masking said "partial" while every surface that lists what is off
+// filtered that category out as unrecognisable — so `cloakfleet status` printed
+// "masking, with 0 categories in clear", the menu bar drew the amber icon over the
+// same nought, and the exit code was non-zero. Level is a statement about what is
+// being applied, not about what somebody has asked for: an agent applying every
+// pattern it loaded is masking fully, whatever is switched off among the patterns
+// it does not have.
+//
+// The policy still remembers the switch — Disabled() and the heartbeat report the
+// set as it was set, so loading "us" later finds the category still off — and that
+// is the difference between the two: one is the intent, this is the effect.
+func (d *Detector) disabledInPlay() int {
+	off := d.policy.disabled()
+	if len(off) == 0 {
+		return 0
+	}
+
+	// One load, as every read of the catalogue is: the patterns and the locales
+	// have to be the same generation or the answer describes neither.
+	seen := make(map[pii.Category]bool, len(off))
+	for _, p := range d.catalogue().patterns {
+		if off[p.Category] {
+			seen[p.Category] = true
+		}
+	}
+	return len(seen)
 }
 
 // Level is how much of the catalogue is being applied.

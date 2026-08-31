@@ -117,6 +117,50 @@ func TestMaskingLevel(t *testing.T) {
 	}
 }
 
+// A category the loaded patterns cannot emit does not make the level partial, and
+// the pair below is the point: the first half is the bug, the second is the
+// over-correction it must not become.
+//
+// With only "fr" loaded, switching off a US-only category made Masking say
+// "partial" while every surface that lists what is off filtered that category out
+// as unrecognisable. `cloakfleet status` printed "masking, with 0 categories in
+// clear", the menu bar drew the amber icon over the same nought, and the exit code
+// was non-zero — a level and a count read off two different sets.
+func TestTheLevelCountsOnlyWhatTheDetectorCanEmit(t *testing.T) {
+	d := New(Config{Locales: []string{"fr"}})
+
+	inPlay := map[pii.Category]bool{}
+	for _, c := range d.Categories() {
+		inPlay[c] = true
+	}
+
+	// EIN is a US employer identifier: switchable, and unreachable with "fr" alone.
+	if inPlay[pii.CatEIN] {
+		t.Fatalf("EIN is in play with fr alone, so it cannot make this point")
+	}
+	if err := d.Disable([]pii.Category{pii.CatEIN}); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	if got := d.Masking(); got != LevelFull {
+		t.Errorf("with an unreachable category off: %v, want full — every pattern this agent loaded is being applied", got)
+	}
+
+	// The policy still remembers it, which is what makes the level the effect and
+	// Disabled the intent: loading "us" later finds the category still off.
+	if got := d.Disabled(); len(got) != 1 || got[0] != pii.CatEIN {
+		t.Errorf("the switch was forgotten rather than merely uncounted: %v", got)
+	}
+
+	// The other half: a category it *can* find still drops it to partial, or this
+	// fix has switched the level off altogether.
+	if err := d.Disable([]pii.Category{pii.CatEIN, pii.CatIPAddr}); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	if got := d.Masking(); got != LevelPartial {
+		t.Errorf("with a reachable category off: %v, want partial", got)
+	}
+}
+
 // The test page renders both substitution modes through two detectors. A copied
 // policy would have it show a category the agent had stopped masking.
 func TestADerivedDetectorSharesThePolicy(t *testing.T) {

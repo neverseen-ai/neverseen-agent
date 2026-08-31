@@ -128,6 +128,15 @@ area: the reasoning is what stops a tempting simplification being reintroduced.
   that alone is the green light over the values that are not being replaced. The
   exit code of `cloakfleet status` and the menu bar icon both follow **Level**, so
   zero means "everything this configuration loaded is being replaced".
+- **A level counts the effect, `Disabled` records the intent, and the level counts
+  only what the loaded patterns can emit** (`disabledInPlay`). Against the raw
+  disabled set the two disagreed: with `fr` alone and a US category switched off,
+  the level said "partial" while every surface listing what is off filtered that
+  category out as unrecognisable — so `cloakfleet status` printed "masking, with 0
+  categories in clear", the icon went amber over the same nought and the exit code
+  was non-zero. The policy still remembers the switch, so loading `us` later finds
+  the category still off. `TestTheLevelCountsOnlyWhatTheDetectorCanEmit` holds both
+  halves: unreachable stays full, reachable still drops to partial.
 - **`cloakfleet mask` and the menu bar are the two surfaces, and both go through
   `proxy.SetPolicy`** — the one writer, as `proxy.Query` is the one asker. The command
   exists because the menu bar is Cocoa and a Linux workstation had the route and no
