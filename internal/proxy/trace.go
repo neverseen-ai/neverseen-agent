@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,7 +13,7 @@ import (
 )
 
 // A trace is one exchange written to a file: the body that arrived, the body that
-// left, and every value replaced between them.
+// left, every value replaced between them, and the answer that came back.
 //
 // It exists because the console cannot hold them. A coding tool resends tens of
 // kilobytes of system prompt every turn, so bodies on screen scroll the MASK lines
@@ -247,4 +248,144 @@ func indented(body string) string {
 // appear and disappear is one a reader has to parse rather than scan.
 func replacedSummary(count, minted int) string {
 	return fmt.Sprintf("%d value(s), %d of them first seen in this session", count, minted)
+}
+
+// appendResponse adds the provider's answer to a trace already on disk.
+//
+// Appended rather than written with the rest, because the two halves become known
+// at different moments. The outbound half is recorded before the request leaves —
+// deliberately, so an exchange the provider never answers still leaves behind the
+// body that was about to go. Rewriting the file once the answer arrived would trade
+// that guarantee for a tidier header, and would lose exactly the exchange somebody
+// is looking at when an upstream hangs.
+func (t *tracer) appendResponse(ref *traceRef, raw string) error {
+	if t == nil || ref == nil || ref.path == "" {
+		return nil
+	}
+
+	// The same lock as write, for the same reason: two exchanges finishing at once
+	// must not interleave their sections.
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	f, err := os.OpenFile(ref.path, os.O_APPEND|os.O_WRONLY, traceFilePerm)
+	if err != nil {
+		return fmt.Errorf("append to %s: %w", ref.path, err)
+	}
+	defer func() { _ = f.Close() }()
+
+	if _, err := f.WriteString(traceResponse(ref, raw)); err != nil {
+		return fmt.Errorf("append to %s: %w", ref.path, err)
+	}
+	return nil
+}
+
+// traceResponse is the section added when the answer has arrived: what the exchange
+// cost, then the answer itself.
+//
+// The fields carry the same prefixed layout as the header at the top of the file,
+// because that is where they belong and none of them could be written there — not
+// one is known until the body ends. Prefixed the same way, `grep "^upstream:"` over
+// a directory of traces answers "which exchange was slow" without opening one.
+//
+// Four durations rather than one total, because they are four different questions
+// and a sum answers none of them: masking is this agent's own cost, upstream is the
+// provider's latency, delivering is how long the answer took to arrive, and
+// expanding is the restoration. On a stream the last two are wildly different — one
+// is nearly all waiting — so adding them would hide both.
+func traceResponse(ref *traceRef, raw string) string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "\nback:       %d bytes\n", len(raw))
+	fmt.Fprintf(&b, "mask:       %s\n", ref.masking)
+	fmt.Fprintf(&b, "upstream:   %s\n", ref.upstream)
+	fmt.Fprintf(&b, "delivering: %s\n", ref.delivering)
+	fmt.Fprintf(&b, "unmask:     %s\n", ref.expanding)
+
+	// Tokens, never a price. Converting to money needs a table per model, and a
+	// stale price in a file somebody reads as evidence is worse than no price —
+	// which is the rule usage.go already states for the same reason.
+	//
+	// The line is omitted rather than printed as zeroes when the answer named no
+	// model: a provider this agent does not know how to read is a gap, and a row of
+	// noughts would read as an exchange that cost nothing.
+	if ref.model != "" {
+		fmt.Fprintf(&b, "model:      %s\n", ref.model)
+		fmt.Fprintf(&b, "tokens:     in %d, out %d, cache read %d, cache write %d\n",
+			ref.usage.Input, ref.usage.Output, ref.usage.CacheRead, ref.usage.CacheWrite)
+	}
+
+	// The readable view first, because that is what the file is opened for, and the
+	// verbatim events below it, because that is what it is kept for. See
+	// reassemble.go for why both.
+	if text, ok := reassembled(raw); ok {
+		fmt.Fprintf(&b, "\n%s\n%s", traceRule("BACK from "+ref.provider+", reassembled"), text)
+	}
+
+	fmt.Fprintf(&b, "\n%s\n%s\n", traceRule("BACK from "+ref.provider), indented(raw))
+	return b.String()
+}
+
+// responseRecorder copies the provider's answer as it passes, and files it with the
+// trace when the body is closed.
+//
+// It wraps the body before anything else does, so what it holds is what arrived:
+// the rehydrator reads through it, and the copy is taken before a single
+// replacement is expanded. That is the half worth keeping — read against the OUT
+// body above it, it says which of the tokens sent up came back, and it carries no
+// restored value, so recording the answer adds no class of exposure the file did
+// not already have.
+//
+// A caller that hangs up mid-answer files what had arrived by then. Partial and
+// honest: the alternative is a trace that vanishes for the exchange somebody
+// abandoned, which is regularly the one they want to read.
+//
+// TODO: the answer is held in memory until it ends. A trace already carries a
+// request body of the same order and bodies are written whole on purpose, but an
+// answer that streamed for minutes is carried for as long. The upgrade is to keep
+// the file open and append each event as it goes.
+type responseRecorder struct {
+	src io.ReadCloser
+	raw bytes.Buffer
+
+	// ended is when the answer finished arriving, which is not when the body is
+	// closed: the buffered path reads the whole answer, then expands it, then
+	// closes. Dated at the close, "how long the answer took to arrive" would
+	// quietly include the agent's own work on it.
+	ended time.Time
+
+	file  func(raw string, ended time.Time)
+	filed bool
+}
+
+func newResponseRecorder(body io.ReadCloser, file func(raw string, ended time.Time)) io.ReadCloser {
+	return &responseRecorder{src: body, file: file}
+}
+
+func (r *responseRecorder) Read(p []byte) (int, error) {
+	n, err := r.src.Read(p)
+	if n > 0 {
+		r.raw.Write(p[:n])
+	}
+	if err != nil && r.ended.IsZero() {
+		r.ended = time.Now()
+	}
+	return n, err
+}
+
+// Close files the answer, once.
+//
+// Once, because the buffered path closes the body itself and the reverse proxy
+// closes whatever it is left holding: filed twice, the trace would carry the answer
+// two times over and read as if the provider had said everything twice.
+func (r *responseRecorder) Close() error {
+	if !r.filed {
+		r.filed = true
+		if r.ended.IsZero() {
+			// The source never signalled its end: a caller that hung up mid-answer.
+			r.ended = time.Now()
+		}
+		r.file(r.raw.String(), r.ended)
+	}
+	return r.src.Close()
 }

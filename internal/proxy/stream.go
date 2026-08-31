@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/cloakfleet/cloakfleet/internal/detector"
 	"github.com/cloakfleet/cloakfleet/pkg/telemetry"
@@ -47,6 +48,15 @@ type streamRehydrator struct {
 	// otherwise, which is the ordinary case.
 	seen func(replacement, original string)
 
+	// onExpanded reports, once at Close, how long the expansion itself took —
+	// the sum of the rewrites, not the wall clock of the stream, which is almost
+	// entirely spent waiting for the provider. Set by the caller when the
+	// exchange is being traced, nil otherwise. Once rather than per event: a
+	// callback in that loop would be paid on every few characters of every
+	// answer the agent forwards.
+	onExpanded func(time.Duration)
+	expanding  time.Duration
+
 	out  bytes.Buffer
 	done bool
 
@@ -59,9 +69,12 @@ type streamRehydrator struct {
 	template []byte
 }
 
+// The concrete type is returned rather than io.ReadCloser so a caller that traces
+// can set onExpanded. A fifth positional callback would have made the constructor
+// unreadable for something only one of its two callers wants.
 func newStreamRehydrator(body io.ReadCloser, known map[string]string,
 	onUsage func(string, telemetry.TokenUsage),
-	seen func(replacement, original string)) io.ReadCloser {
+	seen func(replacement, original string)) *streamRehydrator {
 	return &streamRehydrator{
 		src:     bufio.NewReader(body),
 		closer:  body,
@@ -79,7 +92,10 @@ func (r *streamRehydrator) Read(p []byte) (int, error) {
 
 		line, err := r.src.ReadString('\n')
 		if line != "" {
-			r.out.WriteString(r.rewrite(line))
+			started := time.Now()
+			rewritten := r.rewrite(line)
+			r.expanding += time.Since(started)
+			r.out.WriteString(rewritten)
 		}
 		if err != nil {
 			r.done = true
@@ -104,6 +120,11 @@ func (r *streamRehydrator) Read(p []byte) (int, error) {
 // counted, and dropping it would make an abandoned request look free.
 func (r *streamRehydrator) Close() error {
 	r.reportUsage()
+	// Before the body below it is closed, because that is what files the trace:
+	// reported after, the figure would arrive at a file already written.
+	if r.onExpanded != nil {
+		r.onExpanded(r.expanding)
+	}
 	return r.closer.Close()
 }
 

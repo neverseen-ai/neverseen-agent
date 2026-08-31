@@ -121,13 +121,16 @@ func (a *auditor) paint(colour, text string) string {
 // request writes one exchange's outbound half: what the tool sent, what was
 // replaced in it, and what actually left for the provider.
 //
+// It returns the trace's path, or "" when nothing is being recorded, so the
+// response half can be appended to the same file when the answer arrives.
+//
 // One block written under one lock, rather than a line at a time as the masking
 // finds things. Two tools talking to the agent at once would otherwise interleave
 // their bodies, and a body read half from one exchange and half from another is
 // the reading an audit must never allow.
-func (a *auditor) request(session, provider, received, sent string, count int, replaced [][2]string) {
+func (a *auditor) request(session, provider, received, sent string, count int, replaced [][2]string) string {
 	if a == nil {
-		return
+		return ""
 	}
 
 	// Written before anything is printed, so the console can name the file it went
@@ -135,7 +138,7 @@ func (a *auditor) request(session, provider, received, sent string, count int, r
 	// two flags are for.
 	path, err := a.traces.write(session, provider, received, sent, count, replaced)
 	if !a.writes() {
-		return
+		return path
 	}
 
 	var b strings.Builder
@@ -171,8 +174,23 @@ func (a *auditor) request(session, provider, received, sent string, count int, r
 	}
 
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	fmt.Fprint(a.w, b.String())
+	a.mu.Unlock()
+
+	return path
+}
+
+// response files the provider's answer with the trace this exchange already wrote.
+//
+// Nothing is printed: the console deliberately carries no body, and an answer is
+// the largest one of the three. The failure is logged by the caller rather than
+// here, for the reason the outbound half already gives — a trace that cannot be
+// written must never be able to take the masking down with it.
+func (a *auditor) response(ref *traceRef, raw string) error {
+	if a == nil {
+		return nil
+	}
+	return a.traces.appendResponse(ref, raw)
 }
 
 // unmasked reports a replacement being turned back into the value it stands for.
@@ -252,8 +270,9 @@ func (a *auditor) rule(label, session, body string) string {
 // coming back in the next answer is a new exchange, and an operator watching this
 // console is watching exchanges go past.
 func (a *auditor) unmaskedSeen() func(replacement, original string) {
-	// Nil for a -v run with no console too: the trace is written when the request
-	// goes out and holds nothing about the answer, so there is nothing here to record.
+	// Nil for a -v run with no console too: the trace records the answer as it
+	// arrived, before a single replacement was expanded, so a restoration is a
+	// console event and nothing else has a use for it.
 	if !a.writes() {
 		return nil
 	}

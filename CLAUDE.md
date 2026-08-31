@@ -81,10 +81,11 @@ area: the reasoning is what stops a tempting simplification being reintroduced.
 - **`/test` is a real tool, not a demo.** It renders one text in both
   substitution modes, using the deployment's own detector.
 - **`cloakfleet proxy -a` prints every value replaced and restored; `-v` writes
-  both bodies of every exchange to `traces/`.** Two independent flags on the one
-  command: `-a` alone keeps nothing, `-v` alone records and prints nothing, and
-  `newAuditor` builds an auditor for either — requiring a console to record a
-  trace would have made the quiet half silently do nothing.
+  every exchange to `traces/` — the two request bodies and the answer.** Two
+  independent flags on the one command: `-a` alone keeps nothing, `-v` alone
+  records and prints nothing, and `newAuditor` builds an auditor for either —
+  requiring a console to record a trace would have made the quiet half silently
+  do nothing.
 - **`-l` binds somewhere other than loopback, and the agent warns rather than
   refuses.** The address already arrived by `CLOAKFLEET_LISTEN`; the flag is the
   same setting where a one-off run can reach it, and the command's choice wins over
@@ -116,6 +117,40 @@ area: the reasoning is what stops a tempting simplification being reintroduced.
   Bodies are written whole — a ceiling would be the trace choosing which part of
   the traffic is worth keeping, and the part it cut is where an unrecognised
   value would be.
+- **The answer is recorded as it arrived, before a single replacement was expanded.**
+  The recorder wraps the body before the rehydrator does, so the file holds what the
+  provider sent, streamed events and all. That half carries no restored value, so it
+  adds no class of exposure the file did not already have — and read against the OUT
+  body above it, it says which of the tokens sent up came back. Recorded even when the
+  expander will not touch the body: an outbound half on disk with no answer below it
+  reads as an exchange that never came back. It is appended when the body closes rather
+  than written with the rest, because the outbound half goes to disk *before* the
+  request leaves — an exchange the provider never answers still leaves behind the body
+  that was about to go. A caller that hangs up files what had arrived: partial and
+  honest beats a trace that vanishes for the exchange somebody abandoned.
+- **What the exchange cost is four durations, not one total, and tokens rather than
+  a price.** Masking is this agent's own scan — timed around the detector alone, not
+  the vault write and not the trace write, or the figure would say how much `-v`
+  costs; `upstream` is the provider's latency, dated when its headers arrived;
+  `delivering` is how long the answer took to arrive, dated at the *end of the body*
+  and not at the close, because the buffered path reads, then expands, then closes;
+  `unmask` is the restoration, summed per event on a stream rather than measured on
+  the wall clock, which is almost all waiting. A sum of the four answers none of the
+  four questions. **The counts are never a price** — that table belongs to the
+  backend, the rule `usage.go` already carries — and the line is omitted rather than
+  zeroed when the answer named no model, because a row of noughts reads as an
+  exchange that cost nothing when what happened is that the agent could not read it.
+- **A stream is also written back together, above the events and never instead of
+  them** (`reassemble.go`). At the grain it arrives in it is unreadable: a few
+  characters per event, and a tool call's arguments come apart mid-path — `"R=/U"`,
+  `"sers/alice"`, `"ly/Projets/s"`. So the section above holds one entry per content
+  block, in the order they opened, labelled by the start event: a tool call carries
+  the tool's name, which is what stops it reading as a wall of JSON. It is **derived
+  and the file must not be only that** — reassembling decodes the JSON strings, so
+  what reads well is exactly what no longer holds the bytes that went over the wire.
+  Readable first, because that is what the file is opened for; verbatim below,
+  because that is what it is kept for. Omitted rather than empty for a buffered
+  answer, which is one document already.
 - **The finding still lives, one step further away**: the two bodies in the file,
   read against each other. A value present in both is one the catalogue never
   recognised, and `diff` says it better than any highlighting did.

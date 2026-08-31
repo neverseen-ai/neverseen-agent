@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/cloakfleet/cloakfleet/internal/detector"
 	"github.com/cloakfleet/cloakfleet/internal/vault"
@@ -467,8 +468,11 @@ func TestATraceHoldsBothBodies(t *testing.T) {
 		t.Errorf("the sent half does not carry %s:\n%s", token, trace)
 	}
 	// And the value nothing recognised is in both, which is the whole reason for
-	// writing the bodies rather than the counts.
-	if n := strings.Count(trace, missed); n != 2 {
+	// writing the bodies rather than the counts. Counted over the request's two
+	// halves and not the whole file: the answer is appended below them, and this
+	// fake provider echoes what it was sent, so a count over everything measures
+	// the upstream rather than the finding.
+	if n := strings.Count(trace[in:requestHalves(trace)], missed); n != 2 {
 		t.Errorf("an unrecognised value appears %d times, want it in both halves:\n%s", n, trace)
 	}
 
@@ -522,6 +526,15 @@ func TestATraceCountsWhatWasReplacedNotWhatWasMinted(t *testing.T) {
 	}
 }
 
+// requestHalves is where the outbound part of a trace stops, so an assertion about
+// the two request bodies is not answered by the answer appended after them.
+func requestHalves(trace string) int {
+	if i := strings.Index(trace, "\nback:"); i > 0 {
+		return i
+	}
+	return len(trace)
+}
+
 // header is the trace's first lines, for a failure message that does not print a
 // whole body.
 func header(trace string) string {
@@ -547,7 +560,7 @@ func TestATraceHoldsALongBodyWhole(t *testing.T) {
 	if !strings.Contains(trace, filler) {
 		t.Error("a 64 kB body did not reach the trace whole")
 	}
-	if n := strings.Count(trace, needle); n != 2 {
+	if n := strings.Count(trace[:requestHalves(trace)], needle); n != 2 {
 		t.Errorf("the tail of the body appears %d times, want it in both halves", n)
 	}
 }
@@ -767,4 +780,264 @@ func newServer(t *testing.T, up *upstream, console io.Writer, traces *tracer) *S
 		t.Fatal(err)
 	}
 	return srv
+}
+
+// The answer belongs in the same file as the request that caused it, and it belongs
+// there as it arrived: still carrying the replacements, before a single one was
+// expanded. That is the half worth keeping — read against the OUT body above it, it
+// says which of the tokens sent up came back, and it carries no restored value, so
+// recording it adds no exposure the file did not already have.
+func TestATraceHoldsTheAnswerAsItArrived(t *testing.T) {
+	up := newUpstream(t, echoJSON)
+	agent, console, dir := newTracingAgent(t, up, []string{"fr"})
+
+	const email = "pierre.paul@example.fr"
+	got := post(t, agent, "/anthropic/v1/messages", "answer",
+		fmt.Sprintf(`{"prompt":%q}`, "write to "+email))
+	if got.status != http.StatusOK {
+		t.Fatalf("status = %d, body %s", got.status, got.body)
+	}
+	// The caller reads its own value back, which is what makes the trace's copy a
+	// deliberate choice rather than the only thing available.
+	if !strings.Contains(got.body, email) {
+		t.Fatalf("the caller did not get the value back: %s", got.body)
+	}
+
+	trace := traceFiles(t, dir)[0]
+	token := auditLines(t, console, "MASK")[0][1]
+
+	back := strings.Index(trace, "BACK from anthropic")
+	if back < 0 {
+		t.Fatalf("the answer is not in the trace:\n%s", header(trace))
+	}
+	if !strings.Contains(trace[back:], token) {
+		t.Errorf("the answer half does not carry %s, so it was recorded after expansion:\n%s", token, trace[back:])
+	}
+	if strings.Contains(trace[back:], email) {
+		t.Errorf("the answer half carries the value in clear:\n%s", trace[back:])
+	}
+
+	// The size is a header field written where it became known, and it counts the
+	// body rather than the section around it.
+	if !regexp.MustCompile(`\nback:       [1-9][0-9]* bytes\n`).MatchString(trace) {
+		t.Errorf("the answer's size is not in the trace:\n%s", trace[back-300:back])
+	}
+}
+
+// What the exchange cost, on the four lines that answer four different questions.
+// A sum would answer none of them: on a stream, delivering is nearly all waiting
+// for the provider while unmask is the agent's own work.
+func TestATraceHoldsWhatTheExchangeCost(t *testing.T) {
+	// The provider takes a measurable moment, so upstream cannot be read as zero by
+	// a clock that never moved.
+	up := newUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(20 * time.Millisecond)
+		echoJSON(w, r)
+	})
+	agent, _, dir := newTracingAgent(t, up, []string{"fr"})
+
+	post(t, agent, "/anthropic/v1/messages", "cost",
+		`{"prompt":"write to pierre.paul@example.fr"}`)
+
+	trace := traceFiles(t, dir)[0]
+	for _, field := range []string{"mask:", "upstream:", "delivering:", "unmask:"} {
+		if !strings.Contains(trace, "\n"+field) {
+			t.Errorf("the trace does not carry %q:\n%s", field, trace[:600])
+		}
+	}
+
+	// Asserted on the one figure whose floor the test controls. The others are
+	// real durations that can legitimately round to microseconds on a fast
+	// machine, and pinning them would be a test of the clock.
+	upstream := regexp.MustCompile(`\nupstream:   ([0-9.]+)(ms|s)\n`).FindStringSubmatch(trace)
+	if upstream == nil {
+		t.Fatalf("no upstream duration in the trace:\n%s", trace[:600])
+	}
+	spent, err := time.ParseDuration(upstream[1] + upstream[2])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spent < 20*time.Millisecond {
+		t.Errorf("upstream = %s, want at least the 20ms the provider slept", spent)
+	}
+}
+
+// The tokens the provider charged, and never a price. Converting to money needs a
+// table per model, and a stale price in a file read as evidence is worse than none.
+func TestATraceHoldsTheTokensAndNoPrice(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"model":"claude-opus-5","usage":{"input_tokens":120,`+
+			`"output_tokens":34,"cache_read_input_tokens":900}}`)
+	})
+	agent, _, dir := newTracingAgent(t, up, []string{"fr"})
+
+	post(t, agent, "/anthropic/v1/messages", "tokens",
+		`{"prompt":"write to pierre.paul@example.fr"}`)
+
+	trace := traceFiles(t, dir)[0]
+	if !strings.Contains(trace, "\nmodel:      claude-opus-5\n") {
+		t.Errorf("the model is not in the trace:\n%s", trace[:600])
+	}
+	if !strings.Contains(trace, "\ntokens:     in 120, out 34, cache read 900, cache write 0\n") {
+		t.Errorf("the counts are not in the trace:\n%s", trace[:600])
+	}
+}
+
+// An answer that names no model gets no token line at all. A row of noughts would
+// read as an exchange that cost nothing, when what happened is that this agent could
+// not read what the provider reported.
+func TestATraceOmitsTheTokensWhenTheAnswerNamesNoModel(t *testing.T) {
+	up := newUpstream(t, echoJSON)
+	agent, _, dir := newTracingAgent(t, up, []string{"fr"})
+
+	post(t, agent, "/anthropic/v1/messages", "no-model",
+		`{"prompt":"write to pierre.paul@example.fr"}`)
+
+	trace := traceFiles(t, dir)[0]
+	if strings.Contains(trace, "\ntokens:") || strings.Contains(trace, "\nmodel:") {
+		t.Errorf("an unreadable answer was reported as costing nothing:\n%s", trace[:600])
+	}
+}
+
+// A streamed answer reaches the trace whole, and still tokenised. The rehydrator
+// reads through the recorder, so what the file holds is what the provider sent —
+// events and all — not the text the caller ended up reading.
+func TestATraceHoldsAStreamedAnswerUnexpanded(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		token := "[EMAIL_1]"
+		if i := strings.Index(string(body), "[EMAIL_"); i >= 0 {
+			if j := strings.Index(string(body)[i:], "]"); j >= 0 {
+				token = string(body)[i : i+j+1]
+			}
+		}
+		// Split down the middle, the case the held-back tail exists for: the trace
+		// must show the halves that arrived, and the caller must read the value.
+		cut := len(token) / 2
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		for _, piece := range []string{"Contact: " + token[:cut], token[cut:] + " — done"} {
+			fmt.Fprintf(w, "event: content_block_delta\ndata: %s\n\n", anthropicDelta(piece))
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+	})
+	agent, console, dir := newTracingAgent(t, up, []string{"fr"})
+
+	const email = "pierre.paul@example.fr"
+	got := post(t, agent, "/anthropic/v1/messages", "answer-stream",
+		fmt.Sprintf(`{"prompt":%q}`, "write to "+email))
+	if !strings.Contains(got.body, email) {
+		t.Fatalf("the stream did not restore the value: %s", got.body)
+	}
+
+	trace := traceFiles(t, dir)[0]
+	// The verbatim half, which is the one that must hold the bytes that arrived.
+	// Located on the plain heading rather than the reassembled one above it.
+	back := strings.Index(trace, "── BACK from anthropic ")
+	if back < 0 {
+		t.Fatalf("the streamed answer is not in the trace:\n%s", header(trace))
+	}
+	answer := trace[back:]
+
+	// Both events, and not the concatenation the caller read. Counted on the event
+	// line rather than the name, which the payload carries a second time.
+	if n := strings.Count(answer, "event: content_block_delta"); n != 2 {
+		t.Errorf("the answer holds %d events, want both:\n%s", n, answer)
+	}
+	if strings.Contains(answer, email) {
+		t.Errorf("the streamed answer was recorded after expansion:\n%s", answer)
+	}
+	token := auditLines(t, console, "MASK")[0][1]
+	if strings.Contains(answer, token) {
+		t.Errorf("the token arrived whole, so this no longer tests the split:\n%s", answer)
+	}
+}
+
+// A stream is unreadable at the grain it arrives in, so the trace also carries it
+// put back together: one entry per content block, in the order they opened. Derived
+// and therefore above the verbatim events, never instead of them.
+func TestATraceReassemblesAStreamAboveTheEvents(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		events := []string{
+			`{"type":"content_block_start","index":0,"content_block":{"type":"text"}}`,
+			`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Reading "}}`,
+			`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"the file."}}`,
+			`{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","name":"Bash"}}`,
+			`{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"cmd\":\"cat /Us"}}`,
+			`{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"ers/x/pipe.yml\"}"}}`,
+		}
+		for _, e := range events {
+			fmt.Fprintf(w, "event: x\ndata: %s\n\n", e)
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+	})
+	agent, _, dir := newTracingAgent(t, up, []string{"fr"})
+
+	post(t, agent, "/anthropic/v1/messages", "reassembled",
+		`{"prompt":"write to pierre.paul@example.fr"}`)
+
+	trace := traceFiles(t, dir)[0]
+	view := strings.Index(trace, "── BACK from anthropic, reassembled")
+	verbatim := strings.Index(trace, "── BACK from anthropic ")
+	if view < 0 || verbatim < 0 {
+		t.Fatalf("the trace is missing one of the two halves:\n%s", trace)
+	}
+	// Readable first, verbatim below: the file is opened for the one and kept for
+	// the other.
+	if view > verbatim {
+		t.Errorf("the reassembled view is below the events, want it above:\n%s", trace)
+	}
+	assembled := trace[view:verbatim]
+
+	// The blocks, in the order they opened, each labelled by its start event — a
+	// tool call by the tool's name, which is what stops it reading as a wall of JSON.
+	for _, want := range []string{
+		"[0] text\nReading the file.\n",
+		"[1] tool_use Bash\n{\"cmd\":\"cat /Users/x/pipe.yml\"}\n",
+	} {
+		if !strings.Contains(assembled, want) {
+			t.Errorf("the reassembled view does not carry %q:\n%s", want, assembled)
+		}
+	}
+}
+
+// A buffered answer is one document already: reassembling it would put a heading
+// over a blank space, which reads as an answer that said nothing.
+func TestATraceReassemblesNothingThatIsNotAStream(t *testing.T) {
+	up := newUpstream(t, echoJSON)
+	agent, _, dir := newTracingAgent(t, up, []string{"fr"})
+
+	post(t, agent, "/anthropic/v1/messages", "not-a-stream",
+		`{"prompt":"write to pierre.paul@example.fr"}`)
+
+	if trace := traceFiles(t, dir)[0]; strings.Contains(trace, "reassembled") {
+		t.Errorf("a buffered answer was given a reassembled section:\n%s", trace)
+	}
+}
+
+// The answer is filed once. The buffered path closes the body itself and the reverse
+// proxy closes whatever it is left holding: filed twice, a trace would read as if the
+// provider had said everything two times over.
+func TestATraceFilesTheAnswerOnce(t *testing.T) {
+	up := newUpstream(t, echoJSON)
+	agent, _, dir := newTracingAgent(t, up, []string{"fr"})
+
+	post(t, agent, "/anthropic/v1/messages", "once",
+		`{"prompt":"write to pierre.paul@example.fr"}`)
+
+	trace := traceFiles(t, dir)[0]
+	if n := strings.Count(trace, "BACK from anthropic"); n != 1 {
+		t.Errorf("the answer was filed %d times, want once:\n%s", n, trace)
+	}
+	if n := strings.Count(trace, "\nback:"); n != 1 {
+		t.Errorf("the answer's size appears %d times, want once", n)
+	}
 }

@@ -44,7 +44,7 @@ and any buckets not yet delivered. `install.sh --uninstall` deliberately leaves 
 ```
 cloakfleet proxy         run the agent: mask what goes out, restore what comes back
 cloakfleet proxy -a      also print every value it replaces and restores, in clear
-cloakfleet proxy -v      also write both bodies of every exchange to ./traces
+cloakfleet proxy -v      also write every exchange to ./traces: both bodies and the answer
 cloakfleet scan [file]   report the sensitive values in a file, or in stdin
 cloakfleet status        report whether the agent is masking, and what
 cloakfleet mask          list what is masked, and switch a category or family off
@@ -260,7 +260,7 @@ answers.
 
 ```
 cloakfleet proxy -a    print every value replaced on the way out and restored on the way back
-cloakfleet proxy -v    write both bodies of every exchange to ./traces, one file per exchange
+cloakfleet proxy -v    write every exchange to ./traces (both bodies and the answer), one file each
 ```
 
 **They are independent.** `-a` alone prints and keeps nothing; `-v` alone records and
@@ -364,6 +364,22 @@ Mechanics, each one a decision:
 - **Bodies are written whole.** A ceiling would be the trace choosing which part of the
   traffic is worth keeping, and the part it cut is exactly where an unrecognised value
   would be.
+- **The answer is appended when the body closes, as it arrived.** Before expansion, so
+  it still carries the replacements and no restored value; the size lands on a `back:`
+  line where it became known, since it cannot be in the header written at the top. The
+  outbound half is on disk before the request leaves, which is why the answer is
+  appended rather than the file rewritten at the end.
+- **What the exchange cost sits on the same lines**: `mask:` (the detector's scan
+  alone), `upstream:` (to the provider's headers), `delivering:` (to the end of its
+  body), `unmask:` (the restoration, summed) and, when the answer named a model,
+  `model:` and `tokens:`. Four durations because they answer four questions a total
+  would hide, and **tokens rather than a price** — a table per model belongs to the
+  backend, and a stale price in a file read as evidence is worse than none.
+- **A streamed answer is also written back together**, one entry per content block in
+  the order they opened, above the verbatim events and never instead of them. The
+  grain a stream arrives in is unreadable; reassembling it decodes the JSON strings,
+  so the readable view is exactly the one that no longer holds the bytes that were
+  sent. Both, in that order.
 - **A trace that cannot be written says so and the agent carries on**, the rule the
   telemetry already follows: the thing that records the control must never be able to
   take it down.

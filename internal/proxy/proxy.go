@@ -29,6 +29,7 @@ import (
 	"github.com/cloakfleet/cloakfleet/internal/telemetry"
 	"github.com/cloakfleet/cloakfleet/internal/vault"
 	"github.com/cloakfleet/cloakfleet/pkg/pii"
+	pkgtelemetry "github.com/cloakfleet/cloakfleet/pkg/telemetry"
 )
 
 // Config is what the proxy needs beyond a detector and a vault.
@@ -279,7 +280,8 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request) {
 	}
 
 	session := sessionOf(r)
-	if err := s.maskRequest(session, code, r); err != nil {
+	ref, err := s.maskRequest(session, code, r)
+	if err != nil {
 		// Fail closed. Forwarding a body this could not read is exactly the
 		// leak the agent exists to prevent, so an unreadable body is an error
 		// rather than a pass-through.
@@ -292,19 +294,25 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request) {
 
 	r.URL.Path = rest
 	r.Host = ""
-	route.ServeHTTP(w, r.WithContext(withSession(r.Context(), session)))
+	if ref != nil {
+		ref.sent = time.Now()
+	}
+	route.ServeHTTP(w, r.WithContext(withTrace(withSession(r.Context(), session), ref)))
 }
 
 // maskRequest replaces the sensitive values in the body and records what it
 // replaced, in the session's vault, before the request goes anywhere.
-func (s *Server) maskRequest(session, provider string, r *http.Request) error {
+//
+// It returns the exchange's trace, or nil when nothing is being recorded, so the
+// answer can be appended to the file this half has just written.
+func (s *Server) maskRequest(session, provider string, r *http.Request) (*traceRef, error) {
 	if r.Body == nil || r.ContentLength == 0 {
-		return nil
+		return nil, nil
 	}
 
 	body, err := readBody(r)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	pass := s.det.NewPass(s.vault.Load(session))
@@ -335,25 +343,31 @@ func (s *Server) maskRequest(session, provider string, r *http.Request) error {
 	// A JSON document is masked value by value; anything else as flat text. One
 	// pass over the whole body either way, so a value repeated in two fields
 	// keeps one identity.
+	//
+	// Timed around the scan alone: what a trace reports as the cost of masking has
+	// to be the detector's work, not the bookkeeping that only exists because
+	// somebody asked for a trace.
+	scanned := time.Now()
 	masked := ""
 	if out, ok := mapJSONStrings(body, mask); ok {
 		masked = string(out)
 	} else {
 		masked = mask(string(body))
 	}
+	masking := time.Since(scanned)
 
 	// Both halves, side by side, before anything else can fail: the two bodies are
 	// what an operator reads to see that the value they typed is not in the one
 	// that left. The clear half is the reason this is a mode of its own — see
 	// audit.go.
-	s.audit.request(session, provider, string(body), masked, count, replaced)
+	path := s.audit.request(session, provider, string(body), masked, count, replaced)
 
 	if err := s.vault.Save(session, pass.Minted()); err != nil {
 		// The mapping is what makes the answer readable again. Masking without
 		// storing would send the provider tokens the response path can never
 		// expand, so the caller would read the agent's bookkeeping instead of
 		// its own data.
-		return fmt.Errorf("store the session mapping: %w", err)
+		return nil, fmt.Errorf("store the session mapping: %w", err)
 	}
 
 	r.Body = io.NopCloser(strings.NewReader(masked))
@@ -368,7 +382,11 @@ func (s *Server) maskRequest(session, provider string, r *http.Request) error {
 		// come back into the clear by accident.
 		s.log.Info("request masked", "session", session, "values", count, "minted", len(pass.Minted()))
 	}
-	return nil
+
+	if path == "" {
+		return nil, nil
+	}
+	return &traceRef{path: path, provider: provider, masking: masking}, nil
 }
 
 // readBody returns the request body as text, decompressing it when it arrived
@@ -400,18 +418,36 @@ func readBody(r *http.Request) ([]byte, error) {
 // the expander can see at a time, which is what the streaming path's held-back
 // tail is for.
 func (s *Server) unmask(resp *http.Response) error {
+	// Wrapped before anything below can return early, so the answer reaches the
+	// trace whatever happens to it afterwards. A session with no mapping, and a
+	// body the expander will not read, are still the provider's answer to a
+	// request the file already holds — and an exchange whose outbound half is on
+	// disk with no inbound half reads as one that never came back.
+	ref := s.recordResponse(resp)
+
 	known := s.vault.Load(sessionFromResponse(resp))
 	if len(known) == 0 || !isTextual(resp.Header.Get("Content-Type")) {
 		return nil
 	}
 
 	if isEventStream(resp.Header.Get("Content-Type")) {
-		resp.Body = newStreamRehydrator(resp.Body, known, s.recorder.Usage, s.audit.unmaskedSeen())
+		stream := newStreamRehydrator(resp.Body, known, s.usageSink(ref), s.audit.unmaskedSeen())
+		if ref != nil {
+			stream.onExpanded = func(spent time.Duration) { ref.expanding = spent }
+		}
+		resp.Body = stream
 		return nil
 	}
 
+	// Closed at the end rather than straight after the read, because closing is
+	// what files the trace: closed here, the answer would go to disk above a set of
+	// figures none of which had been measured yet. The original is held rather than
+	// resp.Body, which is replaced below — a deferred close of the field would shut
+	// the reader handed to the caller instead of the one from the provider.
+	upstream := resp.Body
+	defer func() { _ = upstream.Close() }()
+
 	body, err := io.ReadAll(resp.Body)
-	_ = resp.Body.Close()
 	if err != nil {
 		return fmt.Errorf("read the response body: %w", err)
 	}
@@ -424,12 +460,13 @@ func (s *Server) unmask(resp *http.Response) error {
 		return detector.UnmaskSeen(text, known, s.audit.unmaskedSeen())
 	}
 
+	expanded := time.Now()
 	out := ""
 	if doc, err := decodeJSONBody(body); err == nil {
 		// The same decode answers both questions, so the body is parsed once:
 		// what the tokens cost, and what has to be put back into it.
 		if model, usage := usageFrom(doc); model != "" {
-			s.recorder.Usage(model, usage)
+			s.usageSink(ref)(model, usage)
 		}
 		if encoded, err := encodeJSONBody(mapStrings(doc, expand)); err == nil {
 			out = string(encoded)
@@ -439,11 +476,57 @@ func (s *Server) unmask(resp *http.Response) error {
 	} else {
 		out = expand(string(body))
 	}
+	if ref != nil {
+		ref.expanding = time.Since(expanded)
+	}
 
 	resp.Body = io.NopCloser(strings.NewReader(out))
 	resp.ContentLength = int64(len(out))
 	resp.Header.Set("Content-Length", strconv.Itoa(len(out)))
 	return nil
+}
+
+// recordResponse wraps the body so the provider's answer is filed with the trace
+// this exchange already wrote, and does nothing at all when nothing is recording.
+//
+// Nothing rather than a wrapper that discards: the ordinary agent must not pay a
+// copy of every answer it forwards to arrive at throwing it away.
+func (s *Server) recordResponse(resp *http.Response) *traceRef {
+	ref := traceFromResponse(resp)
+	if ref == nil || resp.Body == nil {
+		return nil
+	}
+
+	// Stamped here because here is where the provider's headers have arrived, and
+	// on a stream that is a long way before its body has.
+	ref.upstream = time.Since(ref.sent)
+	ref.answering = time.Now()
+
+	resp.Body = newResponseRecorder(resp.Body, func(raw string, ended time.Time) {
+		ref.delivering = ended.Sub(ref.answering)
+		if err := s.audit.response(ref, raw); err != nil {
+			// Said and carried on, as the outbound half is: the thing that records
+			// the control must never be able to take the control down.
+			s.log.Error("the answer could not be traced", "error", err)
+		}
+	})
+	return ref
+}
+
+// usageSink is where a response reports what it cost.
+//
+// Always the recorder, which is what the heartbeat is built from; also the trace,
+// when there is one. Handed over as one function so neither caller has to remember
+// both, and so an untraced agent still passes the recorder's own method rather than
+// a closure wrapping it.
+func (s *Server) usageSink(ref *traceRef) func(string, pkgtelemetry.TokenUsage) {
+	if ref == nil {
+		return s.recorder.Usage
+	}
+	return func(model string, usage pkgtelemetry.TokenUsage) {
+		ref.model, ref.usage = model, usage
+		s.recorder.Usage(model, usage)
+	}
 }
 
 // isTextual reports whether a content type is one the expander should read at
@@ -480,6 +563,62 @@ func sessionOf(r *http.Request) string {
 		}
 	}
 	return "default"
+}
+
+// traceRef is what the response half needs to find the file the request half
+// wrote: where it is, whose answer is being recorded into it, and what the
+// exchange cost on the way.
+//
+// The figures are filled in at four different moments and read once, when the
+// answer's body closes. Plain fields and no lock: everything after ModifyResponse
+// happens on the goroutine the reverse proxy copies the body on, which is the same
+// assumption the stream rehydrator's own counters already make.
+type traceRef struct {
+	path     string
+	provider string
+
+	// masking is the detector's scan of the outbound body, and nothing else — not
+	// the vault write and not the trace write, which would make the figure say
+	// "how long -v costs" rather than "how long masking costs".
+	masking time.Duration
+
+	// sent is when the request left, and upstream how long the provider took to
+	// answer with its headers. Separate from delivering, because on a stream those
+	// are different questions: the first is the provider's latency, the second is
+	// how long the answer took to arrive, and adding them together hides both.
+	sent       time.Time
+	upstream   time.Duration
+	answering  time.Time
+	delivering time.Duration
+
+	// expanding is the restoration, summed. On a stream it is the sum of the
+	// rewrites rather than the wall clock, which is almost all waiting.
+	expanding time.Duration
+
+	model string
+	usage pkgtelemetry.TokenUsage
+}
+
+type traceKey struct{}
+
+// withTrace carries the exchange's trace to the response path.
+//
+// Nothing is added when nothing is recording, so an agent without -v puts no value
+// in the context of every request it forwards.
+func withTrace(ctx context.Context, ref *traceRef) context.Context {
+	if ref == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, traceKey{}, ref)
+}
+
+// traceFromResponse recovers the exchange's trace, or nil for an untraced one.
+func traceFromResponse(resp *http.Response) *traceRef {
+	if resp.Request == nil {
+		return nil
+	}
+	ref, _ := resp.Request.Context().Value(traceKey{}).(*traceRef)
+	return ref
 }
 
 type sessionKey struct{}
