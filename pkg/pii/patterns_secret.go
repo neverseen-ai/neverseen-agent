@@ -206,17 +206,40 @@ var (
 
 	// NAME=value, where the name is the evidence and the value is the span.
 	//
-	// Two branches, and their order is the point. The first is the run minus its
-	// tail, written as seven-or-more plus one closing character so the minimum
-	// stays eight; Go's regexp is leftmost-first, so it wins whenever it can.
-	// The second is the raw run, and it exists for the one case the first cannot
-	// reach: a value of exactly eight characters whose last is punctuation
-	// ("PASSWORD=hunter2)"). Trimming there would drop it to seven, fall under
-	// the floor, and match nothing at all — the password would leave in clear. A
-	// narrowing that turns a caught credential into a silent miss is worse than
-	// the eaten bracket it set out to fix.
-	genericSecretRe = regexp.MustCompile(`(?i)(?:PASSWORD|PASSWD|SECRET|TOKEN|API_KEY|APIKEY|ACCESS_KEY|ENCRYPTION_KEY|PRIVATE_KEY|PRIV_KEY|AUTH_TOKEN|AUTH_KEY|CLIENT_KEY|SERVICE_KEY|ACCOUNT_KEY|DB_KEY|DATABASE_KEY|KEY_PASS|DB_PASS|DATABASE_PASS|SESSION_ID|SESSION_KEY)['"]?\s*[=:]\s*['"]?` +
-		`([^` + quoteChars + `]{7,}[^` + quoteChars + noSentenceTail + `]|[^` + quoteChars + `]{8,})['"]?`)
+	// Two expressions, and what separates them is not length: it is whether the
+	// value was quoted.
+	//
+	// A quoted value ends where its quote does, so punctuation inside it is the
+	// value's own — `password="hunter2)"` is a password ending on a bracket, and
+	// `"secret": "MyP@ssw0rd!"` is one ending on a bang. Both are taken whole.
+	//
+	// An unquoted value ends where the text around it resumes, so trailing
+	// punctuation is that text — `[password=hunter2]` closes a bracket somebody
+	// opened, and taking the `]` with the value emits `[password=[SECRET_1]` to the
+	// model. That matters far more than a displaced character: this agent is read
+	// by a model reviewing source code, and code with a delimiter removed is code
+	// it analyses wrongly, silently, and reports on as if it were the caller's.
+	//
+	// This replaced a rule that decided on length — the value minus its tail at a
+	// floor of eight, falling back to the raw run when trimming would drop under
+	// it. That fallback existed so `PASSWORD=hunter2)` was not missed altogether,
+	// and it worked, but the two halves of the catalogue then disagreed with each
+	// other: `MyP@ssw0rd!` at eleven characters had its bang left in clear while
+	// `hunter2)` at eight kept its bracket. One value's last character leaked and
+	// the other's ate the syntax around it, decided by nothing but how long the
+	// password was.
+	//
+	// The bare expression deliberately has no `['"]?` before its group. RE2 has no
+	// lookbehind, so that absence is what keeps it off a quoted value: after the
+	// separator the group must start on a non-quote, and `\s*` cannot step over the
+	// opening quote to reach the value behind it.
+	genericSecretNames = `(?i)(?:PASSWORD|PASSWD|SECRET|TOKEN|API_KEY|APIKEY|ACCESS_KEY|ENCRYPTION_KEY|PRIVATE_KEY|PRIV_KEY|AUTH_TOKEN|AUTH_KEY|CLIENT_KEY|SERVICE_KEY|ACCOUNT_KEY|DB_KEY|DATABASE_KEY|KEY_PASS|DB_PASS|DATABASE_PASS|SESSION_ID|SESSION_KEY)['"]?\s*[=:]\s*`
+
+	genericSecretQuotedRe = regexp.MustCompile(genericSecretNames +
+		`['"]([^` + quoteChars + `]{7,})['"]`)
+
+	genericSecretBareRe = regexp.MustCompile(genericSecretNames +
+		`([^` + quoteChars + `]{6,}[^` + quoteChars + noSentenceTail + `])`)
 
 	// Sixty-four or more hex characters behind a key-shaped name. The floor is
 	// what separates an encryption key from a commit SHA somebody assigned to a
@@ -299,7 +322,8 @@ func SecretPatterns() []Pattern {
 		{Regex: connStrRe, Group: 1, Category: CatConnStr, Label: "URL carrying credentials"},
 
 		// context-hinted generics, last
-		{Regex: genericSecretRe, Group: 1, Category: CatGenericSecret, Label: "Named secret or password"},
+		{Regex: genericSecretQuotedRe, Group: 1, Category: CatGenericSecret, Label: "Named secret or password"},
+		{Regex: genericSecretBareRe, Group: 1, Category: CatGenericSecret, Label: "Named secret or password"},
 		{Regex: sessionSecretRe, Group: 1, Category: CatGenericSecret, Label: "Session token"},
 		{Regex: hexSecretRe, Group: 1, Category: CatHexSecret, Label: "Hex-encoded key"},
 	}

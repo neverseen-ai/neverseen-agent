@@ -143,11 +143,35 @@ cases:
     expect:
       - {category: SECRET_CONN_STR, value: "admin:s3cr3t@db.internal:5432/prod"}
 
-  # The fallback branch of the generic-secret value, and the reason it exists:
-  # eight characters ending on punctuation cannot be trimmed without falling
-  # under the length floor, so the whole run is taken rather than nothing at
-  # all. Delete the second alternative and this case leaks in clear.
-  - id: bound-generic-secret-eight-chars-ending-on-punctuation
+  # Quoting is what decides whether trailing punctuation belongs to the value.
+  # These four cases are the rule, and none of them is meaningful alone.
+
+  # Unquoted: the bracket closes one somebody opened, so it is the text around
+  # the value, not the value. Taken with it, the model is sent
+  # "[password=[SECRET_1]" — source code with a delimiter removed, which it then
+  # analyses wrongly and reports on as if it were the caller's.
+  - id: bound-generic-secret-bare-closing-bracket-is-syntax
+    text: "La configuration contient [password=hunter2] sur cette ligne."
+    expect:
+      - {category: SECRET_GENERIC, value: "hunter2"}
+
+  # Unquoted, and the same rule: the password is still masked, the punctuation
+  # around it still stands.
+  - id: bound-generic-secret-bare-trailing-punctuation
     text: "Le conteneur démarre avec PASSWORD=hunter2) dans sa configuration."
     expect:
+      - {category: SECRET_GENERIC, value: "hunter2"}
+
+  # Quoted: the value ends where its quote does, so the bracket inside is the
+  # password's own and leaving it in clear would publish its last character.
+  - id: bound-generic-secret-quoted-keeps-its-punctuation
+    text: "Dans le code : fn(password=\"hunter2)\") est appelé au démarrage."
+    expect:
       - {category: SECRET_GENERIC, value: "hunter2)"}
+
+  # The same, on the notation a JSON body carries once its string is read as
+  # source: the bang is the password's last character, not the end of a sentence.
+  - id: bound-generic-secret-quoted-keeps-a-trailing-bang
+    text: "Le fichier contient {\"secret\": \"MyP@ssw0rd!\"} et rien d'autre."
+    expect:
+      - {category: SECRET_GENERIC, value: "MyP@ssw0rd!"}

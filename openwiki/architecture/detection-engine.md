@@ -264,9 +264,30 @@ spaced notation, comfortably in the past. Only context separates it from a birth
 
 #### `GenericSecretCheck`, and the premise that fails in a repository
 
-`genericSecretRe` reads `NAME=value` and treats the **name** as the evidence: a run of
-characters after `PASSWORD=` is a password because of what precedes it. In a `.env`
-file, a YAML key or a shell export that is exactly right.
+`genericSecretQuotedRe` and `genericSecretBareRe` read `NAME=value` and treat the
+**name** as the evidence: a run of characters after `PASSWORD=` is a password because of
+what precedes it. In a `.env` file, a YAML key or a shell export that is exactly right.
+
+**Two expressions, and what separates them is quoting, not length.** A quoted value ends
+where its quote does, so punctuation inside it is the value's own — `password="hunter2)"`
+ends on a bracket, `"secret": "MyP@ssw0rd!"` on a bang, and both are taken whole. An
+unquoted value ends where the surrounding text resumes, so trailing punctuation is that
+text: `[password=hunter2]` closes a bracket somebody opened, and taking the `]` with the
+value emits `[password=[SECRET_1]` — source code with a delimiter removed, which the model
+then analyses wrongly and reports on as if it were the caller's.
+
+The rule this replaced decided on length: the run minus its tail at a floor of eight,
+falling back to the raw run when trimming would drop under it. The fallback stopped
+`PASSWORD=hunter2)` being missed altogether, but the two halves disagreed with each other
+— `MyP@ssw0rd!` at eleven characters had its bang left in clear while `hunter2)` at eight
+kept its bracket. One value leaked its last character, the other ate the syntax around it,
+and nothing but the password's length decided which.
+
+The bare expression deliberately carries **no `['"]?` before its group**. RE2 has no
+lookbehind, so that absence is what keeps it off a quoted value: after the separator the
+group must start on a non-quote, and `\s*` cannot step over the opening quote to reach the
+value behind it. Four corpus cases hold the rule — `bound-generic-secret-bare-*` and
+`bound-generic-secret-quoted-*` — and none of them is meaningful alone.
 
 In source code it collapses. `password:` there is a *field* name, and what follows is an
 expression, a type or an identifier. One real run against a repository produced, among
@@ -289,7 +310,7 @@ case against each over-reach:
 
 | Rule | Rejects | Why not wider |
 |---|---|---|
-| An **opening** bracket, or `?;,` | `security.authorize({`, `CreationOptional<string`, `user.password?.replace(/./g` | Closing brackets are absent on purpose: `PASSWORD=hunter2)` is a real credential ending on one, held by `bound-generic-secret-eight-chars-ending-on-punctuation`. An opener cannot arrive that way |
+| An **opening** bracket, or `?;,` | `security.authorize({`, `CreationOptional<string`, `user.password?.replace(/./g` | Closing brackets are absent on purpose: a quoted `password="hunter2)"` is a real credential ending on one, held by `bound-generic-secret-quoted-keeps-its-punctuation`. An opener cannot arrive that way |
 | Identifier-shaped **and** no digit | `newPassword`, `totpToken`, `req.cookies.token` | Shape alone rejected `Sup3rS3cr3tValue123`, which is a name by shape and a password in fact (`TestMaskKeepsJSONEscapingIntact`). Code names things in words; a credential almost always carries a digit |
 | A lowercase slug carrying the keyword | `reset-password`, `forgot-password`, `access-token` | Lowercase and hyphens only, so `MyPassword123!` — which carries the word too — stays a credential |
 

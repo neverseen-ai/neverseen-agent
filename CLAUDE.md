@@ -474,11 +474,30 @@ The catalogue, the locales and the substitution modes in full:
   `CreationOptional<string` — and the model received a review of code whose
   identifiers had been replaced by `[SECRET_n]`. `GenericSecretCheck` is the guard,
   and both its rules are narrower than they look, because the tree already held a
-  case against each over-reach: **opening** brackets only (`PASSWORD=hunter2)` is a
-  real credential ending on a closer), and identifier-shaped **plus no digit**
+  case against each over-reach: **opening** brackets only (a quoted
+  `password="hunter2)"` is a real credential ending on a closer), and identifier-shaped **plus no digit**
   (`Sup3rS3cr3tValue123` is a name by shape and a password in fact). The slash and
   the plus are not code punctuation — base64 is made of them. What still leaks is
   recorded as a `TODO`: a credential of nothing but letters.
+- **Quoting decides whether trailing punctuation belongs to a named secret, and
+  length never did.** Two expressions, `genericSecretQuotedRe` and
+  `genericSecretBareRe`. A quoted value ends where its quote does, so the
+  punctuation inside is the value's own — `password="hunter2)"` ends on a bracket,
+  `"secret": "MyP@ssw0rd!"` on a bang, and both are taken whole. An unquoted value
+  ends where the text resumes, so the punctuation is that text: `[password=hunter2]`
+  closes a bracket somebody opened. This replaced a rule that decided on length — the
+  run minus its tail at a floor of eight, falling back to the raw run when trimming
+  would drop under it — and the two halves then **disagreed with each other**:
+  `MyP@ssw0rd!` at eleven characters had its bang left in clear while `hunter2)` at
+  eight kept its bracket, one value leaking its last character and the other eating
+  the syntax around it, decided by nothing but how long the password was. Eating it
+  is the worse half, because this agent is read by a model reviewing source code and
+  code with a delimiter removed is code it analyses wrongly, silently, and reports on
+  as the caller's. **The bare expression deliberately has no `['"]?` before its
+  group**: RE2 has no lookbehind, so that absence is what keeps it off a quoted value
+  — after the separator the group must start on a non-quote, and `\s*` cannot step
+  over the opening quote. Four corpus cases hold the rule and none is meaningful
+  alone.
 - **Where shape runs out, the keyword decides.** `reset-password` behind `password:`
   has the *same shape* as `troisieme-valeur-longue`, the corpus's own credential —
   lowercase words joined by hyphens, both of them — so no rule about form could

@@ -131,7 +131,7 @@ Base : postgres://admin:s3cr3t@db.example.com:5432/app
 Broker : amqp://guest:gu3st@broker.internal:5672/
 Cache : redis://:p4ssonly@redis.internal:6379
 API partenaire : https://user:p4ss@api.partner.com/v1/orders
-Mot de passe : PASSWORD=hunter2-correct-horse
+Mot de passe : PASSWORD=hunter2-correct-horse, entre guillemets password="hunter2-correct-horse)"
 Clé hexadécimale : KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 `
 
