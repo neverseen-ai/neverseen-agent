@@ -64,6 +64,33 @@ type streamRehydrator struct {
 	// that could be the beginning of a token whose end has not arrived yet.
 	pending string
 
+	// block is which content block pending and arguments belong to, and -1 when
+	// nothing is being held.
+	//
+	// A tail belongs to the block it was held back from: a replacement is inside
+	// one value and cannot span two blocks. Carried across, it prefixed the next
+	// block's text — or, when that block was a tool call, arrived after the stream
+	// had ended in an event for a block closed long before, which is what it
+	// actually did.
+	block int
+
+	// arguments is a tool call's, accumulated whole.
+	//
+	// They arrive as slices of a JSON document — "{\"command\":\"cat /U", then
+	// "sers/alice" — so they are not text and cannot be treated as any. Expanding a
+	// value into a slice splices it into the *source* of a document this only ever
+	// sees a piece of, and an original carrying a quote ends the string it landed
+	// in: the client's parse of the tool call then fails, at the client, silently.
+	//
+	// So the fragments are held until the block stops, when the concatenation is a
+	// whole document — decoded, expanded value by value, re-encoded. The encoder
+	// escapes, which is the rule the request path already follows for the same
+	// reason. Nothing is lost by waiting: a client cannot use half a JSON document,
+	// so it has to wait for the stop in any case.
+	arguments    strings.Builder
+	argumentsSet func(string)
+	argumentsIn  jsonObject
+
 	// template is the last delta event seen, kept so a pending tail still has an
 	// event to travel in when the stream ends before the token completes.
 	template []byte
@@ -76,6 +103,7 @@ func newStreamRehydrator(body io.ReadCloser, known map[string]string,
 	onUsage func(string, telemetry.TokenUsage),
 	seen func(replacement, original string)) *streamRehydrator {
 	return &streamRehydrator{
+		block:   -1,
 		src:     bufio.NewReader(body),
 		closer:  body,
 		known:   known,
@@ -168,6 +196,32 @@ func (r *streamRehydrator) rewrite(line string) string {
 		r.usageTotals.CacheRead += usage.CacheRead
 	}
 
+	// Whatever the block before was holding is emitted before this event, and
+	// never after it: a block's own text has to reach the caller inside that
+	// block, and a tool call's arguments before the stop that completes them.
+	prefix := ""
+	if index, ok := blockIndex(event); ok && index != r.block {
+		prefix = r.closeBlock()
+		r.block = index
+	}
+	if eventType(event) == "content_block_stop" {
+		return prefix + r.closeBlock() + line
+	}
+
+	// A tool call's arguments are held rather than rewritten — see the field.
+	// Held *before* anything expands in place, because expanding in place is the
+	// splice this exists to prevent.
+	if fragment, set, ok := jsonFragment(event); ok {
+		if r.argumentsIn == nil {
+			// The first fragment's own event carries the whole document later, so
+			// the shape emitted is the shape that arrived and the encoder does the
+			// escaping.
+			r.argumentsIn, r.argumentsSet = event, set
+		}
+		r.arguments.WriteString(fragment)
+		return prefix
+	}
+
 	// Every string in the event, decoded, so an original carrying a quote or a
 	// newline is escaped by the encoder rather than spliced into raw JSON.
 	expand := func(text string) string { return detector.UnmaskSeen(text, r.known, r.seen) }
@@ -179,9 +233,9 @@ func (r *streamRehydrator) rewrite(line string) string {
 		// usage report. Already expanded above; nothing to hold back.
 		encoded, err := encodeJSONBody(event)
 		if err != nil {
-			return line
+			return prefix + line
 		}
-		return "data: " + string(encoded) + "\n\n"
+		return prefix + "data: " + string(encoded) + "\n\n"
 	}
 
 	combined := expand(r.pending + text)
@@ -196,42 +250,143 @@ func (r *streamRehydrator) rewrite(line string) string {
 	if err != nil {
 		// Unreachable for a value that just came out of a decoder, but the
 		// original line is the safe answer rather than a panic.
-		return line
+		return prefix + line
 	}
 
 	r.template = encoded
+	return prefix + "data: " + string(encoded) + "\n\n"
+}
+
+// closeBlock emits whatever the block being left behind was holding.
+//
+// Two things, never both: a text block's held-back tail, or a tool call's
+// accumulated arguments. A tail that reaches here was never the start of a
+// replacement — the block ended — so it is the caller's own text and is delivered
+// as it stands.
+func (r *streamRehydrator) closeBlock() string {
+	out := ""
+	if r.arguments.Len() > 0 {
+		out += r.expandedArguments()
+	}
+	if r.pending != "" {
+		out += r.tailEvent(r.pending)
+		r.pending = ""
+	}
+	return out
+}
+
+// expandedArguments returns the tool call's arguments as one event, expanded as the
+// document they are.
+func (r *streamRehydrator) expandedArguments() string {
+	raw := r.arguments.String()
+	r.arguments.Reset()
+
+	event, set := r.argumentsIn, r.argumentsSet
+	r.argumentsIn, r.argumentsSet = nil, nil
+	if event == nil || set == nil {
+		return ""
+	}
+
+	expand := func(text string) string { return detector.UnmaskSeen(text, r.known, r.seen) }
+
+	out := ""
+	if doc, err := decodeJSONBody([]byte(raw)); err == nil {
+		if encoded, err := encodeJSONBody(mapStrings(doc, expand)); err == nil {
+			out = string(encoded)
+		}
+	}
+	if out == "" {
+		// The fragments do not make a document: a stream cut short, or a shape this
+		// does not model. Whole tokens in the raw text, which is what the agent did
+		// before this held anything back — never worse than it was, and a client
+		// that cannot parse the arguments could not have used them either way.
+		out = expand(raw)
+	}
+
+	set(out)
+	encoded, err := encodeJSONBody(event)
+	if err != nil {
+		return ""
+	}
 	return "data: " + string(encoded) + "\n\n"
 }
 
-// flush emits whatever tail is still held back when the stream ends.
+// tailEvent puts a held-back tail into a copy of the last delta event.
 //
-// It travels in a copy of the last delta event, because a bare fragment is not a
-// valid event and a client would drop it. The case is rare — the stream has to
-// end on something that looks like the start of a token — but the alternative is
-// losing characters the caller wrote.
-func (r *streamRehydrator) flush() {
-	if r.pending == "" || r.template == nil {
-		r.pending = ""
-		return
+// A bare fragment is not a valid event and a client would drop it, which would lose
+// characters the caller wrote.
+func (r *streamRehydrator) tailEvent(tail string) string {
+	if r.template == nil {
+		return ""
 	}
-
 	event, err := decodeEvent(string(r.template))
 	if err != nil {
-		r.pending = ""
-		return
+		return ""
 	}
 	_, setText, found := deltaText(event)
 	if !found {
-		r.pending = ""
-		return
+		return ""
 	}
-
-	setText(r.pending)
-	r.pending = ""
-
-	if encoded, err := encodeJSONBody(event); err == nil {
-		r.out.WriteString("data: " + string(encoded) + "\n\n")
+	setText(tail)
+	encoded, err := encodeJSONBody(event)
+	if err != nil {
+		return ""
 	}
+	return "data: " + string(encoded) + "\n\n"
+}
+
+// eventType reports the "type" an event declares, or "" for one that declares none.
+func eventType(event jsonObject) string {
+	name, _ := stringAt(event, "type")
+	return name
+}
+
+// blockIndex reports which content block an event belongs to.
+//
+// Absent on the message-level events — a start, a stop, a usage report — and those
+// must not be read as block zero, or the first of them would close the block that
+// is still streaming.
+func blockIndex(event jsonObject) (int, bool) {
+	raw, ok := event.value("index")
+	if !ok {
+		return 0, false
+	}
+	return asInt(raw)
+}
+
+// jsonFragment finds a slice of a tool call's arguments, and returns a setter for it.
+//
+// Anthropic streams them as input_json_delta.partial_json. The OpenAI-compatible
+// family streams its own as choices[].delta.tool_calls[].function.arguments, and
+// that is deliberately not read here.
+//
+// TODO: OpenAI tool call arguments are still expanded in place, so a value split
+// across two of them is not restored and one carrying a quote can break the
+// document. It has no per-block stop to accumulate against — the end is a
+// finish_reason on the message — and building that on an unverified reading of the
+// format, in the component that decides what leaves in clear, is how a change passes
+// its tests and fails the real stream. The upgrade is a recorded fixture from a real
+// OpenAI tool call, then the same accumulation keyed on the tool call index.
+func jsonFragment(event jsonObject) (fragment string, set func(string), found bool) {
+	delta, ok := objectAt(event, "delta")
+	if !ok {
+		return "", nil, false
+	}
+	if fragment, ok := stringAt(delta, "partial_json"); ok {
+		return fragment, func(v string) { delta.setValue("partial_json", v) }, true
+	}
+	return "", nil, false
+}
+
+// flush emits whatever the last block was still holding when the stream ended.
+//
+// A stream regularly ends without the stop that would have closed its block — cut
+// short, or a shape with no stop event — so the same close runs here. The tail case
+// is rare, the stream having to end on something that looks like the start of a
+// token, but the alternative is losing characters the caller wrote; the arguments
+// case is a tool call the caller would otherwise never receive at all.
+func (r *streamRehydrator) flush() {
+	r.out.WriteString(r.closeBlock())
 }
 
 // eventPayload returns the JSON a "data:" line carries.
@@ -268,10 +423,15 @@ var errNotAnEvent = errTrailing("the event payload is not a JSON object")
 // for complete tokens, and unable to reassemble a split one, which is the honest
 // limit of not knowing a format.
 func deltaText(event jsonObject) (text string, set func(string), found bool) {
-	// Anthropic: {"type":"content_block_delta","delta":{"text":"…"}}
+	// Anthropic: {"type":"content_block_delta","delta":{"text":"…"}}, and the same
+	// shape under "thinking" for extended reasoning. Generated text either way, and
+	// a replacement splits across two of one exactly as it does across two of the
+	// other — left out, a thought carried the agent's own bookkeeping to the reader.
 	if delta, ok := objectAt(event, "delta"); ok {
-		if text, ok := stringAt(delta, "text"); ok {
-			return text, func(v string) { delta.setValue("text", v) }, true
+		for _, field := range []string{"text", "thinking"} {
+			if text, ok := stringAt(delta, field); ok {
+				return text, func(v string) { delta.setValue(field, v) }, true
+			}
 		}
 	}
 

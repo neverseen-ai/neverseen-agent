@@ -178,11 +178,35 @@ The held-back length comes from `detector.TailLen` (`mask.go:325`), **not**
 a token is, and answering only for tokens left `fake` mode restoring nothing in a streamed
 answer while a buffered one round-tripped (`TestTailLenCoversBothShapes`).
 
-It rewrites only the delta text of an event, found by `deltaText` (`stream.go:249`), which
-handles both the Anthropic and the OpenAI event shapes
-(`TestStreamRehydratorHandlesTheOpenAIShape`). Structure and numbers are left alone
-(`TestStreamRehydratorLeavesStructureAlone`, `TestStreamRehydratorDoesNotRewriteNumbers`),
-and a dangling tail at end of stream is flushed (`flush`, `:191`).
+It rewrites only the delta text of an event, found by `deltaText`, which handles the
+Anthropic shapes — `delta.text` and `delta.thinking` — and the OpenAI
+`choices[].delta.content` (`TestStreamRehydratorHandlesTheOpenAIShape`). Structure and
+numbers are left alone (`TestStreamRehydratorLeavesStructureAlone`,
+`TestStreamRehydratorDoesNotRewriteNumbers`), and a dangling tail at end of stream is
+flushed (`flush`).
+
+**A tail belongs to the block it was held back from.** `closeBlock` releases it when the
+block stops or when an event for another block arrives. Carried across, it prefixed the
+next block's text — or, when that block was a tool call, arrived after the stream had
+ended in an event for a block closed long before
+(`TestATailDoesNotCrossABlockBoundary`).
+
+**A tool call's arguments are not text.** They arrive as slices of a JSON document
+(`delta.partial_json`), so expanding a value into a slice splices it into the *source* of a
+document only ever seen a piece of: an original carrying a quote ends the string it landed
+in, and the client's parse of the tool call then fails, at the client, silently. So
+`jsonFragment` holds the fragments and `expandedArguments` releases them at the block's
+stop, when the concatenation is a whole document — decoded, expanded value by value,
+re-encoded, the encoder doing the escaping. Nothing is lost by waiting: a client cannot use
+half a JSON document. Released before the stop that completes them and exactly once
+(`TestArgumentsAreReleasedBeforeTheirStop`); fragments that do not make a document fall
+back to whole-token expansion rather than being dropped
+(`TestIncompleteArgumentsAreStillDelivered`).
+
+The known gap is recorded as a `TODO` on `jsonFragment`: the OpenAI family streams tool
+call arguments under `choices[].delta.tool_calls[].function.arguments`, which has no
+per-block stop to accumulate against — its end is a `finish_reason` on the message — and
+that reading is unverified against a real stream.
 
 ## `/healthz` and the local callers
 

@@ -65,6 +65,27 @@ area: the reasoning is what stops a tempting simplification being reintroduced.
 - **Streaming holds back a tail**, and it is `detector.TailLen`, not
   `pii.TokenTailLen` alone — a stand-in splits across two events exactly as a
   token does.
+- **A tail belongs to the block it was held back from**, and `closeBlock` releases it
+  there. Carried across, it prefixed the next block's text — or, when that block was
+  a tool call, arrived after the stream had ended in an event for a block closed long
+  before, which is what it actually did.
+- **`deltaText` enumerates the shapes a provider streams text in, and the ones it
+  missed were the ones carrying tool calls.** Only `delta.text` and
+  `choices[].delta.content` were known, so `delta.thinking` and
+  `delta.partial_json` fell into the branch that expands whole tokens in place and
+  holds nothing back: a value split across two events was never restored, and the
+  tool acted on `[EMAIL_1]`.
+- **A tool call's arguments are a JSON document arriving in slices, so they are
+  accumulated and expanded whole** (`jsonFragment`, `expandedArguments`). Expanding a
+  value into a slice splices it into the *source* of a document only ever seen a
+  piece of, and an original carrying a quote ends the string it landed in — the
+  client's parse then fails, at the client, silently. Held until the block stops, the
+  concatenation is a whole document and the encoder escapes, which is the rule the
+  request path already follows. **Nothing is lost by waiting**: a client cannot use
+  half a JSON document, so it waits for the stop in any case. Released **before** the
+  stop that completes them, and exactly once. Fragments that do not make a document —
+  a stream cut short — fall back to whole-token expansion, which is what the agent did
+  before: never worse, and dropping them is the one outcome that would be.
 - **Overlap arbitration, in order**: credential, then confidence, then the longer
   span, then the leftmost. Each rule is there because its absence leaked.
 - **The agent holds no API keys.** The caller's credential is forwarded untouched.
