@@ -101,6 +101,121 @@ const (
 	CatConnStr        Category = "SECRET_CONN_STR"
 	CatGenericSecret  Category = "SECRET_GENERIC"
 	CatHexSecret      Category = "SECRET_HEX_KEY"
+
+	// The second tier of vendor prefixes. One category per vendor, whatever the
+	// role of the credential — a vendor issues personal tokens, service keys and
+	// refresh tokens against one account, and a person revoking one revokes them
+	// together. Several patterns share a category where a vendor issues several
+	// shapes, as Slack's already do.
+	CatOnePasswordSecret      Category = "SECRET_1PASSWORD"
+	CatAdobeSecret            Category = "SECRET_ADOBE"
+	CatAgeSecret              Category = "SECRET_AGE"
+	CatAikidoSecret           Category = "SECRET_AIKIDO"
+	CatAirtableSecret         Category = "SECRET_AIRTABLE"
+	CatAlibabaSecret          Category = "SECRET_ALIBABA"
+	CatApifySecret            Category = "SECRET_APIFY"
+	CatArtifactorySecret      Category = "SECRET_ARTIFACTORY"
+	CatAsaasSecret            Category = "SECRET_ASAAS"
+	CatAuthressSecret         Category = "SECRET_AUTHRESS"
+	CatAzureAppConfigSecret   Category = "SECRET_AZURE_APP_CONFIGURATION"
+	CatAzureServiceBusSecret  Category = "SECRET_AZURE_SERVICEBUS"
+	CatBraveSearchSecret      Category = "SECRET_BRAVE_SEARCH"
+	CatBuildkiteSecret        Category = "SECRET_BUILDKITE"
+	CatCanvaSecret            Category = "SECRET_CANVA"
+	CatCerebrasSecret         Category = "SECRET_CEREBRAS"
+	CatCircleciSecret         Category = "SECRET_CIRCLECI"
+	CatClickhouseSecret       Category = "SECRET_CLICKHOUSE"
+	CatClojarsSecret          Category = "SECRET_CLOJARS"
+	CatCloudflareSecret       Category = "SECRET_CLOUDFLARE"
+	CatCloudsmithSecret       Category = "SECRET_CLOUDSMITH"
+	CatCockroachDBSecret      Category = "SECRET_COCKROACHLABS"
+	CatConfigcatSecret        Category = "SECRET_CONFIGCAT"
+	CatDatabricksSecret       Category = "SECRET_DATABRICKS"
+	CatDataStaxAstraSecret    Category = "SECRET_DATASTAX_ASTRA"
+	CatDenoSecret             Category = "SECRET_DENO"
+	CatDevcycleSecret         Category = "SECRET_DEVCYCLE"
+	CatDevinSecret            Category = "SECRET_DEVIN"
+	CatDigitaloceanSecret     Category = "SECRET_DIGITALOCEAN"
+	CatDopplerSecret          Category = "SECRET_DOPPLER"
+	CatDuffelSecret           Category = "SECRET_DUFFEL"
+	CatDynatraceSecret        Category = "SECRET_DYNATRACE"
+	CatEasypostSecret         Category = "SECRET_EASYPOST"
+	CatElasticSecret          Category = "SECRET_ELASTIC"
+	CatExoscaleSecret         Category = "SECRET_EXOSCALE"
+	CatFacebookSecret         Category = "SECRET_FACEBOOK"
+	CatFigmaSecret            Category = "SECRET_FIGMA"
+	CatFlutterwaveSecret      Category = "SECRET_FLUTTERWAVE"
+	CatFlyIOSecret            Category = "SECRET_FLYIO"
+	CatFrameIOSecret          Category = "SECRET_FRAMEIO"
+	CatGCNotifySecret         Category = "SECRET_GC_NOTIFY"
+	CatGoogleGeminiSecret     Category = "SECRET_GOOGLE_GEMINI"
+	CatGrafanaSecret          Category = "SECRET_GRAFANA"
+	CatHarnessSecret          Category = "SECRET_HARNESS"
+	CatHerokuSecret           Category = "SECRET_HEROKU"
+	CatInfracostSecret        Category = "SECRET_INFRACOST"
+	CatIntra42Secret          Category = "SECRET_INTRA42"
+	CatIonicSecret            Category = "SECRET_IONIC"
+	CatLangSmithSecret        Category = "SECRET_LANGSMITH"
+	CatLichessSecret          Category = "SECRET_LICHESS"
+	CatLinearSecret           Category = "SECRET_LINEAR"
+	CatMailersendSecret       Category = "SECRET_MAILERSEND"
+	CatMercurySecret          Category = "SECRET_MERCURY"
+	CatMergifySecret          Category = "SECRET_MERGIFY"
+	CatMicrosoftTeamsSecret   Category = "SECRET_MICROSOFT_TEAMS"
+	CatMinimaxSecret          Category = "SECRET_MINIMAX"
+	CatMongoDBAtlasSecret     Category = "SECRET_MONGODB_ATLAS"
+	CatNeonSecret             Category = "SECRET_NEON"
+	CatNotionSecret           Category = "SECRET_NOTION"
+	CatNVIDIASecret           Category = "SECRET_NVIDIA"
+	CatOctopusDeploySecret    Category = "SECRET_OCTOPUS_DEPLOY"
+	CatOneSignalSecret        Category = "SECRET_ONESIGNAL"
+	CatOnfidoSecret           Category = "SECRET_ONFIDO"
+	CatOpenRouterSecret       Category = "SECRET_OPENROUTER"
+	CatOpenShiftSecret        Category = "SECRET_OPENSHIFT"
+	CatPaddleSecret           Category = "SECRET_PADDLE"
+	CatPerplexitySecret       Category = "SECRET_PERPLEXITY"
+	CatPersonaSecret          Category = "SECRET_PERSONA"
+	CatPineconeSecret         Category = "SECRET_PINECONE"
+	CatPinterestSecret        Category = "SECRET_PINTEREST"
+	CatPlanetscaleSecret      Category = "SECRET_PLANETSCALE"
+	CatPolarSecret            Category = "SECRET_POLAR"
+	CatPosthogSecret          Category = "SECRET_POSTHOG"
+	CatPostmanSecret          Category = "SECRET_POSTMAN"
+	CatPrefectSecret          Category = "SECRET_PREFECT"
+	CatProofSecret            Category = "SECRET_PROOF"
+	CatPulumiSecret           Category = "SECRET_PULUMI"
+	CatRampSecret             Category = "SECRET_RAMP"
+	CatReadmeSecret           Category = "SECRET_README"
+	CatRedirectPizzaSecret    Category = "SECRET_REDIRECT_PIZZA"
+	CatRenderSecret           Category = "SECRET_RENDER"
+	CatRootlySecret           Category = "SECRET_ROOTLY"
+	CatRubygemsSecret         Category = "SECRET_RUBYGEMS"
+	CatRunpodSecret           Category = "SECRET_RUNPOD"
+	CatSalesforceSecret       Category = "SECRET_SALESFORCE"
+	CatSamsaraSecret          Category = "SECRET_SAMSARA"
+	CatScalingoSecret         Category = "SECRET_SCALINGO"
+	CatSegmentSecret          Category = "SECRET_SEGMENT"
+	CatBrevoSecret            Category = "SECRET_SENDINBLUE"
+	CatSentrySecret           Category = "SECRET_SENTRY"
+	CatSettlemintSecret       Category = "SECRET_SETTLEMINT"
+	CatShippoSecret           Category = "SECRET_SHIPPO"
+	CatShopifySecret          Category = "SECRET_SHOPIFY"
+	CatSourcegraphSecret      Category = "SECRET_SOURCEGRAPH"
+	CatSquareSecret           Category = "SECRET_SQUARE"
+	CatSupabaseSecret         Category = "SECRET_SUPABASE"
+	CatTailscaleSecret        Category = "SECRET_TAILSCALE"
+	CatTemporalSecret         Category = "SECRET_TEMPORAL"
+	CatThunderstoreSecret     Category = "SECRET_THUNDERSTORE"
+	CatTogetherAISecret       Category = "SECRET_TOGETHERAI"
+	CatUnkeySecret            Category = "SECRET_UNKEY"
+	CatUpcloudSecret          Category = "SECRET_UPCLOUD"
+	CatValTownSecret          Category = "SECRET_VAL_TOWN"
+	CatVaultSecret            Category = "SECRET_VAULT"
+	CatVercelSecret           Category = "SECRET_VERCEL"
+	CatWakatimeSecret         Category = "SECRET_WAKATIME"
+	CatWeightsAndBiasesSecret Category = "SECRET_WEIGHTS_AND_BIASES"
+	CatWorkatoSecret          Category = "SECRET_WORKATO"
+	CatZuploSecret            Category = "SECRET_ZUPLO"
 )
 
 // CategoryInfo is everything the engine knows about a category besides its
@@ -193,7 +308,11 @@ var categoryRegistry = map[Category]CategoryInfo{
 	// year or a fixture. Sixteen of the hundred and twenty findings left in
 	// third-party TypeScript were dates of this kind, and DOBCheck cannot help —
 	// a release date last March is as far in the past as a birth date.
-	CatDOB: {Prefix: "DOB", Score: 75, Verify: DOBCheck, Group: GroupPersonal,
+	//
+	// The prefix is DATE and not DOB, while the category code stays DOB: the
+	// token is read by a model, and "[DATE_1]" says what the value was where
+	// "[DOB_1]" is an acronym it has to guess at.
+	CatDOB: {Prefix: "DATE", Score: 75, Verify: DOBCheck, Group: GroupPersonal,
 		Label: "Date of birth", NoisyInCode: true},
 
 	// --- France -------------------------------------------------------------
@@ -225,8 +344,8 @@ var categoryRegistry = map[Category]CategoryInfo{
 	// Marked noisy in code for the reason the telephone is: the shape is a short
 	// run of digits and letters anchored on a capitalised word, and an identifier
 	// followed by a constant satisfies it.
-	CatPostalCode: {Prefix: "POSTCODE", Score: 80, Group: GroupPersonal, Label: "Postcode",
-		NoisyInCode: true}, // anchored on a commune, a state or an outward code
+	CatPostalCode: {Prefix: "POSTCODE", Score: 80, Verify: PostcodeCheck, Group: GroupPersonal,
+		Label: "Postcode", NoisyInCode: true}, // anchored on a commune, a state or an outward code
 	CatLicPlate: {Prefix: "PLATE", Score: 80, Group: GroupPersonal, Label: "Vehicle registration"},
 
 	// Declared by the deployment rather than guessed, so it outscores every
@@ -261,6 +380,137 @@ var categoryRegistry = map[Category]CategoryInfo{
 	// and 64 hex characters behind that hint are not a coincidence, so the
 	// specific category is the one worth reporting.
 	CatHexSecret: {Prefix: "HEX_KEY", Score: 85, Secret: true, Group: GroupSecrets, Label: "Hexadecimal key"},
+
+	// The second tier of vendor prefixes, in one block.
+	//
+	// 98 across the tier, one number rather than a spread: every one of these is
+	// anchored on a prefix the vendor documents, so they all carry the same
+	// evidence, and a number per vendor would be precision this catalogue has
+	// never measured.
+	//
+	// 98 specifically, because that is what makes prefix containment come out
+	// right, and the catalogue already had the case: "sk-ant-" contains "sk-", and
+	// CatAnthropicKey and CatOpenAIKey are *both* 98. The tie is the mechanism —
+	// overlap arbitration goes credential, then confidence, then the longer span,
+	// so equal scores hand the decision to the span, and the longer prefix wins.
+	// Scored below, the specific one loses: at 96, Cerebras's "csk-<48>" was taken
+	// by openAILegacyRe ("sk-<20,>") from offset 1 and masked as an OpenAI key
+	// with its leading "c" left in clear — a token bound to a fragment, which is
+	// the failure Go's ASCII \b already caused once for an accented address.
+	// "ops_eyJ" over "eyJ", and "mercury_production_" over "ion_", are the same
+	// case and are settled the same way.
+	//
+	// Above SECRET_GENERIC (80) and SECRET_HEX_KEY (85), which is what makes a
+	// documented prefix win the span a bare "TOKEN=..." hint also claims.
+	CatOnePasswordSecret:      {Prefix: "ONEPASSWORD_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "1Password credential"},
+	CatAdobeSecret:            {Prefix: "ADOBE_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Adobe credential"},
+	CatAgeSecret:              {Prefix: "AGE_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "age credential"},
+	CatAikidoSecret:           {Prefix: "AIKIDO_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Aikido credential"},
+	CatAirtableSecret:         {Prefix: "AIRTABLE_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Airtable credential"},
+	CatAlibabaSecret:          {Prefix: "ALIBABA_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Alibaba Cloud credential"},
+	CatApifySecret:            {Prefix: "APIFY_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Apify credential"},
+	CatArtifactorySecret:      {Prefix: "ARTIFACTORY_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Artifactory credential"},
+	CatAsaasSecret:            {Prefix: "ASAAS_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Asaas credential"},
+	CatAuthressSecret:         {Prefix: "AUTHRESS_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Authress credential"},
+	CatAzureAppConfigSecret:   {Prefix: "AZURE_APP_CONFIGURATION_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Azure App Configuration credential"},
+	CatAzureServiceBusSecret:  {Prefix: "AZURE_SERVICEBUS_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Azure Service Bus credential"},
+	CatBraveSearchSecret:      {Prefix: "BRAVE_SEARCH_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Brave Search credential"},
+	CatBuildkiteSecret:        {Prefix: "BUILDKITE_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Buildkite credential"},
+	CatCanvaSecret:            {Prefix: "CANVA_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Canva credential"},
+	CatCerebrasSecret:         {Prefix: "CEREBRAS_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Cerebras credential"},
+	CatCircleciSecret:         {Prefix: "CIRCLECI_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "CircleCI credential"},
+	CatClickhouseSecret:       {Prefix: "CLICKHOUSE_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "ClickHouse credential"},
+	CatClojarsSecret:          {Prefix: "CLOJARS_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Clojars credential"},
+	CatCloudflareSecret:       {Prefix: "CLOUDFLARE_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Cloudflare credential"},
+	CatCloudsmithSecret:       {Prefix: "CLOUDSMITH_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Cloudsmith credential"},
+	CatCockroachDBSecret:      {Prefix: "COCKROACHLABS_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "CockroachDB Cloud credential"},
+	CatConfigcatSecret:        {Prefix: "CONFIGCAT_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "ConfigCat credential"},
+	CatDatabricksSecret:       {Prefix: "DATABRICKS_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Databricks credential"},
+	CatDataStaxAstraSecret:    {Prefix: "DATASTAX_ASTRA_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "DataStax Astra credential"},
+	CatDenoSecret:             {Prefix: "DENO_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Deno Deploy credential"},
+	CatDevcycleSecret:         {Prefix: "DEVCYCLE_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "DevCycle credential"},
+	CatDevinSecret:            {Prefix: "DEVIN_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Devin credential"},
+	CatDigitaloceanSecret:     {Prefix: "DIGITALOCEAN_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "DigitalOcean credential"},
+	CatDopplerSecret:          {Prefix: "DOPPLER_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Doppler credential"},
+	CatDuffelSecret:           {Prefix: "DUFFEL_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Duffel credential"},
+	CatDynatraceSecret:        {Prefix: "DYNATRACE_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Dynatrace credential"},
+	CatEasypostSecret:         {Prefix: "EASYPOST_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "EasyPost credential"},
+	CatElasticSecret:          {Prefix: "ELASTIC_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Elastic Cloud credential"},
+	CatExoscaleSecret:         {Prefix: "EXOSCALE_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Exoscale credential"},
+	CatFacebookSecret:         {Prefix: "FACEBOOK_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Facebook credential"},
+	CatFigmaSecret:            {Prefix: "FIGMA_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Figma credential"},
+	CatFlutterwaveSecret:      {Prefix: "FLUTTERWAVE_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Flutterwave credential"},
+	CatFlyIOSecret:            {Prefix: "FLYIO_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Fly.io credential"},
+	CatFrameIOSecret:          {Prefix: "FRAMEIO_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Frame.io credential"},
+	CatGCNotifySecret:         {Prefix: "GC_NOTIFY_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "GC Notify credential"},
+	CatGoogleGeminiSecret:     {Prefix: "GOOGLE_GEMINI_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Google Gemini credential"},
+	CatGrafanaSecret:          {Prefix: "GRAFANA_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Grafana credential"},
+	CatHarnessSecret:          {Prefix: "HARNESS_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Harness credential"},
+	CatHerokuSecret:           {Prefix: "HEROKU_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Heroku credential"},
+	CatInfracostSecret:        {Prefix: "INFRACOST_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Infracost credential"},
+	CatIntra42Secret:          {Prefix: "INTRA42_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "42 Intra credential"},
+	CatIonicSecret:            {Prefix: "IONIC_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Ionic credential"},
+	CatLangSmithSecret:        {Prefix: "LANGSMITH_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "LangSmith credential"},
+	CatLichessSecret:          {Prefix: "LICHESS_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Lichess credential"},
+	CatLinearSecret:           {Prefix: "LINEAR_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Linear credential"},
+	CatMailersendSecret:       {Prefix: "MAILERSEND_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "MailerSend credential"},
+	CatMercurySecret:          {Prefix: "MERCURY_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Mercury credential"},
+	CatMergifySecret:          {Prefix: "MERGIFY_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Mergify credential"},
+	CatMicrosoftTeamsSecret:   {Prefix: "MICROSOFT_TEAMS_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Microsoft Teams credential"},
+	CatMinimaxSecret:          {Prefix: "MINIMAX_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "MiniMax credential"},
+	CatMongoDBAtlasSecret:     {Prefix: "MONGODB_ATLAS_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "MongoDB Atlas credential"},
+	CatNeonSecret:             {Prefix: "NEON_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Neon credential"},
+	CatNotionSecret:           {Prefix: "NOTION_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Notion credential"},
+	CatNVIDIASecret:           {Prefix: "NVIDIA_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "NVIDIA credential"},
+	CatOctopusDeploySecret:    {Prefix: "OCTOPUS_DEPLOY_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Octopus Deploy credential"},
+	CatOneSignalSecret:        {Prefix: "ONESIGNAL_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "OneSignal credential"},
+	CatOnfidoSecret:           {Prefix: "ONFIDO_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Onfido credential"},
+	CatOpenRouterSecret:       {Prefix: "OPENROUTER_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "OpenRouter credential"},
+	CatOpenShiftSecret:        {Prefix: "OPENSHIFT_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "OpenShift credential"},
+	CatPaddleSecret:           {Prefix: "PADDLE_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Paddle credential"},
+	CatPerplexitySecret:       {Prefix: "PERPLEXITY_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Perplexity credential"},
+	CatPersonaSecret:          {Prefix: "PERSONA_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Persona credential"},
+	CatPineconeSecret:         {Prefix: "PINECONE_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Pinecone credential"},
+	CatPinterestSecret:        {Prefix: "PINTEREST_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Pinterest credential"},
+	CatPlanetscaleSecret:      {Prefix: "PLANETSCALE_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "PlanetScale credential"},
+	CatPolarSecret:            {Prefix: "POLAR_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Polar credential"},
+	CatPosthogSecret:          {Prefix: "POSTHOG_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "PostHog credential"},
+	CatPostmanSecret:          {Prefix: "POSTMAN_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Postman credential"},
+	CatPrefectSecret:          {Prefix: "PREFECT_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Prefect credential"},
+	CatProofSecret:            {Prefix: "PROOF_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Proof credential"},
+	CatPulumiSecret:           {Prefix: "PULUMI_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Pulumi credential"},
+	CatRampSecret:             {Prefix: "RAMP_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Ramp credential"},
+	CatReadmeSecret:           {Prefix: "README_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "ReadMe credential"},
+	CatRedirectPizzaSecret:    {Prefix: "REDIRECT_PIZZA_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "redirect.pizza credential"},
+	CatRenderSecret:           {Prefix: "RENDER_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Render credential"},
+	CatRootlySecret:           {Prefix: "ROOTLY_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Rootly credential"},
+	CatRubygemsSecret:         {Prefix: "RUBYGEMS_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "RubyGems credential"},
+	CatRunpodSecret:           {Prefix: "RUNPOD_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "RunPod credential"},
+	CatSalesforceSecret:       {Prefix: "SALESFORCE_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Salesforce credential"},
+	CatSamsaraSecret:          {Prefix: "SAMSARA_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Samsara credential"},
+	CatScalingoSecret:         {Prefix: "SCALINGO_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Scalingo credential"},
+	CatSegmentSecret:          {Prefix: "SEGMENT_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Segment credential"},
+	CatBrevoSecret:            {Prefix: "SENDINBLUE_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Brevo credential"},
+	CatSentrySecret:           {Prefix: "SENTRY_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Sentry credential"},
+	CatSettlemintSecret:       {Prefix: "SETTLEMINT_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "SettleMint credential"},
+	CatShippoSecret:           {Prefix: "SHIPPO_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Shippo credential"},
+	CatShopifySecret:          {Prefix: "SHOPIFY_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Shopify credential"},
+	CatSourcegraphSecret:      {Prefix: "SOURCEGRAPH_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Sourcegraph credential"},
+	CatSquareSecret:           {Prefix: "SQUARE_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Square credential"},
+	CatSupabaseSecret:         {Prefix: "SUPABASE_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Supabase credential"},
+	CatTailscaleSecret:        {Prefix: "TAILSCALE_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Tailscale credential"},
+	CatTemporalSecret:         {Prefix: "TEMPORAL_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Temporal Cloud credential"},
+	CatThunderstoreSecret:     {Prefix: "THUNDERSTORE_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Thunderstore credential"},
+	CatTogetherAISecret:       {Prefix: "TOGETHERAI_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Together AI credential"},
+	CatUnkeySecret:            {Prefix: "UNKEY_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Unkey credential"},
+	CatUpcloudSecret:          {Prefix: "UPCLOUD_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "UpCloud credential"},
+	CatValTownSecret:          {Prefix: "VAL_TOWN_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Val Town credential"},
+	CatVaultSecret:            {Prefix: "VAULT_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "HashiCorp Vault credential"},
+	CatVercelSecret:           {Prefix: "VERCEL_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Vercel credential"},
+	CatWakatimeSecret:         {Prefix: "WAKATIME_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "WakaTime credential"},
+	CatWeightsAndBiasesSecret: {Prefix: "WEIGHTS_AND_BIASES_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Weights & Biases credential"},
+	CatWorkatoSecret:          {Prefix: "WORKATO_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Workato credential"},
+	CatZuploSecret:            {Prefix: "ZUPLO_TOKEN", Score: 98, Secret: true, Group: GroupSecrets, Label: "Zuplo credential"},
 }
 
 func init() { validateCatalogue() }
@@ -308,6 +558,14 @@ func checkCatalogue(patterns []Pattern, registry map[Category]CategoryInfo) erro
 		switch {
 		case info.Prefix == "":
 			return fmt.Errorf("category %q has no token prefix: its tokens would render as \"[_1]\"", cat)
+		case !IsToken("[" + info.Prefix + "_1]"):
+			// The prefix has to make a token by the grammar tokenRe reads, or the
+			// replacement it renders is not one: "1PASSWORD_TOKEN" opened on a digit,
+			// so "[1PASSWORD_TOKEN_1]" was filed as a stand-in by the rehydrator —
+			// whose contract says a stand-in cannot be a credential — and every
+			// answer in that session left the token fast path.
+			return fmt.Errorf("category %q has the prefix %q, which does not make a token: %q is not "+
+				"one by tokenRe, so its replacements would be read back as stand-ins", cat, info.Prefix, "["+info.Prefix+"_1]")
 		case info.Score <= 0 || info.Score > 100:
 			return fmt.Errorf("category %q scores %d, outside 1-100: a score of zero is never reported", cat, info.Score)
 		case info.Label == "":

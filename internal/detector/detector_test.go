@@ -1,6 +1,7 @@
 package detector
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -287,5 +288,33 @@ func TestRefinedSpansFindTheSecondValue(t *testing.T) {
 		if got[i].Value != want {
 			t.Errorf("IBAN %d is %q, want %q", i, got[i].Value, want)
 		}
+	}
+}
+
+// A quoted secret ends on a consumed quote, so every match of that pattern ends
+// short of the group. Resuming with a full rescan after each one made the scan
+// quadratic — 300 of them took 1.8s — and the fix must still find every one, and
+// still find the second of two keys the first one's boundary consumed.
+func TestPatternSpansFindEveryQuotedSecretOnce(t *testing.T) {
+	d := New(Config{})
+
+	var b strings.Builder
+	for i := 0; i < 300; i++ {
+		fmt.Fprintf(&b, "\"api_key_%d\": \"hunter2-correct-horse-%03d\",\n", i, i)
+	}
+	got := d.Scan(b.String())
+	if len(got) != 300 {
+		t.Fatalf("found %d secrets, want 300", len(got))
+	}
+	for i, m := range got {
+		if want := fmt.Sprintf("hunter2-correct-horse-%03d", i); m.Value != want {
+			t.Errorf("secret %d is %q, want %q", i, m.Value, want)
+		}
+	}
+
+	keys := "4b1d3qyRZzQ9ADp0j5Wmplcm7hufPK5ACDiBZLPKD6,4b1dAqyRZzQ9ADp0j5Wmplcm7hufPK5ACDiBZLPKD7"
+	got = d.Scan(keys)
+	if len(got) != 2 {
+		t.Fatalf("found %d ClickHouse keys in %q, want 2: %v", len(got), keys, got)
 	}
 }

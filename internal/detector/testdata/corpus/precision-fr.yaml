@@ -115,3 +115,10 @@ cases:
   - id: prec-dob-future-month-name
     text: "Échéance repoussée au 31 décembre 2099 par la commission."
     expect: []
+
+  # A file size and the month beside it. The postcode pattern takes the commune
+  # with the code, so any capitalised word after five digits is one — and a long
+  # listing puts a month there, on every line. PostcodeCheck is what says no.
+  - id: prec-postcode-long-listing
+    text: "-rw-r--r--  1 alice  staff  13469 Mar  3 10:22 proxy.go"
+    expect: []

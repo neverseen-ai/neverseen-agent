@@ -42,6 +42,10 @@ var expectedSecrets = map[string]string{
 		"end-to-end fixtures exercise a credential the catalogue actually claims",
 	"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef": "a fabricated 64-byte " +
 		"control key, the shape `cloakfleet key` writes and the extension reads",
+	"claude:11111111-2222-3333-4444-555555555555": "a fabricated session name, behind the " +
+		"`X-Session-Id` header the extension sends. SESSION_ID is in the generic keyword list on " +
+		"purpose — identifiers.go depends on it — and the keyword now tolerates a separator between " +
+		"its letters, so the header spelling reads exactly as the environment variable does",
 }
 
 func TestOurOwnSourceGrowsNoCredentials(t *testing.T) {

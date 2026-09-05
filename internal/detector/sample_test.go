@@ -477,7 +477,195 @@ func TestSampleShowsEveryCredential(t *testing.T) {
 		":p4ssonly@redis.internal:6379", pii.CatConnStr,
 		"user:p4ss@api.partner.com/v1/orders", pii.CatConnStr,
 		"hunter2-correct-horse", pii.CatGenericSecret,
+		"zedoh3OUNbSakBymo7yplBf6CGV4aMM", pii.CatGenericSecret,
+		"Bymo7yplBf6CGV4aMM9zedoh3OUNbSa", pii.CatGenericSecret,
+		"akBymo7yplBf6CGV4aMM9zedoh3OUNb", pii.CatGenericSecret,
+		"9zedoh3OUNbSakBymo7yplBf6CGV4aMM", pii.CatGenericSecret,
+		"edoh3OUNbSakBymo7yplBf6CGV4aMM9z", pii.CatGenericSecret,
+		"doh3OUNbSakBymo7yplBf6CGV4aMM9ze", pii.CatGenericSecret,
+		// The padding inside the quotes is not part of the value, which is the
+		// whole point of the row: the span replaced must be the credential and
+		// not the spaces somebody typed around it.
+		"MM9zedoh3OUNbSakBymo7yplBf6CGV4", pii.CatGenericSecret,
+		"ymo7yplBf6CGV4aMM9zedoh3OUNbSak", pii.CatGenericSecret,
+		"4aMM9zedoh3OUNbSakBymo7yplBf6CGV", pii.CatGenericSecret,
+		"YWRtaW46aHVudGVyMg==", pii.CatGenericSecret,
 		"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", pii.CatHexSecret,
+
+		// The twelve shapes qualified by hand in docs/secret-shapes-to-label.md.
+		// Each was a rule refusing a real credential on evidence about the *form*
+		// of the value — punctuation, length, the absence of a digit — and each is
+		// a row here because that is what stops the sample agreeing with whatever
+		// the detector happens to do next.
+		"Wh4t?Really", pii.CatGenericSecret,
+		"Wh4t?Really1", pii.CatGenericSecret,
+		"a;b;c1234x", pii.CatGenericSecret,
+		"red,blue1x", pii.CatGenericSecret,
+		"abc12345,def67890", pii.CatGenericSecret,
+		"pa(ren)th1s", pii.CatGenericSecret,
+		"[brackets]1", pii.CatGenericSecret,
+		"correcthorse", pii.CatGenericSecret,
+		"changeme", pii.CatGenericSecret,
+		"mcjrx4", pii.CatGenericSecret,
+		"abcdef.ghijkl", pii.CatGenericSecret,
+
+		// The second tier of vendor prefixes, one row per notation. Generated once
+		// against the catalogue and then written down: what makes these rows worth
+		// having is that they stop agreeing with the detector the moment a prefix,
+		// a length or a score moves.
+		"A3-UJZDE8-GXD6NCF10EP-F91DH-ODZDO-C9IS0", pii.CatOnePasswordSecret,
+		"ops_eyJspNxnyVmihA/2O76UMFxFkM/R5Kjp1vRt+1fjORS/6ilI8ihN5KXSc7Tvo/hBKqFYY/kv5ZJr3J1TWDtkwtDDb+xHKas1VOqg6YYZYn9ZhyiA4uoRgnatmUdjAWtGSU8po+799NksnRH9ucAUsdMlHUvTCQCyEZDz/TddJ8HyS5SUkCnD8zRA9a9SkpXz9w3QlY7Zkuvqdt7s8Stqcbnr3yBdGBLEPH1qhT61qtc4xatws8phP9nhFyJfm", pii.CatOnePasswordSecret,
+		"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", pii.CatIntra42Secret,
+		"p8e-629be2u66mr26846p7q9m2i0hz2uep1e", pii.CatAdobeSecret,
+		"AGE-SECRET-KEY-1DN8FHFSGAWXEL2W2ME46VK59HP4AUPC4JY8WX9S3ZT3GMSEFL593RTMY3P", pii.CatAgeSecret,
+		"AIK_CI_oFzQFm2OEQ3HdAVja76R", pii.CatAikidoSecret,
+		"AIK_SECRET_nIChtP8HKQDLM7ToThwNScgrLRWzBQCABugjMgeP7cGq0pbqfi14ZgTsNOVM14tu", pii.CatAikidoSecret,
+		"patOizwd1iaeOV4qB.fbc6313b8ff28a25441b305fa46c9201ac2ce6b6a331ce649e3eb7ea1cabe5d6", pii.CatAirtableSecret,
+		"LTAI1cjDoBoirPfQAdzEv", pii.CatAlibabaSecret,
+		"STS.7g5iFqhEvveQzE2Q", pii.CatAlibabaSecret,
+		"apify_api_PuwNOvpdf2YEe6rSxCnopMEmJVQpvsTnkI", pii.CatApifySecret,
+		"AKCpAeDfRrGsNrfSthSdddxH5jMTF7eBSdE0g9cRYN687NElFJvhQ8XIm0ogR4HtXOf54fZB", pii.CatArtifactorySecret,
+		"cmVmdKA8frcZTuJaWYUH1VAUwV1ZH87MtA5vSQXEZY3lEX7bwR2DRGD1qSo7JPRb", pii.CatArtifactorySecret,
+		"$aact_prod_oYv2DzaKG05Rk_GQV81r", pii.CatAsaasSecret,
+		"$aact_hmlg_kmghzem9yPVUJa-c5q52", pii.CatAsaasSecret,
+		"sc_i9mpf.lv9f.acc-pxq-mb0y07.nyrvd5r+xi67-nfrpyz21tbic14/5a", pii.CatAuthressSecret,
+		"ext_ez732.pgoj.acc_7g3f9caio-.cti-q7-1hget7/myqo_aa8t3rup47p", pii.CatAuthressSecret,
+		"scauth_9pb0t.dbm5.acc-fqo1xo5cv0.xzmas6en5mtmo3oqsg=5=lo50d_jzd", pii.CatAuthressSecret,
+		"authress_nbj0d.dlz2.acc-hfkvml73ct.yxv2kgafrfw0h9nywt1fd4mx82mux4", pii.CatAuthressSecret,
+		"Endpoint=https://example-config.azconfig.io;Id=abcd;Secret=abcdefghijklmnopqrstuvwxyz0123456789", pii.CatAzureAppConfigSecret,
+		"Endpoint=sb://uu3.servicebus.windows.net/;SharedAccessKeyName=P;SharedAccessKey=KZyUf0IE9pU2NJhKaM1/5WdR16ePllji", pii.CatAzureServiceBusSecret,
+		"BSAvghZ4fXfeTkYpIygfdM7ENA8", pii.CatBraveSearchSecret,
+		"xkeysib-5C7Ef653Cc3be1c61D641ac6ed0Cd712Cc28Fdb3DAc8CCFA444168C28E093dbe-ZRsdM3IVV8iwO2y2", pii.CatBrevoSecret,
+		"bkaa_d5vFldPGYYJvW5hANsbEvrSFagEaBp0vXnJaE-9I0MyTLUyi0kn1Gnt11CuZyzaA3U2OLzu6UQB", pii.CatBuildkiteSecret,
+		"bkua_d9jzfx6kjwsk7kegy5mtic4udyfkozm4lncz7kyw", pii.CatBuildkiteSecret,
+		"cnvcaptFyfePpX6N1NF2XV54wca_7E56w8ZniqT3Ul4ffqkOkgWrdioy", pii.CatCanvaSecret,
+		// "csk-" against openAILegacyRe's "sk-": at a score below OpenAI's this
+		// came out as CatOpenAIKey with the leading "c" in clear, which is the row
+		// that says the tie at 98 is doing its job.
+		"csk-i5skoewqkur3jq64nq6puxcmlzkruykqh7dx297gq8zxqyxj", pii.CatCerebrasSecret,
+		"CCIPAT_xvWfColNV9ds0HqtO93L7Q_uacojs106xdi5ocbdawtg7w8o0tinx4kiapj2gej", pii.CatCircleciSecret,
+		"4b1d3qyRZzQ9ADp0j5Wmplcm7hufPK5ACDiBZLPKD6", pii.CatClickhouseSecret,
+		"CLOJARS_ga9mj0m760l6tetd48ay13f2logqochvqdr917qsnf6akqpmkumyvpy8447a", pii.CatClojarsSecret,
+		"v1.0-a71306cfebaddf5eaabebcbc-50c6d100dbbc39ded034472a523b5493a7a7d59b0c3f7a03ba59d9f952f3019fdc9d45d66c7a50327f618eb54e84f8821e481023ee145f1402dfd06ee33720dd2068ba67138ae26a17", pii.CatCloudflareSecret,
+		"csa_711fd8742d716f2798a7f4a69db20fty88Mh", pii.CatCloudsmithSecret,
+		"CCDB1_WG2kdiNtegBoy1XhVav8dN_rLZgw7HunWoDQRYZDAEa6aosrWlQGOTvZ89hOz9Z", pii.CatCockroachDBSecret,
+		"configcat-sdk-1/7bVQIY8cSt07lQ8tdiwg2X/9Ajtfmp9_2KuTmxHKpRsBB", pii.CatConfigcatSecret,
+		"dapi0c32de1f85e06fc3090c8dd271e99b98-2", pii.CatDatabricksSecret,
+		"AstraCS:sfPfKim3vAK1UdskfqS1", pii.CatDataStaxAstraSecret,
+		"ddp_dXba9rELoXopBBnCrv7VzGgefw5JCNtaoIVG", pii.CatDenoSecret,
+		"dvc_client_3qXVexhj", pii.CatDevcycleSecret,
+		"dvc_mobile_x6NSbVbQ", pii.CatDevcycleSecret,
+		"dvc_server_jD0SSW0f", pii.CatDevcycleSecret,
+		"apk_user_zqisa/PqYomQLFzzGzmNAFY8HwSKbF6WMXE1MBvRnhmX1EoC3G/FP1z5IBxT80NK8bTB2ABPLbPQ8Cjf5XGuSKl/6gGEBHBKxnnV+Hov48VSOuU19x5iqljH", pii.CatDevinSecret,
+		"apk_qBTn2fwxwd5kAphi2UFkSSj/sK+wZdnHy7agBx6LtIdyhp9ZYbYLXlutzTfF/vNv7KToDsjCMEa+bhj2", pii.CatDevinSecret,
+		"cog_g4iqcvmlyfbdcx57ezhfquofzl4kxpolcqwdbdq6dgjuamt4g6ux", pii.CatDevinSecret,
+		"doo_v1_26d596f81ea80bf1c5e8d6ac84419d5e41bf8e8e2771ea234f29d489deb093d2", pii.CatDigitaloceanSecret,
+		"dop_v1_057211d637fb3ea84e8a3f57b702fef1f0cc92f0e030ac7b5439ca79e21f5bf5", pii.CatDigitaloceanSecret,
+		"dor_v1_a58cd5146b3d98aea1c1ffd32aad02a818d5dfb2d892ddd6e11e86fa67b6b546", pii.CatDigitaloceanSecret,
+		"dp.pt.pv1uz9du7jwp1axg7leu1m6boi0z3cccrr8cgqh7a1p", pii.CatDopplerSecret,
+		"duffel_test_cshtwkhd=6rf3-8j2h6is0_srpf8s3_oym9x39t44tb", pii.CatDuffelSecret,
+		"dt0c01.pvom68yzawkpu9u5rsnsdbk9.ew2d7y2wg7oj0vwimr7g4ri0ga09h5zj0rhy23swswz79yua5y2tl8tj1yofvupu", pii.CatDynatraceSecret,
+		"EZAKn1abdq5t8t81771y3wcw2ae7og0x6z9jm05z2v7fkxuxet6lhsv60k", pii.CatEasypostSecret,
+		"EZTK7s6n6m0ldgwc0aat9atzgabml59r86jm0hjk76gbgek7531daujpwr", pii.CatEasypostSecret,
+		"essu_VEiMIsY5xCGcyF4GefcFUWoA6m1g-Ifxc0nz_CfLWVtwXAlyuOqxqzIP2sfx", pii.CatElasticSecret,
+		"EXOmDswpBcrQbvZjpTifmrI1YiJ", pii.CatExoscaleSecret,
+		"EAAC3pkxwnzynt46no2iq2x8pz6nih6f8rybjtayfloumge9x6tmetfosizswz3irlbxw0b3pzwglshroczck1mtjyc9tlo57q1wahsc", pii.CatFacebookSecret,
+		"figd_-DPHCUNWF0ZOR7FW12V626DN16I5MC9QL8KP8Q", pii.CatFigmaSecret,
+		"FLWSECK_TEST-hbf335cg1ee7", pii.CatFlutterwaveSecret,
+		"FLWSECK_TEST-7hha86e31eeh2d95fe64gd1a37gbb01g-X", pii.CatFlutterwaveSecret,
+		"FlyV1 n5OUp47ulVJFB7=KqhN=3=YpBtLkgfKRDDySlvX+VNnpwXtodvRvgeHFNzGb_2_UmKSdUR4zLF49YbvAE,2SkJH,1rI4BWVwlA4s", pii.CatFlyIOSecret,
+		"fio-u--m4f8u7318jz=fdv=t--0x4itv7bmo2fj_x9_0x7p-2zqholm9hoqgm7q5o93o8-", pii.CatFrameIOSecret,
+		"ApiKey-v1 gcntfy-ShV-2d2e433e-c56f-24b1-c71b-106e934d263b-5ba0837b-bf1b-3ba3-178b-6e0e30f32854", pii.CatGCNotifySecret,
+		"AQ.Ab8RN6lwSgi4BDrT_9EEJXy8U5ydJuqbnQFbVu7q7xtoAq9qdC", pii.CatGoogleGeminiSecret,
+		"eyJrIjoif6FSSixiIhtREMZ2MukeSJmrufszqHrp9vfesTRa", pii.CatGrafanaSecret,
+		"glc_A6z5ymVISmngrJYKWmt7t2I+oWjgCVieCbGz5ZkM", pii.CatGrafanaSecret,
+		"glsa_MPuD9ImDFEz04kVuIAMRip4AoU7BNUU3_A83079eF", pii.CatGrafanaSecret,
+		"pat.h1flQ-ZG7bdOOh1QulctAs.2bbdb4a78f19e8b8480f3b47.zWf7bNihdIGnJXlq8MxV", pii.CatHarnessSecret,
+		"sat.twudSF4-BSX6BPdnbiZShD.cdc70808d77b6ad89f65f849.sfvaF35pkuRNM9CnLd4Y", pii.CatHarnessSecret,
+		"hvb.7S_dTZAuS-Zut2x8AzFTmHJSp9KWBO3aMGrqvLm3733ymt0wtOC3XJtmxyu8y4_mcz4en3BNDwSVn9iuNtGmhgzFAkGGlH_xGaM7CVF0oCboQn5_cCASeOX0YCN1j438Jw00BgB7Fp", pii.CatVaultSecret,
+		"hvs.kV3bbH_uy8qM3AsYaLcW4PDRiqgkKfLNuoliMdVwY1pp7M_4Xn3DWzP9WYJof5Hzt4XJUtv2tIEpc1ke4M4innZMcW", pii.CatVaultSecret,
+		"HRKU-AAqK5UnThC3ej1hCjJclXObRHOG4up14htTd26E8ef_hS0msieJ-9Irs9ym1", pii.CatHerokuSecret,
+		"ico-qre9cmGdAYJ8xrauScPDIsJvSA3VTrzB", pii.CatInfracostSecret,
+		"ion_GXWqzhhTcqFRZScsHcoeuzLwhJArIXfhqPnXhVzYQB", pii.CatIonicSecret,
+		"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", pii.CatLangSmithSecret,
+		"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", pii.CatLangSmithSecret,
+		"lip_SjVxYxdHFO2Ek0AG", pii.CatLichessSecret,
+		"lin_api_5fn3dmv4d90i0djuvm7al8r7qfuyqt9z60dttpy1", pii.CatLinearSecret,
+		"mlsn.2iQTMIDNipX7dqftlJX7zVMd6tjqDu", pii.CatMailersendSecret,
+		"mercury_production_kar_Ea8k0UCROycSMtNzlndZ7ucN4NDLb2oHDI34E0mf_yrucrem", pii.CatMercurySecret,
+		"mergify_application_key_XBV-clbUSaM7MZLG1cg42THRFU5ldoTnhpbTdyEp", pii.CatMergifySecret,
+		"https://example.webhook.office.com/webhookb2/abcdef01-abcd-abcd-abcd-abcdef012345@abcdef01-abcd-abcd-abcd-abcdef012345/IncomingWebhook/abcdef0123456789abcdef0123456789/abcdef01-abcd-abcd-abcd-abcdef012345", pii.CatMicrosoftTeamsSecret,
+		"sk-api-ZkzaQeeMBNG_adLVThD2yOlPKbdfHfJrMFbWmrK7XBo00ELfSVTsRaZcqIA9E-qIIZGu0LsU--RhmG7V3xmOIgdeZ6e-GyyrwzLdr2nAm_CO810m6SqbKty", pii.CatMinimaxSecret,
+		"mdb_sa_sk_7ElqLiX40ePbFwXxiqTuVcsyn-oYUyBAWNf6gtMw", pii.CatMongoDBAtlasSecret,
+		"napi_I7w5QqaEgnVcR9SXTqtorY8hzrD6pffXsBD414rHjYcTwg5JumvdC8UeIA875RJM", pii.CatNeonSecret,
+		"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", pii.CatNotionSecret,
+		"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", pii.CatNVIDIASecret,
+		"API-ZZVZZ5VWLJ870SINVE0E6AP1ZN", pii.CatOctopusDeploySecret,
+		"os_v2_app_rijophscysiyrernotgxfxbehuna5i4rd4cc5h6osvvonnsbolbr3xerfhzy2odxvqe6i355mvmhzksmeb4mmqmsbbewn2aqwkuwtgc", pii.CatOneSignalSecret,
+		"api_live_ca.Wt1D6NrNTu8_Kro8QNgx", pii.CatOnfidoSecret,
+		"api_live.atgCYj3xU3RRBObwDBL7", pii.CatOnfidoSecret,
+		"api_live_us.FaJpr7_aAfatwNMQZ464", pii.CatOnfidoSecret,
+		"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", pii.CatOpenRouterSecret,
+		"sha256~lTmlEmlVJMNLs-QyakjfoBX60Akchdr3hxL4GrGMSdP", pii.CatOpenShiftSecret,
+		"pdl_live_apikey_ygk2k4urpa08bvo8wvapvf8kgc_02UboVXEiH9dKNhDpqiP86_a76", pii.CatPaddleSecret,
+		"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", pii.CatPerplexitySecret,
+		"persona_production_-jeezteee8aexej9h56r", pii.CatPersonaSecret,
+		"pcsk_6xcL5_GQTZassLcu4G37dVU1NBY1yOG2NzWqVRnA2ME5FKyqqlTqQLCJeG1DYQpFklODE", pii.CatPineconeSecret,
+		"pina_lBiQtuWRvgvuVOfVkwDc", pii.CatPinterestSecret,
+		"pscale_tkn_yCXUE8HagmWVEKd84_oo6_lZp_9wD24h", pii.CatPlanetscaleSecret,
+		"pscale_oauth_pyiIU48ERhj-C9BWoh3hEv-OBmk9H76q", pii.CatPlanetscaleSecret,
+		"pscale_pw_j5OmAJUip89Gx-b-d8eD=rUsXPfVxDc6", pii.CatPlanetscaleSecret,
+		"polar_at_K5bEk4RYmoZIzDVBu9dI", pii.CatPolarSecret,
+		"polar_oat_9v_bbY8Zn6icpE0Wr0Cv", pii.CatPolarSecret,
+		"polar_pat_UeATh68xRhePj1TRRpHV", pii.CatPolarSecret,
+		"phx_D2vk50GCtI0mg3ncLjKwr1jWMo5F-Vy3jGWxGE0UG", pii.CatPosthogSecret,
+		"phc_jh8BPb48Rx7PD3lA0ZrDVUW-UqCBIoerZ1j86QTS3", pii.CatPosthogSecret,
+		"PMAK-4f9af65d3010532fc8b0a72a-cafc1af1f21aadcc0e94c5437924bc2f2c", pii.CatPostmanSecret,
+		"pnu_eNdSqiY3UvvGFjmM7JZdWj1SBysTbotZeZEg", pii.CatPrefectSecret,
+		"prf_cli_ITY57dL83RBYbN6eh2qH", pii.CatProofSecret,
+		"pul-a1a13080f032efb1843643b4c3b41ef18a04d593", pii.CatPulumiSecret,
+		"ramp_sec_xEGqEnYbeEQzqgOcU2e8taxtXicx7u7UnDGxdFo7RIC286jI", pii.CatRampSecret,
+		"rdme_e3ctev17fjzgdcsi7geuk80kply1vxhp39hfqy4ols3zmim5g6vpbq64juulvm0daowaqc", pii.CatReadmeSecret,
+		"rpa_5C8UO2U04R8XTXnWZYSH8OA6rawox4", pii.CatRedirectPizzaSecret,
+		"rnd_kw6P06pzD4uKwJ0TQgpUYb1TIPit", pii.CatRenderSecret,
+		"rootly_4b5f4eb84980451cdd4aa15cc9b086396394535dc987a10055db87ae7cf35d1b", pii.CatRootlySecret,
+		"rubygems_157f6c70434f9ae6ffad5bb0a08e0ee8a7e221708bca4f12", pii.CatRubygemsSecret,
+		"rpa_O7LOLMH3NR16D5A2FE90JU3KN8V0PMOK0W1TTKN2FJMlUH", pii.CatRunpodSecret,
+		"00gSLae1cxlfe8R!8Z8S-VdJtxIzMt2qtyT7AF9tz3mUASuzpcrUzXkORDp94_juCsp9OqgxhCvxIuBjqk_UwCJYaHRSndcH", pii.CatSalesforceSecret,
+		"samsara_api_bQHuu66G8Jjj7Fx7Jb1MCvf2uY", pii.CatSamsaraSecret,
+		"tk-us-2lwqMekhupecPvo7unxzTzUp3PY0G5D9dwvxtSh5e4b54cRY", pii.CatScalingoSecret,
+		"sgp_g8J3D6yjhJfLsYKspAgz7ysg8A2zXatqMkYuqaV9e9l7nKU5YMR5Nyqyn0AlsUUp", pii.CatSegmentSecret,
+		"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", pii.CatSentrySecret,
+		"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", pii.CatSentrySecret,
+		"sm_aat_eM1SBh1V5rGjBx3Q", pii.CatSettlemintSecret,
+		"sm_pat_b9bdBNIPykxUxJiw", pii.CatSettlemintSecret,
+		"sm_sat_65xqIjkkjjhLYZhk", pii.CatSettlemintSecret,
+		"shippo_live_D466d53125abB1eBaBFBc3601E3bB9b24Bb7fAcC", pii.CatShippoSecret,
+		"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", pii.CatShopifySecret,
+		"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", pii.CatShopifySecret,
+		"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", pii.CatShopifySecret,
+		"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", pii.CatShopifySecret,
+		"sgp_aec51B8e9Cdd0c9B_aebFcD6E562865AD4A3EeFF456B7C94e4a1197fb", pii.CatSourcegraphSecret,
+		"EAAALJp5V8FWLLZeG9PB5TN6Ul", pii.CatSquareSecret,
+		"sq0atp-UAD3GUcIhRU0e3NDRR8nx_", pii.CatSquareSecret,
+		"sbp_gxmr5civ02s0jujlkwrdpvcld11mjx6hhr26zqbz", pii.CatSupabaseSecret,
+		"sb_secret_xXwBvOpqQEYaCdlMZed8pPEpL6Peb4n", pii.CatSupabaseSecret,
+		"tskey-api-1uBdOqze2fqewEmi897B", pii.CatTailscaleSecret,
+		"eyJGw7dW8xUNh.4LnY2NvdW50X2lk7bAInRlbXBvcmFsLmlvILLICJrZXlfaWQiOiXvA306lsvVM-Ovlacxtq.jkKvOupRqOrU1CuczAUZ", pii.CatTemporalSecret,
+		"tss_5uzhdW6VvHDwcpzF-8ZW", pii.CatThunderstoreSecret,
+		"tgp_v1_IWXhRVolR9ORjnmZc4oQu-5VHNKESiIWCCd4L6eXZor", pii.CatTogetherAISecret,
+		"unkey_mBIVXE6EBnuHDKsSqRT6", pii.CatUnkeySecret,
+		"ucat_lv5tDzScoHZx0p3kIEJ5yxgZ", pii.CatUpcloudSecret,
+		"vtwn_9Sw7w6ZcjifRnyFcMb4v", pii.CatValTownSecret,
+		"vck_uQ8LCDTcKLYJRl14geoGM0nHOM2Ibj-lX3Ck6pmjKM-rdvOolnvf0je3", pii.CatVercelSecret,
+		"vca_7gaRQBKgWuhYz7WMmNX81FYyy2ZvkzzyYxSr7EKeJWui68qnvXWVLTb9", pii.CatVercelSecret,
+		"vcr_rNTScqkmKiayB3cw7B4wAMdzgeDM71Lf5kbHvEPC_SzT7iszUYLq3Ylp", pii.CatVercelSecret,
+		"vci_GvNEqghj35577oOWOfQaRa-qYq59FWHW5JI5DC90L0dRG0ern_1yHBpE", pii.CatVercelSecret,
+		"vcp_3ZcqBDMH2_-vMwoBxh0I-wN_MzN-3DO8mF1jA8fs7wNlGqnezD36S9mF", pii.CatVercelSecret,
+		"waka_sajudpbkqpyo7ujgp27ywj2l9sxb7r5dhkaz", pii.CatWakatimeSecret,
+		"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", pii.CatWeightsAndBiasesSecret,
+		"wrkafe-eyJvTfCPZnA.npMk7U4NLszXUaJA.LzKQf6G05ODyrZe3s6uQxIl1klPb3p4kY9mwLP5I42g-hyNdU3YA9wrwPKyTn0Qk", pii.CatWorkatoSecret,
+		"zpka_u23s4ilq6b0br85xn1b30mffotym0x31_bc37293e", pii.CatZuploSecret,
 	)
 
 	for _, w := range want {
@@ -493,6 +681,49 @@ func TestSampleShowsEveryCredential(t *testing.T) {
 		if cat != w.cat {
 			t.Errorf("%q is read as %s, want %s", w.value, cat, w.cat)
 		}
+	}
+}
+
+// The other half of the sample, and it had none until the generic rules were
+// widened.
+//
+// The sample now shows three shapes that must come out *intact*, because that is
+// what says where the frontier runs: `secret = config.password` names where a
+// password is read from rather than being one, `token = user?.token2` is an
+// optional access, and `secret_level: string` is a type. On the /test page they
+// are the lines a reader compares the masked ones against.
+//
+// Shown and not asserted, they are decoration that could start being masked
+// without anybody noticing — which is the same trap as an expectation derived from
+// the detector, one step along: the page would still look like a reference while
+// having stopped being one.
+func TestSampleShowsWhereTheLimitRuns(t *testing.T) {
+	for _, spec := range append([]string{"none"}, pii.LocaleCodes()...) {
+		t.Run(spec, func(t *testing.T) {
+			d := detectorFor(t, spec)
+			sample := d.Sample()
+
+			masked := map[string]bool{}
+			for _, m := range d.Scan(sample) {
+				masked[m.Value] = true
+			}
+
+			for _, w := range []struct{ value, why string }{
+				{"config.password", "it names where the password was read from, so it is code reading one"},
+				{"user?.token2", "optional chaining is code"},
+				{"string", "a word the language reserved is not a password"},
+			} {
+				if !strings.Contains(sample, w.value) {
+					t.Errorf("the sample no longer shows %q — the page has lost the line that "+
+						"says where the frontier runs", w.value)
+					continue
+				}
+				if masked[w.value] {
+					t.Errorf("%q is masked, and the sample presents it as a value that is not: %s",
+						w.value, w.why)
+				}
+			}
+		})
 	}
 }
 

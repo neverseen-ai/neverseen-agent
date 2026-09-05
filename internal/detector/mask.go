@@ -35,6 +35,15 @@ type Pass struct {
 	// to look at rather than forty identical lines to scroll past.
 	Reveal func(original, replacement string)
 
+	// Exempt holds values this pass must leave in clear whatever a pattern says.
+	//
+	// Per pass rather than on the detector, because what belongs in it is read out
+	// of the body being masked — the identifiers a client uses to name itself to
+	// the provider it is already talking to. Detector.allowed is the
+	// deployment-wide half of the same idea and is precomputed once; this half
+	// cannot be, because it changes with every request.
+	Exempt map[string]bool
+
 	// counts is how many values were replaced per category, repeats included.
 	//
 	// Repeats included on purpose: a value masked three times in one body is
@@ -150,6 +159,16 @@ func (d *Detector) Mask(text string, pass *Pass) (string, int) {
 			continue // defensive: overlap resolution has already made these disjoint
 		}
 		b.WriteString(text[cursor:m.Start])
+		if pass.Exempt[m.Value] {
+			// Written back exactly as it arrived, and neither counted nor minted:
+			// an exempt value is not a replacement that failed to happen, it is a
+			// value that was never sensitive on this route. Minting one would put a
+			// token in a field the provider reads as its own bookkeeping, and the
+			// mapping would then have to expand it in the answer.
+			b.WriteString(m.Value)
+			cursor = m.End
+			continue
+		}
 		b.WriteString(pass.mask(m.Category, m.Locale, m.Value))
 		pass.counts[m.Category]++
 		cursor = m.End

@@ -52,7 +52,7 @@ configuration.
 
 | Field | What it decides |
 | --- | --- |
-| `Prefix` | the name inside a token — `EMAIL` gives `[EMAIL_1]` |
+| `Prefix` | the name inside a token — `EMAIL` gives `[EMAIL_1]`. **Not the category code**, and `CatDOB` is where the two differ: the code stays `DOB` (the corpus, the counters and `cloakfleet mask --off` all name it) while the prefix is `DATE`, because the token is read by a model and `[DATE_1]` says what the value was where `[DOB_1]` is an acronym it has to guess at |
 | `Score` | confidence 1–100; orders candidates competing for the same span and gates against the reporting threshold. **Not a probability**, and no two categories' scores need to be comparable in any other sense |
 | `Verify` | the rule the regex cannot express — a checksum, almost always. Nil when the shape stands on its own |
 | `Secret` | marks a credential; credentials **outrank** the confidence scale in overlap resolution |
@@ -143,7 +143,8 @@ Checksums live in `pkg/pii/checksum.go`: `LuhnCheck` (cards), `IBANCheck`, `NIRC
 (including the Corsica case, `TestNIRCheck_Corsica`), `SIRENCheck`, `SIRETCheck`,
 `NHSNumberCheck`, `NINOCheck` (letter rules, not a checksum — six letters excluded from
 the first position, seven from the second, seven whole prefixes unissued), `SSNCheck`,
-`RoutingNumberCheck` (ABA weights), `DOBCheck` (a year in the past).
+`RoutingNumberCheck` (ABA weights), `DOBCheck` (a year in the past), `PostcodeCheck` (the
+commune is not a month).
 
 #### How much work each checksum does alone
 
@@ -262,6 +263,40 @@ One false positive this does *not* fix, and it is in the baseline: `precision-fr
 flags `1 12 2019` in "La version 1 12 2019 du document". A version string in the day-first
 spaced notation, comfortably in the past. Only context separates it from a birth date.
 
+#### `PostcodeCheck`, and the commune that was a month
+
+The French pattern takes the **commune with the code**, because five bare digits are not
+identifiable on their own — matching them alone tokenizes every quantity, price and
+odometer reading in the payload. The consequence is that any capitalised word after a
+five-digit run *is* a commune as far as the shape is concerned, and a long listing puts one
+there on every line:
+
+```
+-rw-r--r--  1 alice  staff  13469 Mar  3 10:22 proxy.go
+
+MASK 13469 Mar TO [POSTCODE_1]
+MASK 11175 Mar TO [POSTCODE_2]
+MASK 87617 Aug TO [POSTCODE_3]
+```
+
+The size passes the department test — 13, 11 and 87 are real departments — and the month
+passes the commune test. `13469 Mar` and `13290 Aix` are written identically, so no rule
+about form can separate them: the **word** is what has to decide, which is the second case
+after `DOBCheck` of a `Verify` carrying something the regex cannot express.
+
+The list is the **three-letter abbreviations only, matched as a whole word**. Both
+restrictions are narrower than they look, and each has a real case against the wider
+version: the full names would drop `PE15 8NF` (March, Cambridgeshire) and `42750 Mars` (a
+commune in the Loire, and the French month), and a prefix match would drop
+`14320 May-sur-Orne`. A guessed list here does not print a false positive — it forwards a
+real address in clear, which is the worse direction.
+
+It hangs off the **category**, so it guards the British and American patterns too;
+neither puts a word after the code, so nothing there reaches the rule.
+`TestPostcodeCheckRejectsALongListing` and `TestPostcodeCheckKeepsRealCodes` are one pair
+and neither is meaningful alone, and `prec-postcode-long-listing` holds the observed line
+in the corpus.
+
 #### `GenericSecretCheck`, and the premise that fails in a repository
 
 `genericSecretQuotedRe` and `genericSecretBareRe` read `NAME=value` and treat the
@@ -282,6 +317,60 @@ falling back to the raw run when trimming would drop under it. The fallback stop
 — `MyP@ssw0rd!` at eleven characters had its bang left in clear while `hunter2)` at eight
 kept its bracket. One value leaked its last character, the other ate the syntax around it,
 and nothing but the password's length decided which.
+
+**The keyword can fall anywhere in the name, and it need not be spelled exactly.** The
+separator used to have to follow the keyword immediately, so a prefix was free and a
+suffix was fatal: `VERY_SECRET=` was masked while `VERY_SECRET_TOO=`,
+`SUPER_SECRET_VALUE=`, `accessTokenValue=` and `STRIPE_SECRET_KEY=` went out in clear —
+the last of them the ordinary way to name a Stripe or an AWS key, missed by nothing but
+where the word fell in the name. `genericSecretName` is what reads the rest of the name,
+and it must **open on a new word** or it runs straight on through `secretary_id` and
+`tokenised_at`, whose values a credential would then claim ahead of whatever category
+really owns them, because a credential wins every overlap. It is bounded and carries no
+dot, for the reason `propertyPathRe` is bounded.
+
+**What opens a new word depends on the case the name is written in.** Reading any capital
+as a boundary made that guard a no-op against a SCREAMING_SNAKE name, where every letter
+is one: the tail opened on the `A` of `SECRETARY`, so `SECRETARY_ID=`, `TOKENISED_AT=` and
+`SESSION_IDLE_TIMEOUT=` were masked while their lowercase twins were clean — one rule
+giving two answers, decided by nothing but the case somebody typed.
+`SECRETARIAT_EMAIL=bureau@example.fr` is what it cost: a credential wins every overlap, so
+the address itself was replaced by `[SECRET_1]` instead of by a stand-in address. So:
+
+- a **separator** always opens a word (`STRIPE_SECRET_KEY`, `VERY_SECRET_TOO`);
+- a **capital** opens one only behind a keyword whose own last letter is lowercase, which
+  is what a camelCase join is (`accessTokenValue` yes, `SECRETARY_ID` no);
+- a **plural** goes with the keyword and then ends the word itself, so `API_TOKENS=` and
+  `accessTokensValue=` are both names.
+
+`genericSecretFiller` is what lets each keyword tolerate the two ways a name carries one
+without spelling it: a **repeated letter** (`SUPER_SEECRET_VALUE`, a typo, and the shape
+somebody reaches for to slip a value past a scanner) and **one identifier separator**
+between letters (`S_E_C_R_E_T`). That is also why `genericSecretKeywordNames` is written
+with no separators in it — `APIKEY` covers `API_KEY`, `api-key` and `apikey` at once,
+which the alternation used to spell three times. **Insertions only, never omissions**:
+letting a letter be missing would put `TKN` and `SCRT` in the list, and those are
+initialisms.
+
+**One optional class per gap, and not `+` on every letter.** Go's `regexp` is an NFA
+simulation with no DFA behind it, so a scan costs what the program has states.
+`S+E+C+R+E+T+` across twenty-three branches took the three expressions built from it to
+38ms each over 88KB — 72% of the whole secret catalogue, against 0.56ms for the entire
+second vendor tier. Written as a filler class the same three cost 26ms and match the same
+names, because a gap that holds at most one character is one state rather than a loop.
+What is given up is a letter repeated *twice* (`SEEECRET`), which is neither a typo nor a
+shape anybody writes.
+
+**It is deliberately not a sub-sequence match** — the letters in order with anything at
+all between them, which is the obvious reading of the shape it exists for. Measured
+against random base64: a sixty-character blob carries one of these keywords as a
+sub-sequence 7% of the time, an eighty-character one 20%, and at a hundred and eighty-two
+characters — the length of the `WARP_READ_TOKEN` recorded below — 94%. So a free
+sub-sequence makes every long hash and integrity field in a lockfile a *name*, and it is
+then whatever follows it that gets masked. Bounded to repeats and separators the same
+measure is 0.00% at every length, because a generated blob has no separators in it and
+its letters do not queue up. `sec-generic-blob-is-not-a-name` holds that in the corpus and
+`TestGenericSecretNameReadsTheKeywordWhereverItFalls` holds both directions at once.
 
 The bare expression deliberately carries **no `['"]?` before its group**. RE2 has no
 lookbehind, so that absence is what keeps it off a quoted value: after the separator the
@@ -305,14 +394,21 @@ None is a credential, and the model received a review of code whose identifiers 
 replaced by opaque tokens. The trailing `(` and the missing `>` are `noSentenceTail`
 trimming the closing half of what the pattern had already eaten.
 
-**Two rules, each narrower than the obvious version**, because the tree already held a
-case against each over-reach:
+**Six rules, each narrower than the obvious version**, because the tree already held a
+case against each over-reach. Four of the six were narrowed again after
+`docs/secret-shapes-to-label.md` put forty-four shapes to a person one at a time: twelve
+came back as credentials the engine was refusing, and the rules that refused them had all
+been reading the *form* of the value rather than anything about code.
 
 | Rule | Rejects | Why not wider |
 |---|---|---|
-| An **opening** bracket, or `?;,` | `security.authorize({`, `CreationOptional<string`, `user.password?.replace(/./g` | Closing brackets are absent on purpose: a quoted `password="hunter2)"` is a real credential ending on one, held by `bound-generic-secret-quoted-keeps-its-punctuation`. An opener cannot arrive that way |
-| Identifier-shaped **and** no digit | `newPassword`, `totpToken`, `req.cookies.token` | Shape alone rejected `Sup3rS3cr3tValue123`, which is a name by shape and a password in fact (`TestMaskKeepsJSONEscapingIntact`). Code names things in words; a credential almost always carries a digit |
-| A lowercase slug carrying the keyword | `reset-password`, `forgot-password`, `access-token` | Lowercase and hyphens only, so `MyPassword123!` — which carries the word too — stays a credential |
+| An **unclosed** bracket | `security.authorize({`, `generateSecret(`, `CreationOptional<string` | The balance is the rule, not the presence. The span was cut out of the surrounding text, so an opener with no closer says the expression carries on past the end of the value; a matched pair inside a quoted value is punctuation somebody typed, and refusing it left `password="pa(ren)th1s"` and `password="[brackets]1"` in clear. A stray *closer* stays allowed — `password="hunter2)"` is a real credential ending on one, held by `bound-generic-secret-quoted-keeps-its-punctuation`. `;` and `,` left this rule entirely: no case in `TestGenericSecretCheckRejectsSourceCode` carries either, and `password="a;b;c1234x"` and `API_TOKENS=abc12345,def67890` were refused for holding one |
+| Optional chaining, `?.` | `user?.token2`, `user.password?.replace(/./g` | The three code cases carrying a `?` all carry `?.`. A bare question mark before a letter is punctuation in a typed password, and refusing it left `password="Wh4t?Really"` in clear |
+| Identifier-shaped **and** an **interior** capital, with no digit | `newPassword`, `totpToken`, `publicKey`, `newPasswordInString` | The rule was "no digit", and the digit cannot carry it: `PASSWORD=correcthorse`, `PASSWORD=changeme` and `password="correcthorse"` are real credentials of nothing but lowercase letters, and all three were forwarded in clear — the whole of the gap this catalogue was measured against betterleaks on. Every dotless digitless code case asserted in the tree is camelCase, because that is how code joins words into a name. **Interior**, because `MyPassword123!` and `Sup3rS3cr3tValue123` open on a capital and must stay credentials. The length floor came down with it, seven characters to six: `PASSWORD=mcjrx4` is a bad password, not an absent one |
+| A word the language reserved | `string`, `default`, `null`, `boolean` | The cost of the rule above rather than a separate idea. Once a lowercase word counted as a credential, `secret_level: string` in this repository's own TypeScript claimed the type and `'X-Session-Id': 'default'` in its extension claimed the session name — both found by `TestOurOwnSourceGrowsNoCredentials`, which is the measure that matters because it is what a code review through this agent would have seen. `reservedWords` is a closed set of tokens some language spells exactly that way, so it can be checked rather than argued about. What it gives up is somebody whose password is literally `default` |
+| A lowercase slug carrying the keyword | `reset-password`, `forgot-password`, `access-token`, `your-api-key-here` | Lowercase and hyphens only, so `MyPassword123!` — which carries the word too — stays a credential. The two-word keywords take either joiner: the rule listed `api_key` and not `api-key`, so `your-api-key-here` was masked while `your_api_key_here` was not |
+| A **dotted chain** that *reads* a credential | `c.S3.SecretAccessKey`, `client.oauth2.Token`, `opts.Sha256Digest`, `secret = config.password` | Two bounds first, both still there: every segment letter-led and at most forty characters, because without them `WARP_READ_TOKEN=yrqUJ…Vhq8.37Zim…XlF` went out in clear — a hundred and eighty-two characters of base64url that bought this promise with one dot — and the dot has to be **interior** (`password="hunter2."` hands the check `hunter2.`, whose dot is the credential's own). But the chain also has to *say* something, because no shape can: `query.current` is two lowercase segments of ordinary length naming nothing, and so is `abcdef.ghijkl`. `readsACredential` takes either mark — **the last segment names the credential** (`config.password` is code fetching one, and so are `req.cookies.token`, `aws.Config.Credentials`, `headers.authorization`) or **the chain carries an interior capital** (which keeps `opts.Sha256Digest` and `utf8.RuneCountInString` refused). The first is the sentence the slug rule already writes for `reset-password`: a passphrase names neither what it unlocks nor where it was read from. **Six member accesses were given up to get `secret=abcdef.ghijkl` masked** — `query.current`, `query.new`, `query.repeat`, `body.new`, `body.repeat`, `a.b2` — and `TestGenericSecretCheckOverMasksLowercaseMemberAccess` holds them so a later recovery is noticed instead of read as a bug. The halves are unequal: a property access masked in a review is over-masking somebody can see and undo, and a password in clear is delivered |
+| A leading `*` or `&`, **stripped rather than refused** | `*secretLevel`, `&cfg.Token`, `*opts.apiKey` | `want.SecretLevel = *secretLevel` — a line in this agent's own mask command — was claimed the moment a keyword no longer had to be the last segment of the name: a star is not an identifier character, so the digit rule never looked at the name behind it. Refusing it outright would drop `PASSWORD=*Hunter2*`, a real password; stripping hands the rest to the rules above, so it is only dropped when what it points at is *also* code-shaped by them, and `*secret123` keeps its digit |
 
 The slash and the plus are deliberately **not** code punctuation: base64 is made of them,
 and a secret is often base64.
@@ -330,10 +426,49 @@ lowercase, hyphens and underscores, and that restriction is what keeps a weak-bu
 password out of it: `MyPassword123!` carries the word too, and its capitals, digits and
 punctuation say it was typed as a secret rather than written as a route.
 
+**The segment bounds in the fourth rule are deliberately loose.** Forty characters is well
+past the longest type and method names code really writes, and a cap tight enough to cut a
+real member access would stop masking nothing — it would only start claiming code again,
+which is what the rule exists to prevent. So
+`security.authenticatedUsers.tokenOfTheCurrentSession` is asserted beside the token that
+prompted the bound.
+
+**A threshold on the mix of character classes cannot replace them**, and it was measured
+on this tree's own values rather than argued. By digit density `opts.Sha256Digest` is
+17.6% and the observed token 17.0%, so any floor puts a real member access and a live
+credential on the same side of it. By class *count* the corpus's own session token,
+`abcdef1234567890abcdef1234567890`, has two classes where `c.S3.SecretAccessKey` has
+four — a floor at three would stop masking a real session cookie. It is the same finding
+`SecretStrength` records for entropy, in the same direction: what separates a name from a
+random run here is the *size and start of a segment*, not how varied its characters are.
+
 **What still leaks is recorded rather than hidden**: a credential of nothing but letters
-and dots — an unquoted `PASSWORD=correcthorse` — goes out in clear. The upgrade is to
-read whether the value was quoted where it was found, which `Verify` cannot see: it is
-handed the group, not its surroundings.
+and dots — an unquoted `PASSWORD=correcthorse` — goes out in clear, and so does one whose
+every dot-separated run is short and letter-led, `secret=abcdef.ghijkl`. The upgrade for
+both is to read whether the value was quoted where it was found, which `Verify` cannot
+see: it is handed the group, not its surroundings.
+
+**Four shapes the name-is-the-evidence rule reaches, beyond `NAME=value`.** Each was a
+credential this catalogue forwarded whole, and each is one line of expression away.
+
+| Shape | Written as | The guard that keeps it narrow |
+|---|---|---|
+| An `Authorization` header | `authHeaderRe`, anchored on the header name, taking what follows `Bearer`, `Basic` or `token` | The scheme is the evidence, not a field name — after `Bearer` there is a credential and nothing else. `Digest` is deliberately absent: its value is a parameter list, and masking it whole would replace the realm and the nonce along with the response. It reports `SECRET_GENERIC` **on purpose**, so it inherits `GenericSecretCheck` — "Bearer authentication" in a sentence has the shape of a header. The digitless-identifier rule used to refuse it; once that rule became a question about case, an all-lowercase word no longer reached it, so `auth` went into the slug rule instead. The value names the mechanism, which is the same sentence as `reset-password` |
+| An XML element | `xmlSecretRe`, `<apiKey>…</apiKey>` | A pattern of its own rather than `>` added to the separator, because the value has to stop where the closing tag opens: under the shared bare expression the span ran into `</apiKey` and the mask ate the tag. **The closing `</` is the guard** — `if (secret > threshold)` has the name, the separator and a value of the right size, and no tag after it |
+| A hash arrow | `genericSecretSeparator`, `'token' => '…'` and `api_key -> …` | The two-character forms come **first** in the alternation: Go's regexp is leftmost-first, so with `[=:]` in front, `=>` matched on its `=` and the value began on the `>`. What this risks claiming is a dereference, and the check above refuses it — `$secret->getValue()` ends on an unclosed call, `$token->id` is under the value floor, `$password->hashedValue` is camelCase without a digit |
+| A short declaration or a Makefile assignment | `genericSecretSeparator`, `apiKey := "…"`, `TOKEN ?= …`, `DB_PASSWORD ::= …` | With `[=:]` alone the colon was the separator and `\s*` could not step over the `=`, so `apiKey := "8dyfuiRyq=vVc3RRr_edRk-fK__JItpZ"` — Go, the language this agent reads most — went out in clear. Same leftmost-first reason as the arrows, same guard: `token := utils.jwtFrom(req)` ends on an unclosed call and `tokenName := 'ProdMyService'` is camelCase without a digit. `sec-generic-short-declaration` and `sec-generic-code-short-declaration` are the pair |
+| A padded quoted value | `['"][ \t]*(…)[ \t]*['"]` | `quoteChars` holds `\s`, so one space behind the opening quote ended the expression before it began and `API_KEY=" hunter2-correct-horse "` went out in clear. Horizontal whitespace only: with `\s` the quote could sit on one line and the value on the next, and the span would swallow the newline |
+
+**`CREDENTIAL` is a keyword and `KEY` is not.** A bare key is what half the configuration
+languages there are call the left-hand side of a pair — `key: value` in YAML, `key=` in an
+INI section, `key` in every map literal — so it names a credential no more often than it
+names nothing at all, and the value behind it is whatever the document happened to hold.
+What `CREDENTIAL` costs is a path: `GOOGLE_APPLICATION_CREDENTIALS=/etc/gcp/key.json` is
+masked, because a path is not identifier-shaped and the check lets it through. That is the
+cost `SECRET_FILE=` already carried, it is over-masking rather than a leak, and it is
+reversible. `CREDS` sits beside it: `DB_CREDS=` is the short form the same people write, and the
+repeated-letter tolerance cannot reach it from `CREDENTIAL`, so it went out in clear
+(`sec-generic-creds`).
 
 Narrowing a credential pattern is the change that leaks, so the two halves are asserted
 together. `TestGenericSecretCheckRejectsSourceCode` carries the thirty values from that
@@ -405,6 +540,45 @@ wins, so a specific shape must precede a broader one: `sk-ant-` before `sk-`, a
 fourteen-digit SIRET before the nine-digit SIREN inside it, France's checksummed
 identifiers before Vietnam's CMND, which matches any bare nine digits.
 
+### The two tiers of vendor prefixes
+
+`patterns_secret.go` holds credentials in tiers, and the order *is* the tiering: a
+generic `TOKEN=...` hint must never claim a span a documented prefix can name.
+
+The first tier is the shapes reasoned about one at a time, each with its own `var` and
+its own paragraph. The second is `vendorPrefixes`, a table of 109 vendors and 150
+patterns derived from the gitleaks/betterleaks catalogue (MIT, see `NOTICE`) and
+rewritten to the rules below. It is a table rather than 150 named `var`s because a
+comment per row could only paraphrase the row; the reasoning that applies to all 150 is
+written once at the head of the table.
+
+**Only the *value-only* rules were taken.** Roughly 40% of that catalogue identifies a
+credential by the name beside it — `adafruit ... = <32 chars>` — and
+`genericSecretQuotedRe` and `genericSecretBareRe` already read that shape. A second
+reading of it would compete for the same span with no more evidence.
+
+**What was deliberately left out is as considered as what came in.** Twenty-eight rules
+have no literal prefix at all; they are the entire remaining cost (16.6 ms against
+0.56 ms for the 150 that stayed) and they are also, almost all of them, *identifiers*
+rather than credentials — an Azure tenant id, an eBay client id, a storage account
+*name*, a Salesforce instance hostname, a Snowflake host. A bare 32-hex with no prefix
+is the shape a commit SHA and a build id already have.
+
+**Four real credentials are missing and it is recorded as a `TODO`**: Terraform Cloud
+(`<14>.atlasv1.<60>`), MaxMind (`<6>_<29>_mmk`), a Tableau PAT and a Facebook access
+token. Each has a literal, but an *interior* one, which no prefix scan can use — so each
+costs 0.6-1.7 ms alone, twenty times the rest of the tier put together. The upgrade is a
+required-literal prefilter (`strings.Contains` before the regex), worth building for a
+class and not for four.
+
+**A prefilter is deliberately not built yet, and the measurement says why.** The obvious
+reading of this tier is that 150 more patterns need one, because betterleaks affords 417
+rules by running almost none of them. Measured per pattern over the corpus, three
+patterns are 73% of this engine's scan — `xmlSecretRe` and the two
+`genericSecret*Re` — and a keyword prefilter cannot touch those: their keyword set is
+`password|secret|token|apikey|credential`, present in nearly any configuration text.
+The 150 that were added cost 0.56 ms, 1.4% on top of the scan as it stood.
+
 `AllPatterns` (`pattern.go:57`) reads the locale registry rather than concatenating sets by
 hand. Agent Veil's hand-written version shipped with one set missing, which silently
 exempted two thirds of the catalogue from every test that swept "each category".
@@ -434,6 +608,40 @@ exempted two thirds of the catalogue from every test that swept "each category".
 - **Beware `(?i)` over a long repetition.** It let the IBAN expression walk through a
   sentence claiming lowercase words as groups; requiring groups of exactly four fixed the
   whole class.
+- **A leading `\b` and a `(?i)` over a literal prefix are both a cost, not just a
+  style.** Go's regexp scans for a leading literal and skips ahead to it, which is what
+  makes a prefix pattern nearly free — and either of those two destroys that scan.
+  Measured over `docs/testCorpus.txt` (22 KB) while importing the second tier of vendor
+  prefixes: 62 ms as the rules were written, 28 ms with the leading `\b` removed, 17 ms
+  with `(?i)` removed too. The `(?i)` was wrong as well as slow, because a vendor prefix
+  is case-significant: Figma issues `figd_`, never `FIGD_`.
+- **An alternation of prefixes is two patterns, not one expression.** RE2 scans for a
+  *single* leading literal, so it can use neither branch of `(?:EAAA|sq0atp-)`: that
+  alternation cost 465 us over the corpus, and the same two shapes as separate patterns
+  cost 6.8 us and 6.6 us. Two patterns of one category is the shape the catalogue already
+  used for Slack, and `Label` is what tells a report which of them fired. HashiCorp Vault
+  is the same lesson with a second edge: its legacy `s.<24 chars>` branch cost 443 us
+  against 1.4 us for `hvs.` alone, and a bare `s.` before twenty-four alphanumerics is
+  every second member access in a stack trace — narrowing was both the faster and the
+  more correct change.
+- **A trailing group that *consumes* a character makes the span eat the text after the
+  value.** Imported rules commonly close on something like `(?:[^\w-]|$)`, and RE2 has no
+  lookahead to express it for free. Five patterns arrived that way and each took the
+  punctuation that ended the sentence around it: `pscale_pw_...Dc6.` came out a character
+  long, and Fly.io's took the following comma. The fix is the one
+  `genericSecretBareRe` already uses — a permissive body one character shorter, then a
+  final character class that excludes what a sentence ends on (`noSentenceTail`).
+- **Two vendor prefixes where one ends on the other are settled by the score being
+  *equal*, not by a boundary.** Cerebras issues `csk-<48>` and `openAILegacyRe` is
+  `sk-<20,>` with no left boundary, so it claimed the Cerebras key from offset 1 and
+  masked it as an OpenAI key with the leading `c` in clear. Overlap arbitration goes
+  credential, then confidence, then the longer span — so equal scores hand the decision
+  to the span, and the longer prefix wins. `CatAnthropicKey` and `CatOpenAIKey` were
+  already both 98 for exactly this reason (`sk-ant-` contains `sk-`), and the whole
+  second tier is 98 so the rule holds for every containment in it: `ops_eyJ` over `eyJ`,
+  `mercury_production_` over `ion_`. A left boundary would be the direct fix and cannot
+  be afforded: consuming one character to reject it took `openAILegacyRe` from 6 us to
+  654 us.
 - **`Refine` is for a span the regex had to over-match**, and only the IBAN needs it.
   Tolerating the conventional grouping by four makes the expression greedy enough to
   swallow the following word, and only the checksum knows where the account ends. A pattern

@@ -54,6 +54,15 @@ func TestCheckCatalogue(t *testing.T) {
 			want:     "no token prefix",
 		},
 		{
+			// "1PASSWORD_TOKEN" opened on a digit, so the token it rendered was not
+			// one by tokenRe and the rehydrator filed a credential's replacement as
+			// a stand-in.
+			name:     "a registered category whose prefix does not make a token",
+			patterns: nil,
+			registry: map[Category]CategoryInfo{"A": without(func(i *CategoryInfo) { i.Prefix = "1PASSWORD_TOKEN" })},
+			want:     "does not make a token",
+		},
+		{
 			name:     "a registered category with no score",
 			patterns: nil,
 			registry: map[Category]CategoryInfo{"A": without(func(i *CategoryInfo) { i.Score = 0 })},

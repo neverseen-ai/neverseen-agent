@@ -492,6 +492,40 @@ var englishMonths = map[string]string{
 	"september": "9", "october": "10", "november": "11", "december": "12",
 }
 
+// PostcodeCheck rejects a code followed by an abbreviated month name.
+//
+// The French pattern takes the commune with the code, because five bare digits
+// are not identifiable on their own — so any capitalised word that follows a
+// five-digit run is a commune as far as the shape is concerned. A long listing
+// puts one there: "13469 Mar  3 10:22 proxy.go" was masked as a postcode, and so
+// was every line of every `ls -l`, every tar table and every log in that form.
+// Nothing about the shape separates it — "13469 Mar" and "13290 Aix" are written
+// the same way — so the word itself is what has to decide, which is a rule the
+// regex cannot express.
+//
+// The three-letter abbreviations only, and only as a whole word. The full names
+// are deliberately absent: March is a town in Cambridgeshire and Mars a commune
+// in the Loire, so a list carrying those would drop real addresses to spare a
+// listing. Whole-word matching is what keeps "May-sur-Orne" a commune.
+//
+// It hangs off the category, so it guards the British and American patterns too;
+// neither puts a word after the code, so nothing there reaches the rule.
+func PostcodeCheck(value string) bool {
+	fields := strings.Fields(value)
+	if len(fields) < 2 {
+		return true
+	}
+	_, isMonth := monthAbbreviations[strings.ToLower(fields[1])]
+	return !isMonth
+}
+
+// monthAbbreviations is the set a long listing prints, in the C locale. Lower
+// case because PostcodeCheck folds the field before looking here.
+var monthAbbreviations = map[string]struct{}{
+	"jan": {}, "feb": {}, "mar": {}, "apr": {}, "may": {}, "jun": {},
+	"jul": {}, "aug": {}, "sep": {}, "oct": {}, "nov": {}, "dec": {},
+}
+
 // IPAddressCheck reports whether a value really is an IP address.
 //
 // Not a checksum, and the second case after DOBCheck of Verify carrying a rule the
@@ -627,13 +661,13 @@ var documentationTLDs = []string{".test", ".example", ".invalid", ".localhost"}
 // `totpToken` is that code names things in words and a credential almost always
 // carries a digit.
 //
+// Three: a dotted identifier chain is a property path. Rule two reads a digit as
+// evidence, and `c.S3.SecretAccessKey` gets one from a service name — so a member
+// access satisfied both halves of rule two and went out as a token in the middle of
+// the caller's own code.
+//
 // The slash and the plus are not code punctuation here: base64 is made of them, and
 // a secret is often base64.
-//
-// TODO: what remains is a credential of nothing but letters and dots — an unquoted
-// `PASSWORD=correcthorse` goes out in clear. The upgrade is to read whether the
-// value was quoted where it was found, which Verify cannot see: it is handed the
-// group and not its surroundings.
 //
 // TODO: a credential given as a command-line pair — `curl -u admin:hunter2` — is
 // not read either, and it is deliberately not a pattern. There is nothing in the
@@ -647,18 +681,354 @@ var documentationTLDs = []string{".test", ".example", ".invalid", ".localhost"}
 // knowing that `curl` and `docker` want different things from `-u`; that is a
 // different engine, not a wider expression.
 func GenericSecretCheck(value string) bool {
-	// Openers only. A closing bracket is what a credential ends on; an opening one
-	// is what an expression begins.
-	if strings.ContainsAny(value, "([{<?;,") {
+	// The bracket rule is not here. It is UnclosedBracketCheck, on the patterns
+	// whose span is cut out of the surrounding text, because whether an unclosed
+	// opener is syntax depends on how the span ended and this check is never told:
+	// `password="Ab(12cd"` hands it the same value as `password=Ab(12cd`, and only
+	// the second was cut out of an expression.
+	// A dereference or an address-of is code, and what it points at decides.
+	// `want.SecretLevel = *secretLevel` was claimed as a credential once the name
+	// no longer had to end on its keyword: the star is not an identifier
+	// character, so the identifier rules never looked at the name behind it.
+	//
+	// Stripped rather than refused outright, because a leading star is not syntax
+	// the way an opening bracket is — `PASSWORD=*Hunter2*` is a real password.
+	// Stripping hands the rest to the rules below, so it is only dropped when what
+	// it points at is *also* code-shaped by them: `*secret123` keeps its digit and
+	// stays a credential.
+	//
+	// Above every rule that reads the value as a word, and not below them. Placed
+	// after the two, neither ever saw the stripped value: `SECRET=*string` was
+	// masked as a credential while `SECRET=string` was correctly refused by
+	// reservedWords, and a YAML alias — `password: *default_secret` — was a
+	// credential for the same reason. Both are code, and what the star points at is
+	// what says so.
+	value = strings.TrimLeft(value, "*&")
+
+	// Optional chaining, and not a bare question mark. `user?.token2`,
+	// `user.password?.replace(/./g` and `user.totpSecret?.replace(/./g` are the
+	// three code cases carrying a `?`, and all three carry `?.`; a `?` before a
+	// letter is punctuation in a typed password, and refusing it left
+	// `password="Wh4t?Really"` in clear.
+	if strings.Contains(value, "?.") {
 		return false
 	}
+	// The semicolon and the comma are gone from this rule entirely: no case in
+	// TestGenericSecretCheckRejectsSourceCode contains either, while
+	// `password="a;b;c1234x"`, `password="red,blue1x"` and
+	// `API_TOKENS=abc12345,def67890` were all refused for holding one. A list of
+	// two tokens behind a plural name is still two tokens.
 	if slugNamingItselfRe.MatchString(value) {
+		return false
+	}
+	// A word the language reserved is not a password.
+	//
+	// The same sentence as slugNamingItselfRe — refused for what it says rather
+	// than for its shape — and needed for the same reason: once a lowercase word
+	// counted as a credential, `secret_level: string` in this repository's own
+	// TypeScript claimed the *type*, and `'X-Session-Id': 'default'` in its
+	// extension claimed the session name. TestOurOwnSourceGrowsNoCredentials is
+	// where both appeared, which is the measure that matters: this is what a code
+	// review through this agent would have seen.
+	//
+	// A closed set, and short on purpose. Every entry is a token some language
+	// spells exactly this way, so it can be checked rather than argued about, and
+	// none of them is a password anybody's policy would accept. What it gives up is
+	// somebody whose password is literally "default" — weighed against every
+	// TypeScript interface in a review coming back with its types replaced by
+	// tokens.
+	if reservedWords[strings.ToLower(value)] {
+		return false
+	}
+	// A variable reference is where a credential will be read from, not one.
+	// `password: "${DB_PASSWORD}"` is the single most common value behind a secret
+	// name in a docker-compose.yml, an appsettings.json or an application.yml — the
+	// files pasted whole into a review — and once the bracket rule moved onto the
+	// bare spans alone, a *quoted* reference was a credential while the bare
+	// `POSTGRES_PASSWORD=${DB_PASSWORD}` stayed refused: one value, two answers,
+	// decided by nothing but the quotes. The model then reviewed a configuration
+	// with its references replaced by [SECRET_n]. A closed set of the four
+	// interpolation syntaxes, whole — `${…}`, `{{…}}`, `$(…)` and `%(…)s` — because
+	// a real password that opens on one of those and closes on its bracket is not a
+	// shape anybody's policy produces.
+	if interpolationRe.MatchString(value) {
+		return false
+	}
+	// A number behind a keyword-prefixed name is a tunable, not a secret. Once a
+	// keyword could fall anywhere in the name, `max_tokens=200000`,
+	// `TOKEN_TTL_SECONDS=8640000` and `PASSWORD_MIN_LENGTH=12345678` were all
+	// credentials — and `max_tokens` is the most common numeric field in this
+	// agent's own domain, so a pasted model configuration reached the model with
+	// its numbers replaced by [SECRET_n].
+	//
+	// TODO: this drops a password made of nothing but digits — `PASSWORD=12345678`
+	// goes out in clear. The upgrade is reading the *name*: `_MAX_`, `_MIN_`,
+	// `_TTL`, `_LENGTH`, `_COUNT` say tunable where a bare `PASSWORD=` does not,
+	// and the name is available to the expression where it is not to this check.
+	if allDigits(value) {
 		return false
 	}
 	if !identifierOnlyRe.MatchString(value) {
 		return true
 	}
+	// Two: a name is written in words joined by case, a password is not.
+	//
+	// The rule here used to be "identifier-shaped and carrying no digit", and the
+	// digit was doing work it cannot do: `PASSWORD=correcthorse`,
+	// `PASSWORD=changeme` and `password="correcthorse"` are real credentials of
+	// nothing but lowercase letters, and all three were forwarded in clear. It is
+	// the gap this catalogue was measured against betterleaks on, and the whole of
+	// that difference was this one rule.
+	//
+	// What separates them from `newPassword` is the case. Every dotless digitless
+	// code case asserted in the tree is camelCase — `publicKey`, `newPassword`,
+	// `newPasswordInString`, `totpToken`, `updatedToken`, `initialToken` — because
+	// that is how code joins words into one name. A passphrase does not.
+	//
+	// A camelCase *join*, then — a capital after a lowercase letter — and not any
+	// capital. Not the first character: `MyPassword123!` and `Sup3rS3cr3tValue123`
+	// are credentials that open on one. And not a capital after a capital: read
+	// that way, `PASSWORD=HUNTER` was refused as a code identifier while
+	// `PASSWORD=Hunter` was masked, one rule giving two answers decided by nothing
+	// but the case the password was typed in. Every letter of an ALL-CAPS value is
+	// a capital, so none of them is a join — the same reading genericSecretName
+	// already applies to the name side. What it costs is a constant referenced by
+	// name, `password = DEFAULT_PASSWORD`, which is over-masking in a review rather
+	// than a password in clear.
+	//
+	// A trailing dot is excluded because it is not part of the value: `masked...` is
+	// an elision in prose and the shape identifierOnlyRe admits on purpose, and it
+	// carries no capital either. It falls to the digit rule at the bottom, which is
+	// what refused it before. `hunter2.` passes that rule on its digit and stays a
+	// credential, which is the row in TestGenericSecretCheckKeepsCredentials that
+	// says a trailing dot must never be read as syntax.
+	if !hasInteriorDot(value) && !hasCamelCaseJoin(value) && !strings.HasSuffix(value, ".") {
+		return true
+	}
+	// Three: a dotted chain is a property path, whatever digits it carries.
+	//
+	// Rule two reads a digit as evidence of a credential, and a member access puts
+	// one there for free: `c.S3.SecretAccessKey` was masked as [SECRET_1], and the
+	// model received a review of Go code whose field access had been replaced by a
+	// token. The digit came from `S3` — a service name, not a password — and every
+	// cloud SDK is full of them: `s3`, `ec2`, `oauth2`, `sha256`, `v1`, `utf8`.
+	//
+	// Only dotted values move, and only those carrying a digit: an identifier chain
+	// with no digit was already refused by rule two. `Sup3rS3cr3tValue123` has no
+	// dot and stays a credential, which is the case rule two exists for. What is
+	// given up is a password made of nothing but letters, digits and interior dots —
+	// a shape no password policy asks for and every member access has.
+	//
+	// The dot has to be *interior*, and TestGenericSecretCheckKeepsCredentials is
+	// what says so: `password="hunter2."` hands this the value `hunter2.`, because a
+	// quoted value ends where its quote does and the punctuation inside is its own.
+	// A trailing dot is the end of a sentence or an elision — which is why
+	// identifierOnlyRe admits `masked...` — and reading it as a member access made
+	// a real credential stop being masked, the one direction this rule must never
+	// move in.
+	//
+	// A segment also has to be the size and shape of a name, or the dot is doing all
+	// the work alone: WARP_READ_TOKEN=yrqUJ...Vhq8.37Zim...XlF went out in clear,
+	// a hundred and eighty-two characters of base64url bought the promise written
+	// here for c.S3.SecretAccessKey by carrying one interior dot. No field access is
+	// a hundred and sixty-one characters long, and no language admits `.37Zim` as
+	// one, so that token fails both halves at once.
+	if propertyPathRe.MatchString(value) {
+		if readsACredential(value) {
+			return false
+		}
+		// A chain no member access is written like, so the name in front of it is
+		// the evidence and a digit is not required as well. `secret=abcdef.ghijkl`
+		// is the shape rule three gave up when it was written.
+		return true
+	}
+	// Dotless and written in words joined by case: a name, unless it carries a
+	// digit. `newPassword` and `totpToken` are how code names a variable;
+	// `Sup3rS3cr3tValue123` is how somebody writes a password that has to contain
+	// one of each.
 	return strings.ContainsAny(value, "0123456789")
+}
+
+// readsACredential reports whether a dotted value is code *reading* a credential
+// rather than the credential itself.
+//
+// Rule three used to refuse every property path, and what that gave up is written
+// in its own TODO: `secret=abcdef.ghijkl` reads as a member access and nothing in
+// the shape says otherwise. Nothing in the shape ever will — `query.current` is two
+// lowercase segments of comparable length, and so is `abcdef.ghijkl`. Measured
+// against every case in TestGenericSecretCheckRejectsSourceCode, there is no
+// length, segment count or character mix that separates the two.
+//
+// What separates them is what the chain *says*. Two independent marks, either of
+// which is enough:
+//
+//   - The last segment names the credential. `secret = config.password` is code
+//     fetching a password, not a password; so are `req.cookies.token`,
+//     `c.S3.SecretAccessKey`, `aws.Config.Credentials`, `client.oauth2.Token`,
+//     `headers.authorization`. It is the same sentence slugNamingItselfRe already
+//     writes for `reset-password`: a passphrase does not name the thing it unlocks,
+//     and neither does it name where it was read from.
+//   - The chain carries an interior capital. Code joins words by case, and this is
+//     what keeps `opts.Sha256Digest`, `utf8.RuneCountInString`,
+//     `process.env.LLM_API_KEY` and both of the long chains refused — the cases the
+//     segment cap in propertyPathRe was added for.
+//
+// What it costs is recorded rather than hidden: six member accesses asserted in
+// this tree flip to masked, all of them two lowercase segments naming nothing —
+// `query.current`, `query.new`, `query.repeat`, `body.new`, `body.repeat`, `a.b2`.
+// They are indistinguishable from the credential by every measure available here,
+// and over-masking a property access in a code review is the recoverable half of
+// the trade: the other half is a password forwarded in clear.
+func readsACredential(value string) bool {
+	segments := strings.Split(strings.Trim(value, "."), ".")
+	if credentialNameTailRe.MatchString(segments[len(segments)-1]) {
+		return true
+	}
+	return hasInteriorCapital(value)
+}
+
+// credentialNameTailRe matches a name that ends on the thing it holds — the last
+// segment of `config.password` or `c.S3.SecretAccessKey`.
+//
+// "key" is here where genericSecretKeywordNames deliberately leaves it out, and the
+// asymmetry is the point: as a *name* to look behind, a bare "key" is what half the
+// configuration languages call the left-hand side of any pair, so it is evidence of
+// nothing. As the tail of a member access it is `publicKey`, `SecretKey`,
+// `AccessKey` — a field holding a credential, which is what this has to refuse.
+//
+// "key" and "auth" are short enough to be the end of an ordinary word, and written
+// with no boundary in front of them they were: `password: monkey.donkey` had its
+// last segment matched on the "key" of "donkey", so readsACredential called the
+// chain code and a real password went to the model in clear. Anything ending in
+// monkey, turkey, hotkey or oauth did the same, and refusing a credential is the one
+// direction this rule must never move in. So the two short words need a boundary in
+// front — the start of the segment, a separator, or the lowercase letter that makes
+// a camelCase join — while the long ones, which no English word ends on by accident,
+// keep the bare suffix match they had.
+var credentialNameTailRe = regexp.MustCompile(
+	`(?i:password|passwd|secret|token|api[_-]?key|access[_-]?key|credential|` +
+		`authorization|authentication)s?$` +
+		`|(?:^|[_\-])(?i:key|auth)s?$` +
+		`|[a-z0-9](?:Key|Auth)s?$`)
+
+// UnclosedBracketCheck refuses a bare span that opens a bracket it does not close,
+// and the balance is the rule rather than the presence.
+//
+// A bare span was cut out of the surrounding text by its expression, so an opener
+// with no closer inside it means the expression it belongs to carries on past where
+// the value stopped: `security.authorize(plainUser`, `generateSecret(`,
+// `${security.hash(req.body.password`, `CreationOptional<string`. Every code case
+// in TestGenericSecretCheckRejectsSourceCode is unbalanced that way, and none of the
+// credentials is.
+//
+// Presence alone was the rule before, and it refused a password for holding a
+// matched pair: `password="pa(ren)th1s"` and `password="[brackets]1"` went out in
+// clear. A pair that opens and closes inside a value is punctuation somebody typed.
+//
+// A stray *closer* stays allowed, which it always was: `hunter2)` is a real
+// password ending on a bracket, and an expression cannot begin that way.
+//
+// It hangs off the bare patterns and not the category, because a quoted value ends
+// where its quote does and the punctuation inside is the value's own —
+// `password="Ab(12cd"` is somebody's "one special character" password, and under
+// the category it was refused as code and forwarded in clear. GenericSecretCheck
+// is handed the value and not the quotes, so it cannot tell the two apart.
+func UnclosedBracketCheck(value string) bool { return !hasUnclosedBracket(value) }
+
+// hasUnclosedBracket reports whether value opens a bracket it does not close.
+//
+// The span handed to GenericSecretCheck was cut out of the surrounding text, so an
+// unclosed opener says the expression continues past the end of the value — which
+// is what makes it code rather than a credential. A closer with nothing to match
+// is not reported: `hunter2)` is a password whose last character is a bracket, and
+// no expression begins on one.
+func hasUnclosedBracket(value string) bool {
+	closerFor := map[byte]byte{'(': ')', '[': ']', '{': '}', '<': '>'}
+	var open []byte
+	for i := 0; i < len(value); i++ {
+		ch := value[i]
+		if _, isOpener := closerFor[ch]; isOpener {
+			open = append(open, ch)
+			continue
+		}
+		if len(open) > 0 && closerFor[open[len(open)-1]] == ch {
+			open = open[:len(open)-1]
+		}
+	}
+	return len(open) > 0
+}
+
+// reservedWords are the language tokens a value can be while saying nothing about
+// a credential: a primitive type, a literal, or a keyword.
+//
+// Keyed lowercase and looked up that way, because a value is written `String` in
+// one language and `string` in the next.
+var reservedWords = map[string]bool{
+	// Primitive and pseudo types, which is how `secret_level: string` arrived.
+	"string": true, "number": true, "boolean": true, "object": true,
+	"int": true, "uint": true, "bool": true, "float": true, "double": true,
+	"char": true, "byte": true, "bytes": true, "long": true, "short": true,
+	"any": true, "unknown": true, "never": true, "void": true, "map": true,
+	"array": true, "list": true, "dict": true, "set": true,
+
+	// Literals and keywords.
+	"null": true, "nil": true, "none": true, "nul": true, "undefined": true,
+	"true": true, "false": true, "yes": true, "no": true, "on": true, "off": true,
+	"default": true, "auto": true, "self": true, "this": true, "super": true,
+	"required": true, "optional": true, "enabled": true, "disabled": true,
+	"public": true, "private": true, "protected": true, "static": true, "const": true,
+}
+
+// allDigits reports whether the value is a number and nothing else.
+func allDigits(value string) bool {
+	for i := 0; i < len(value); i++ {
+		if value[i] < '0' || value[i] > '9' {
+			return false
+		}
+	}
+	return value != ""
+}
+
+// hasInteriorDot reports whether value carries a dot that joins two segments,
+// rather than trailing punctuation.
+//
+// The distinction is the one propertyPathRe already draws and for the same reason:
+// `masked...` and `hunter2.` end on dots that belong to the sentence, not to a
+// member access, and reading them as one stopped a real credential being masked.
+func hasInteriorDot(value string) bool {
+	return strings.Contains(strings.Trim(value, "."), ".")
+}
+
+// hasCamelCaseJoin reports whether a capital follows a lowercase letter — the one
+// place a capital says code joined two words into a name.
+//
+// Not the first character, and not a capital after a capital: `MyPassword123!`
+// opens on one and `HUNTER` is made of them, and both are credentials. `newPassword`
+// and `totpToken` carry the join.
+func hasCamelCaseJoin(value string) bool {
+	for i := 1; i < len(value); i++ {
+		if value[i] >= 'A' && value[i] <= 'Z' && value[i-1] >= 'a' && value[i-1] <= 'z' {
+			return true
+		}
+	}
+	return false
+}
+
+// hasInteriorCapital reports whether a capital appears anywhere but the first
+// character — the shape of a name code joined out of words.
+//
+// Interior, because the first character says nothing: `MyPassword123!` and
+// `Sup3rS3cr3tValue123` are credentials that open on a capital, while
+// `newPassword` and `totpToken` are names that carry one in the middle. Read by
+// readsACredential over a dotted chain, where `process.env.LLM_API_KEY` has to
+// count; the dotless rule above wants the narrower hasCamelCaseJoin.
+func hasInteriorCapital(value string) bool {
+	for i := 1; i < len(value); i++ {
+		if value[i] >= 'A' && value[i] <= 'Z' {
+			return true
+		}
+	}
+	return false
 }
 
 // slugNamingItselfRe is a lowercase slug that contains the very word which made
@@ -676,13 +1046,75 @@ func GenericSecretCheck(value string) bool {
 // weak-but-real password out of it. "MyPassword123!" carries the word too, and its
 // capitals, digits and punctuation say it was typed as a secret rather than written
 // as a route.
+//
+// The two-word keywords are spelled with either joiner, because a slug is written
+// with hyphens: `your-api-key-here` was masked while `your_api_key_here` was not,
+// decided by nothing but which of the two a README happened to use.
+//
+// "auth" is deliberately not in the set. It was, for the header pattern's sake,
+// and with no boundary in front of it a four-letter run refused every passphrase
+// that merely contained it: `author-of-words`, `my-authentic-horse` and
+// `unauthorised-visitors` behind `PASSWORD=` went to the model in clear, while
+// `troisieme-valeur-longue`, the corpus's own credential of the identical shape,
+// was masked — the `monkey.donkey` failure credentialNameTailRe was fixed for,
+// reintroduced in the sibling rule. What the header pattern has to refuse is its
+// own concern, and AuthHeaderCheck carries it on that pattern alone.
 var slugNamingItselfRe = regexp.MustCompile(
-	`^[a-z_-]*(?:password|passwd|secret|token|apikey|api_key|access_key)[a-z_-]*$`)
+	`^[a-z_-]*(?:password|passwd|secret|token|api[_-]?key|access[_-]?key)[a-z_-]*$`)
+
+// AuthHeaderCheck is the Verify of the two Authorization-header patterns: the bare
+// span's bracket rule, and a refusal of a sentence *about* the scheme.
+//
+// "Authorization: Bearer authentication comme le schéma attendu" is a corpus
+// negative, and the value it hands over is `authentication`. It used to be refused
+// by GenericSecretCheck's rule two, which read a digitless identifier as code, and
+// once that rule became a question about case an all-lowercase word no longer
+// reached it. The word naming the mechanism is the evidence — the same sentence
+// slugNamingItselfRe writes for `reset-password` — but it belongs here and not in
+// that rule, because catalogue-wide it refused real passwords (see the note above
+// slugNamingItselfRe). No bearer token, basic credential or GitHub token is a
+// lowercase word carrying `auth`.
+func AuthHeaderCheck(value string) bool {
+	return UnclosedBracketCheck(value) && !authSchemeProseRe.MatchString(value)
+}
+
+// authSchemeProseRe is a lowercase slug carrying `auth` — `authentication`,
+// `authorization`, `oauth` — which behind a scheme name is prose about the header.
+var authSchemeProseRe = regexp.MustCompile(`^[a-z_-]*auth[a-z_-]*$`)
+
+// interpolationRe is a value that is entirely one variable reference, in the four
+// syntaxes configuration files use: shell and Compose (`${VAR}`), a template
+// (`{{ .Values.x }}`), a subshell (`$(cat file)`) and Python's `%(name)s`.
+var interpolationRe = regexp.MustCompile(`^(?:\$\{[^{}]*\}|\{\{[^{}]*\}\}|\$\([^()]*\)|%\([^()]*\)s?)$`)
 
 // identifierOnlyRe is a name, or a chain of them: an identifier start, then nothing
 // but identifier characters and dots. Trailing dots are allowed on purpose, because
 // an elision ("masked...") is prose rather than a credential too.
 var identifierOnlyRe = regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$.]*$`)
+
+// propertyPathRe is a chain of at least two names joined by dots, each of them the
+// size and shape a name is: no leading digit, and no longer than a segment of code
+// ever gets. Both bounds are what separate `c.S3.SecretAccessKey` from a credential
+// that happens to carry a dot, and a token fails whichever it fails first — the
+// observed one failed both.
+//
+// Forty characters, because the longest segments code really writes are type and
+// method names (`authenticatedUsersTokenOfTheCurrentSession` is already past what
+// anybody types) while the random run in a token is longer than that by an order of
+// magnitude. A cap tight enough to cut a real member access would stop masking
+// nothing — it would only start masking code again, which is the direction rule
+// three exists to prevent.
+//
+// Trailing dots are admitted for the reason identifierOnlyRe admits them: a member
+// chain at the end of a sentence keeps the full stop.
+//
+// TODO: the known ceiling is now the other way round, and readsACredential records
+// it: a chain of two lowercase segments naming nothing — `query.current`, `body.new`
+// — is masked, because nothing in the shape separates it from `secret=abcdef.ghijkl`.
+// The upgrade is to read whether the value was quoted where it was found, which
+// Verify cannot see: it is handed the group and not its surroundings.
+var propertyPathRe = regexp.MustCompile(
+	`^[A-Za-z_$][A-Za-z0-9_$]{0,39}(?:\.[A-Za-z_$][A-Za-z0-9_$]{0,39})+\.*$`)
 
 // ibanLengths is the length ISO 13616 fixes for each country that issues IBANs,
 // including the two check digits.

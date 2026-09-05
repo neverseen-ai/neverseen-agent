@@ -182,6 +182,9 @@ func (d *Detector) candidates(text string) []Match {
 			if !ok || score < minConfidence {
 				continue
 			}
+			if p.Verify != nil && !p.Verify(value) {
+				continue
+			}
 			if !d.strongEnough(p.Category, value) {
 				continue
 			}
@@ -212,6 +215,10 @@ func (d *Detector) candidates(text string) []Match {
 	return out
 }
 
+// Allowlisted is how many values this deployment declared it never masks. A count
+// and never the values: it is what the heartbeat carries.
+func (d *Detector) Allowlisted() int { return len(d.allow) }
+
 // allowed reports whether a value is one this deployment declared it never wants
 // masked.
 func (d *Detector) allowed(value string) bool {
@@ -231,11 +238,62 @@ func patternSpans(p pii.Pattern, text string) [][]int {
 		return p.Regex.FindAllStringIndex(text, -1)
 	}
 
+	// Resuming at the end of the *group* rather than of the match, where the two
+	// differ. RE2 has no lookaround, so a pattern that must reject the character
+	// after its value consumes it, and FindAll resumes after that character:
+	// `4b1d<38>,4b1d<38>` had its comma eaten by the first key, and the second had
+	// no boundary left in front of it — every second key of a rotated-keys list
+	// went out in clear.
+	//
+	// FindAll for as long as the group ends where the match does, and a fresh scan
+	// from the group's end only when it does not. Not one match at a time
+	// throughout: a scan of text[pos:] lets `^` match at pos, and a leading
+	// `(?:^|\W)` would then find a second value inside a run the first had only
+	// half consumed. After a consumed boundary the character at pos is the one the
+	// pattern rejected, so `^` there admits nothing the boundary class would not.
+	//
+	// The fresh scan is one match, not another FindAll. Every quoted secret ends on
+	// a consumed quote, so every match of those patterns ended short and each
+	// restarted FindAll over the whole remainder to keep only its first result:
+	// 300 quoted secrets in a 43KB body took 1.8s, 500 in 200KB took 28s, on the
+	// hottest loop in the agent, with the client waiting. One find from the group's
+	// end says whether a value starts inside the consumed tail; when it does not,
+	// the match it found is the one FindAll is about to yield anyway, so the
+	// iteration simply carries on. Only a value that really was hidden — the
+	// second key of `4b1d<38>,4b1d<38>` — restarts the scan.
 	lo, hi := 2*p.Group, 2*p.Group+1
 	var out [][]int
-	for _, m := range p.Regex.FindAllStringSubmatchIndex(text, -1) {
-		if hi < len(m) && m[lo] >= 0 {
-			out = append(out, []int{m[lo], m[hi]})
+	for pos := 0; pos <= len(text); {
+		resumed := false
+		for _, m := range p.Regex.FindAllStringSubmatchIndex(text[pos:], -1) {
+			if hi >= len(m) || m[lo] < 0 {
+				continue
+			}
+			out = append(out, []int{pos + m[lo], pos + m[hi]})
+			if m[hi] >= m[1] {
+				continue
+			}
+			groupEnd, matchEnd := pos+m[hi], pos+m[1]
+			n := p.Regex.FindStringSubmatchIndex(text[groupEnd:])
+			if n == nil || groupEnd+n[0] >= matchEnd {
+				continue
+			}
+			next := groupEnd + n[1]
+			if hi < len(n) && n[lo] >= 0 {
+				out = append(out, []int{groupEnd + n[lo], groupEnd + n[hi]})
+				if n[hi] < n[1] {
+					next = groupEnd + n[hi]
+				}
+			}
+			if next <= pos {
+				next = matchEnd // unreachable, but never stall the scan
+			}
+			pos = next
+			resumed = true
+			break
+		}
+		if !resumed {
+			break
 		}
 	}
 	return out

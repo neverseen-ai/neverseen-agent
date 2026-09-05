@@ -22,7 +22,7 @@
    "fn": 0
   },
   "EMAIL": {
-   "tp": 22,
+   "tp": 23,
    "fp": 0,
    "fn": 0
   },
@@ -81,8 +81,58 @@
    "fp": 0,
    "fn": 0
   },
+  "SECRET_1PASSWORD": {
+   "tp": 2,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_ADOBE": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_AGE": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_AIKIDO": {
+   "tp": 2,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_AIRTABLE": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_ALIBABA": {
+   "tp": 2,
+   "fp": 0,
+   "fn": 0
+  },
   "SECRET_ANTHROPIC_KEY": {
    "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_APIFY": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_ARTIFACTORY": {
+   "tp": 2,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_ASAAS": {
+   "tp": 2,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_AUTHRESS": {
+   "tp": 4,
    "fp": 0,
    "fn": 0
   },
@@ -96,8 +146,103 @@
    "fp": 0,
    "fn": 0
   },
+  "SECRET_AZURE_APP_CONFIGURATION": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_AZURE_SERVICEBUS": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_BRAVE_SEARCH": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_BUILDKITE": {
+   "tp": 2,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_CANVA": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_CEREBRAS": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_CIRCLECI": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_CLICKHOUSE": {
+   "tp": 3,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_CLOJARS": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_CLOUDFLARE": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_CLOUDSMITH": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_COCKROACHLABS": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_CONFIGCAT": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
   "SECRET_CONN_STR": {
    "tp": 8,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_DATABRICKS": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_DATASTAX_ASTRA": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_DENO": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_DEVCYCLE": {
+   "tp": 3,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_DEVIN": {
+   "tp": 3,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_DIGITALOCEAN": {
+   "tp": 3,
    "fp": 0,
    "fn": 0
   },
@@ -106,9 +251,69 @@
    "fp": 0,
    "fn": 0
   },
-  "SECRET_GENERIC": {
-   "tp": 12,
+  "SECRET_DOPPLER": {
+   "tp": 1,
    "fp": 0,
+   "fn": 0
+  },
+  "SECRET_DUFFEL": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_DYNATRACE": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_EASYPOST": {
+   "tp": 2,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_ELASTIC": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_EXOSCALE": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_FACEBOOK": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_FIGMA": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_FLUTTERWAVE": {
+   "tp": 2,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_FLYIO": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_FRAMEIO": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_GC_NOTIFY": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_GENERIC": {
+   "tp": 44,
+   "fp": 1,
    "fn": 0
   },
   "SECRET_GITHUB_TOKEN": {
@@ -121,12 +326,32 @@
    "fp": 0,
    "fn": 0
   },
+  "SECRET_GOOGLE_GEMINI": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
   "SECRET_GOOGLE_KEY": {
    "tp": 1,
    "fp": 0,
    "fn": 0
   },
+  "SECRET_GRAFANA": {
+   "tp": 3,
+   "fp": 0,
+   "fn": 0
+  },
   "SECRET_GROQ_KEY": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_HARNESS": {
+   "tp": 2,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_HEROKU": {
    "tp": 1,
    "fp": 0,
    "fn": 0
@@ -141,8 +366,78 @@
    "fp": 1,
    "fn": 0
   },
+  "SECRET_INFRACOST": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_INTRA42": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_IONIC": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
   "SECRET_JWT": {
    "tp": 3,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_LANGSMITH": {
+   "tp": 2,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_LICHESS": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_LINEAR": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_MAILERSEND": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_MERCURY": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_MERGIFY": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_MICROSOFT_TEAMS": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_MINIMAX": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_MONGODB_ATLAS": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_NEON": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_NOTION": {
+   "tp": 1,
    "fp": 0,
    "fn": 0
   },
@@ -151,8 +446,43 @@
    "fp": 0,
    "fn": 0
   },
+  "SECRET_NVIDIA": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_OCTOPUS_DEPLOY": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_ONESIGNAL": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_ONFIDO": {
+   "tp": 3,
+   "fp": 0,
+   "fn": 0
+  },
   "SECRET_OPENAI_KEY": {
    "tp": 5,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_OPENROUTER": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_OPENSHIFT": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_PADDLE": {
+   "tp": 1,
    "fp": 0,
    "fn": 0
   },
@@ -161,7 +491,82 @@
    "fp": 0,
    "fn": 0
   },
+  "SECRET_PERPLEXITY": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_PERSONA": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_PINECONE": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_PINTEREST": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_PLANETSCALE": {
+   "tp": 3,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_POLAR": {
+   "tp": 3,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_POSTHOG": {
+   "tp": 2,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_POSTMAN": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_PREFECT": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_PROOF": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_PULUMI": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
   "SECRET_PYPI_TOKEN": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_RAMP": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_README": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_REDIRECT_PIZZA": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_RENDER": {
    "tp": 1,
    "fp": 0,
    "fn": 0
@@ -171,8 +576,68 @@
    "fp": 0,
    "fn": 0
   },
+  "SECRET_ROOTLY": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_RUBYGEMS": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_RUNPOD": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_SALESFORCE": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_SAMSARA": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_SCALINGO": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_SEGMENT": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
   "SECRET_SENDGRID_KEY": {
    "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_SENDINBLUE": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_SENTRY": {
+   "tp": 2,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_SETTLEMINT": {
+   "tp": 3,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_SHIPPO": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_SHOPIFY": {
+   "tp": 4,
    "fp": 0,
    "fn": 0
   },
@@ -181,8 +646,43 @@
    "fp": 0,
    "fn": 0
   },
+  "SECRET_SOURCEGRAPH": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_SQUARE": {
+   "tp": 2,
+   "fp": 0,
+   "fn": 0
+  },
   "SECRET_STRIPE_KEY": {
    "tp": 3,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_SUPABASE": {
+   "tp": 2,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_TAILSCALE": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_TEMPORAL": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_THUNDERSTORE": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_TOGETHERAI": {
+   "tp": 1,
    "fp": 0,
    "fn": 0
   },
@@ -191,7 +691,52 @@
    "fp": 0,
    "fn": 0
   },
+  "SECRET_UNKEY": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_UPCLOUD": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_VAL_TOWN": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_VAULT": {
+   "tp": 2,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_VERCEL": {
+   "tp": 5,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_WAKATIME": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_WEIGHTS_AND_BIASES": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_WORKATO": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
   "SECRET_XAI_KEY": {
+   "tp": 1,
+   "fp": 0,
+   "fn": 0
+  },
+  "SECRET_ZUPLO": {
    "tp": 1,
    "fp": 0,
    "fn": 0
@@ -212,5 +757,5 @@
    "fn": 0
   }
  },
- "negatives": 104
+ "negatives": 218
 }

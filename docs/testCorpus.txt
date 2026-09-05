@@ -1,0 +1,1092 @@
+# Corpus de test — différentes formes de secrets
+
+Ce document simule un ensemble de fichiers, configurations, logs, commentaires et extraits de code dans lesquels un détecteur de secrets pourrait rencontrer différentes représentations de credentials. Toutes les valeurs ci-dessous sont fictives et destinées exclusivement aux tests.
+
+---
+
+## 1. Variables d'environnement
+
+API_KEY="EXAMPLE_TEST_API_KEY_1234567890"
+API_SECRET="EXAMPLE_TEST_SECRET_abcdefghijklmnopqrstuvwxyz"
+ACCESS_TOKEN="EXAMPLE_TEST_ACCESS_TOKEN_1234567890"
+AUTH_TOKEN="EXAMPLE_TEST_AUTH_TOKEN_abcdef"
+CLIENT_ID="EXAMPLE_TEST_CLIENT_ID_12345"
+CLIENT_SECRET="EXAMPLE_TEST_CLIENT_SECRET_67890"
+
+AWS_ACCESS_KEY_ID="EXAMPLEAWSACCESSKEY123456"
+AWS_SECRET_ACCESS_KEY="EXAMPLEAWSSECRETKEY123456789"
+AWS_SESSION_TOKEN="EXAMPLE_SESSION_TOKEN_NOT_REAL"
+
+DATABASE_PASSWORD="EXAMPLE_DATABASE_PASSWORD"
+DB_PASSWORD='EXAMPLE_DB_PASSWORD'
+REDIS_PASSWORD=EXAMPLE_REDIS_PASSWORD
+MYSQL_ROOT_PASSWORD="EXAMPLE_MYSQL_ROOT_PASSWORD"
+
+export API_TOKEN="EXAMPLE_EXPORT_TOKEN_123456"
+export SECRET_KEY='EXAMPLE_SHELL_SECRET_987654'
+
+---
+
+## 2. Même secret avec différentes conventions de nommage
+
+api_key="EXAMPLE_KEY_001"
+apiKey="EXAMPLE_KEY_002"
+ApiKey="EXAMPLE_KEY_003"
+APIKEY="EXAMPLE_KEY_004"
+api-key="EXAMPLE_KEY_005"
+api.key="EXAMPLE_KEY_006"
+
+secret="EXAMPLE_SECRET_001"
+SECRET="EXAMPLE_SECRET_002"
+secret_key="EXAMPLE_SECRET_003"
+secretKey="EXAMPLE_SECRET_004"
+SECRET_KEY="EXAMPLE_SECRET_005"
+
+access_token="EXAMPLE_TOKEN_001"
+accessToken="EXAMPLE_TOKEN_002"
+ACCESS_TOKEN="EXAMPLE_TOKEN_003"
+access-token="EXAMPLE_TOKEN_004"
+
+---
+
+## 3. JSON
+
+{
+"api_key": "EXAMPLE_JSON_API_KEY_123456",
+"api_secret": "EXAMPLE_JSON_API_SECRET_123456",
+"access_token": "EXAMPLE_JSON_ACCESS_TOKEN_123456",
+"password": "EXAMPLE_JSON_PASSWORD",
+"client_secret": "EXAMPLE_JSON_CLIENT_SECRET"
+}
+
+Un autre objet :
+
+{
+"credentials": {
+"username": "example-user",
+"password": "EXAMPLE_PASSWORD_123456"
+},
+"authentication": {
+"token": "EXAMPLE_AUTH_TOKEN_987654"
+}
+}
+
+---
+
+## 4. YAML
+
+api_key: "EXAMPLE_YAML_API_KEY_123456"
+api_secret: "EXAMPLE_YAML_API_SECRET_123456"
+access_token: "EXAMPLE_YAML_ACCESS_TOKEN_123456"
+
+database:
+username: example
+password: "EXAMPLE_YAML_DATABASE_PASSWORD"
+
+credentials:
+client_id: "EXAMPLE_CLIENT_ID"
+client_secret: "EXAMPLE_CLIENT_SECRET"
+
+---
+
+## 5. YAML avec valeurs non entourées de guillemets
+
+api_key: EXAMPLE_UNQUOTED_API_KEY_123456
+token: EXAMPLE_UNQUOTED_TOKEN_123456
+password: EXAMPLE_UNQUOTED_PASSWORD
+secret: EXAMPLE_UNQUOTED_SECRET
+
+---
+
+## 6. TOML
+
+api_key = "EXAMPLE_TOML_API_KEY_123456"
+api_secret = "EXAMPLE_TOML_API_SECRET_123456"
+token = "EXAMPLE_TOML_TOKEN_123456"
+password = "EXAMPLE_TOML_PASSWORD"
+
+[database]
+username = "example"
+password = "EXAMPLE_TOML_DB_PASSWORD"
+
+---
+
+## 7. INI
+
+[database]
+username=example
+password=EXAMPLE_INI_DATABASE_PASSWORD
+
+[authentication]
+api_key=EXAMPLE_INI_API_KEY
+api_secret=EXAMPLE_INI_API_SECRET
+token=EXAMPLE_INI_TOKEN
+
+---
+
+## 8. XML
+
+<configuration>
+    <apiKey>EXAMPLE_XML_API_KEY_123456</apiKey>
+    <apiSecret>EXAMPLE_XML_API_SECRET_123456</apiSecret>
+    <password>EXAMPLE_XML_PASSWORD</password>
+    <token>EXAMPLE_XML_TOKEN_123456</token>
+</configuration>
+
+---
+
+## 9. Code Python
+
+API_KEY = "EXAMPLE_PYTHON_API_KEY_123456"
+API_SECRET = "EXAMPLE_PYTHON_SECRET_123456"
+
+client = Client(
+api_key="EXAMPLE_PYTHON_CLIENT_KEY",
+secret="EXAMPLE_PYTHON_CLIENT_SECRET"
+)
+
+headers = {
+"Authorization": "Bearer EXAMPLE_PYTHON_BEARER_TOKEN_123456",
+"X-API-Key": "EXAMPLE_PYTHON_HEADER_KEY_123456"
+}
+
+database_url = "postgresql://example:EXAMPLE_DB_PASSWORD@example.test:5432/example"
+
+---
+
+## 10. Code JavaScript
+
+const apiKey = "EXAMPLE_JS_API_KEY_123456";
+const apiSecret = "EXAMPLE_JS_API_SECRET_123456";
+const accessToken = "EXAMPLE_JS_ACCESS_TOKEN_123456";
+
+const configuration = {
+apiKey: "EXAMPLE_JS_CONFIG_KEY",
+secret: "EXAMPLE_JS_CONFIG_SECRET",
+password: "EXAMPLE_JS_PASSWORD"
+};
+
+fetch("https://api.example.test/data", {
+headers: {
+"Authorization": "Bearer EXAMPLE_JS_BEARER_TOKEN",
+"X-API-Key": "EXAMPLE_JS_HEADER_KEY"
+}
+});
+
+---
+
+## 11. Code TypeScript
+
+const API_TOKEN: string = "EXAMPLE_TS_API_TOKEN_123456";
+
+interface Credentials {
+username: string;
+password: string;
+}
+
+const credentials: Credentials = {
+username: "example-user",
+password: "EXAMPLE_TYPESCRIPT_PASSWORD"
+};
+
+---
+
+## 12. Java
+
+private static final String API_KEY =
+"EXAMPLE_JAVA_API_KEY_123456";
+
+private static final String CLIENT_SECRET =
+"EXAMPLE_JAVA_CLIENT_SECRET_123456";
+
+String password = "EXAMPLE_JAVA_PASSWORD";
+
+request.setHeader(
+"Authorization",
+"Bearer EXAMPLE_JAVA_BEARER_TOKEN"
+);
+
+---
+
+## 13. C#
+
+private const string ApiKey = "EXAMPLE_CSHARP_API_KEY_123456";
+private const string ClientSecret = "EXAMPLE_CSHARP_CLIENT_SECRET";
+
+var token = "EXAMPLE_CSHARP_TOKEN_123456";
+var password = "EXAMPLE_CSHARP_PASSWORD";
+
+---
+
+## 14. Go
+
+const apiKey = "EXAMPLE_GO_API_KEY_123456"
+const apiSecret = "EXAMPLE_GO_API_SECRET_123456"
+
+config := Config{
+Token: "EXAMPLE_GO_TOKEN_123456",
+Password: "EXAMPLE_GO_PASSWORD",
+}
+
+---
+
+## 15. Rust
+
+let api_key = "EXAMPLE_RUST_API_KEY_123456";
+let api_secret = "EXAMPLE_RUST_API_SECRET_123456";
+let token = "EXAMPLE_RUST_TOKEN_123456";
+
+---
+
+## 16. PHP
+
+$apiKey = "EXAMPLE_PHP_API_KEY_123456";
+$apiSecret = "EXAMPLE_PHP_API_SECRET_123456";
+$password = "EXAMPLE_PHP_PASSWORD";
+
+$config = [
+'token' => 'EXAMPLE_PHP_TOKEN_123456',
+'secret' => 'EXAMPLE_PHP_SECRET_123456'
+];
+
+---
+
+## 17. Ruby
+
+API_KEY = "EXAMPLE_RUBY_API_KEY_123456"
+API_SECRET = "EXAMPLE_RUBY_API_SECRET_123456"
+
+config = {
+token: "EXAMPLE_RUBY_TOKEN",
+password: "EXAMPLE_RUBY_PASSWORD"
+}
+
+---
+
+## 18. Shell
+
+#!/bin/bash
+
+API_KEY="EXAMPLE_BASH_API_KEY_123456"
+API_SECRET='EXAMPLE_BASH_SECRET_123456'
+
+curl
+-H "Authorization: Bearer EXAMPLE_BASH_BEARER_TOKEN"
+-H "X-API-Key: EXAMPLE_BASH_API_KEY_HEADER"
+https://api.example.test/data
+
+---
+
+## 19. Dockerfile
+
+FROM example/application:latest
+
+ENV API_KEY="EXAMPLE_DOCKER_API_KEY_123456"
+ENV API_SECRET="EXAMPLE_DOCKER_API_SECRET_123456"
+ENV DATABASE_PASSWORD="EXAMPLE_DOCKER_DATABASE_PASSWORD"
+
+RUN echo "configured with EXAMPLE_DOCKER_SECRET"
+
+---
+
+## 20. Docker Compose
+
+services:
+application:
+image: example/application
+environment:
+API_KEY: "EXAMPLE_COMPOSE_API_KEY"
+API_SECRET: "EXAMPLE_COMPOSE_SECRET"
+DATABASE_PASSWORD: "EXAMPLE_COMPOSE_DB_PASSWORD"
+ACCESS_TOKEN: "EXAMPLE_COMPOSE_ACCESS_TOKEN"
+
+---
+
+## 21. GitHub Actions / CI
+
+name: test
+
+on:
+push:
+
+jobs:
+test:
+runs-on: ubuntu-latest
+
+```
+env:
+  API_KEY: EXAMPLE_GITHUB_ACTIONS_API_KEY
+  API_SECRET: EXAMPLE_GITHUB_ACTIONS_SECRET
+  DEPLOY_TOKEN: EXAMPLE_GITHUB_ACTIONS_DEPLOY_TOKEN
+
+steps:
+  - uses: example/checkout-action@v1
+
+  - run: ./deploy.sh
+    env:
+      TOKEN: EXAMPLE_CI_TOKEN_123456
+```
+
+---
+
+## 22. Headers HTTP
+
+GET /api/v1/users HTTP/1.1
+Host: api.example.test
+Authorization: Bearer EXAMPLE_HTTP_BEARER_TOKEN_123456
+X-API-Key: EXAMPLE_HTTP_API_KEY_123456
+X-Auth-Token: EXAMPLE_HTTP_AUTH_TOKEN_123456
+
+---
+
+## 23. Basic Authentication
+
+Authorization: Basic ZXhhbXBsZS11c2VyOmV4YW1wbGUtcGFzc3dvcmQ=
+
+Authorization: Basic EXAMPLE_BASE64_CREDENTIALS
+
+---
+
+## 24. Bearer token
+
+Authorization: Bearer EXAMPLE_BEARER_TOKEN_1234567890
+
+authorization: bearer EXAMPLE_LOWERCASE_BEARER_TOKEN
+
+Authorization: Bearer    EXAMPLE_SPACED_BEARER_TOKEN
+
+---
+
+## 25. URL contenant des credentials
+
+https://example-user:EXAMPLE_PASSWORD@example.test/api/data
+
+postgresql://example:EXAMPLE_DATABASE_PASSWORD@example.test:5432/database
+
+mysql://example:EXAMPLE_MYSQL_PASSWORD@example.test:3306/database
+
+redis://:EXAMPLE_REDIS_PASSWORD@example.test:6379
+
+---
+
+## 26. Paramètres d'URL
+
+https://api.example.test/data?api_key=EXAMPLE_QUERY_API_KEY
+
+https://api.example.test/login?token=EXAMPLE_QUERY_TOKEN
+
+https://api.example.test/resource?client_secret=EXAMPLE_QUERY_CLIENT_SECRET
+
+---
+
+## 27. Headers sous forme de dictionnaire
+
+{
+"Authorization": "Bearer EXAMPLE_DICT_BEARER_TOKEN",
+"X-API-Key": "EXAMPLE_DICT_API_KEY",
+"X-Client-Secret": "EXAMPLE_DICT_CLIENT_SECRET"
+}
+
+---
+
+## 28. Secrets dans des commentaires
+
+# TODO: configure API_KEY=EXAMPLE_COMMENT_API_KEY
+
+// temporary token: EXAMPLE_COMMENT_TOKEN_123456
+
+/* database password: EXAMPLE_COMMENT_PASSWORD */
+
+<!-- client secret: EXAMPLE_HTML_CLIENT_SECRET -->
+
+---
+
+## 29. Secrets dans une documentation
+
+Pour effectuer une authentification, utilisez la clé suivante :
+
+`EXAMPLE_DOCUMENTATION_API_KEY_123456`
+
+Le header attendu est :
+
+`Authorization: Bearer EXAMPLE_DOCUMENTATION_TOKEN`
+
+Exemple de configuration :
+
+`api_secret = "EXAMPLE_DOCUMENTATION_SECRET"`
+
+---
+
+## 30. Secret placé après un texte descriptif
+
+API key for production: EXAMPLE_PRODUCTION_API_KEY_TEST
+
+Database password for staging: EXAMPLE_STAGING_DATABASE_PASSWORD
+
+Temporary authentication token: EXAMPLE_TEMPORARY_AUTH_TOKEN
+
+Webhook signing secret: EXAMPLE_WEBHOOK_SIGNING_SECRET
+
+---
+
+## 31. Clé avec préfixe reconnaissable
+
+API_KEY="sk_test_EXAMPLE_NOT_REAL_123456789"
+
+TOKEN="tok_test_EXAMPLE_NOT_REAL_123456789"
+
+ACCESS_KEY="AKIAEXAMPLE123456789"
+
+CLIENT_KEY="pk_test_EXAMPLE_CLIENT_KEY_123456"
+
+WEBHOOK_SECRET="whsec_EXAMPLE_WEBHOOK_SECRET_123456"
+
+Ces chaînes sont volontairement fictives.
+
+---
+
+## 32. Tokens avec différentes longueurs
+
+SHORT_TOKEN="EXAMPLE_SHORT_TOKEN"
+
+MEDIUM_TOKEN="EXAMPLE_MEDIUM_TOKEN_1234567890"
+
+LONG_TOKEN="EXAMPLE_LONG_TOKEN_1234567890_abcdefghijklmnopqrstuvwxyz_0987654321"
+
+VERY_LONG_SECRET="EXAMPLE_VERY_LONG_SECRET_1234567890_abcdefghijklmnopqrstuvwxyz_ABCDEFGHIJKLMNOPQRSTUVWXYZ_0987654321"
+
+---
+
+## 33. Chaînes à forte entropie mais sans nom évident
+
+value="f83KqP91xL7mZ2vN8rT4wQ6s"
+
+data="a8F92kLmQ7xP4nV6zR3tY1uW"
+
+identifier="7fA9cD3eB82kLm91QxP47z"
+
+random_value="Qp7Vx92LmK4Rt83NzA6Bc51"
+
+Ces valeurs sont volontairement proches de chaînes aléatoires afin de tester les détecteurs fondés sur l'entropie.
+
+---
+
+## 34. Faux positifs potentiels
+
+UUID normal :
+
+550e8400-e29b-41d4-a716-446655440000
+
+Hash :
+
+0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+
+ID utilisateur :
+
+user_123456789
+
+Version :
+
+v1.2.3
+
+Commit :
+
+abcdef1234567890abcdef1234567890abcdef12
+
+Chaîne aléatoire de test :
+
+abcdefghijklmnopqrstuvwxyz1234567890
+
+---
+
+## 35. Placeholders qui ne devraient normalement PAS être considérés comme de vrais secrets
+
+API_KEY="YOUR_API_KEY_HERE"
+
+API_KEY="<YOUR_API_KEY>"
+
+API_KEY="${API_KEY}"
+
+API_KEY="$API_KEY"
+
+API_KEY="CHANGE_ME"
+
+API_KEY="REPLACE_ME"
+
+API_KEY="YOUR_SECRET_HERE"
+
+PASSWORD="password"
+
+PASSWORD="example"
+
+PASSWORD="test"
+
+SECRET="dummy"
+
+SECRET="fake-secret"
+
+TOKEN="TODO"
+
+TOKEN="CHANGEME"
+
+---
+
+## 36. Secrets séparés sur plusieurs lignes
+
+api_key =
+"EXAMPLE_MULTILINE_API_KEY_123456"
+
+const token =
+"EXAMPLE_MULTILINE_TOKEN_123456";
+
+Authorization:
+Bearer EXAMPLE_MULTILINE_BEARER_TOKEN
+
+---
+
+## 37. Secret concaténé dans du code
+
+const prefix = "EXAMPLE_";
+const suffix = "SECRET_123456";
+const token = prefix + suffix;
+
+const part1 = "EXAMPLE_TOKEN_";
+const part2 = "123456";
+const fullToken = part1 + part2;
+
+---
+
+## 38. Secret assemblé avec interpolation
+
+const environment = "test";
+const token = `EXAMPLE_${environment}_TOKEN_123456`;
+
+const prefix = "EXAMPLE";
+const secret = `${prefix}_SECRET_123456`;
+
+---
+
+## 39. Base64
+
+api_key_base64="RVhBTVBMRV9GQUtFX0FQSV9LRVk="
+
+secret_base64="RVhBTVBMRV9GQUtFX1NFQ1JFVA=="
+
+token_base64="RVhBTVBMRV9UQUJMRV9UT0tFTg=="
+
+Ces valeurs sont des représentations Base64 de chaînes fictives.
+
+---
+
+## 40. Hexadécimal
+
+secret_hex="4558414d504c455f5345435245545f313233"
+
+token_hex="4558414d504c455f544f4b454e5f313233"
+
+key_hex="4558414d504c455f4b45595f313233"
+
+---
+
+## 41. Chaînes avec espaces
+
+API_KEY=" EXAMPLE_SPACED_SECRET_123456 "
+
+TOKEN="EXAMPLE_TOKEN_WITH_SPACES_123456   "
+
+SECRET="EXAMPLE_SECRET_123456 "
+
+---
+
+## 42. Chaînes avec échappement
+
+API_KEY="EXAMPLE_"SECRET"_123456"
+
+TOKEN="EXAMPLE_TOKEN_WITH_\n_ESCAPING"
+
+PASSWORD="EXAMPLE_PASSWORD_WITH_"QUOTES""
+
+---
+
+## 43. Secret en minuscules
+
+api_key="example_lowercase_api_key_123456"
+
+secret="example_lowercase_secret_123456"
+
+token="example_lowercase_token_123456"
+
+---
+
+## 44. Secret en majuscules
+
+API_KEY="EXAMPLE_UPPERCASE_API_KEY_123456"
+
+SECRET="EXAMPLE_UPPERCASE_SECRET_123456"
+
+TOKEN="EXAMPLE_UPPERCASE_TOKEN_123456"
+
+---
+
+## 45. Secret dans une structure imbriquée
+
+application:
+authentication:
+credentials:
+primary:
+username: example-user
+password: EXAMPLE_NESTED_PASSWORD
+api:
+key: EXAMPLE_NESTED_API_KEY
+secret: EXAMPLE_NESTED_API_SECRET
+tokens:
+access: EXAMPLE_NESTED_ACCESS_TOKEN
+refresh: EXAMPLE_NESTED_REFRESH_TOKEN
+
+---
+
+## 46. Kubernetes Secret
+
+apiVersion: v1
+kind: Secret
+metadata:
+name: example-application-secret
+type: Opaque
+stringData:
+username: example-user
+password: EXAMPLE_KUBERNETES_PASSWORD
+api-key: EXAMPLE_KUBERNETES_API_KEY
+
+---
+
+## 47. Terraform
+
+variable "api_key" {
+type      = string
+sensitive = true
+default   = "EXAMPLE_TERRAFORM_API_KEY"
+}
+
+variable "database_password" {
+type      = string
+sensitive = true
+default   = "EXAMPLE_TERRAFORM_PASSWORD"
+}
+
+---
+
+## 48. Configuration Java properties
+
+application.api.key=EXAMPLE_PROPERTIES_API_KEY
+application.api.secret=EXAMPLE_PROPERTIES_API_SECRET
+application.password=EXAMPLE_PROPERTIES_PASSWORD
+database.password=EXAMPLE_PROPERTIES_DB_PASSWORD
+
+---
+
+## 49. Logs
+
+2026-09-02T09:00:01Z INFO authentication started
+2026-09-02T09:00:02Z DEBUG using API_KEY=EXAMPLE_LOG_API_KEY_123456
+2026-09-02T09:00:03Z DEBUG Authorization: Bearer EXAMPLE_LOG_BEARER_TOKEN
+2026-09-02T09:00:04Z INFO authentication completed
+
+---
+
+## 50. Logs avec clé masquée
+
+INFO API key: EXAMPLE_VISIBLE_API_KEY
+
+INFO API key: EXAMPLE**************789
+
+INFO token: EXAMPLE_TOKEN_******
+
+INFO secret: ********EXAMPLE_SECRET
+
+Ces cas permettent de tester les stratégies de détection partielle.
+
+---
+
+## 51. Markdown
+
+```text
+API_KEY=EXAMPLE_MARKDOWN_API_KEY
+SECRET=EXAMPLE_MARKDOWN_SECRET
+TOKEN=EXAMPLE_MARKDOWN_TOKEN
+```
+
+Exemple de configuration :
+
+```yaml
+api_key: EXAMPLE_CODEBLOCK_API_KEY
+password: EXAMPLE_CODEBLOCK_PASSWORD
+```
+
+---
+
+## 52. CSV
+
+name,type,value
+api_key,test,EXAMPLE_CSV_API_KEY
+secret,test,EXAMPLE_CSV_SECRET
+token,test,EXAMPLE_CSV_TOKEN
+password,test,EXAMPLE_CSV_PASSWORD
+
+---
+
+## 53. SQL
+
+INSERT INTO configuration
+(name, value)
+VALUES
+('api_key', 'EXAMPLE_SQL_API_KEY');
+
+INSERT INTO configuration
+(name, value)
+VALUES
+('password', 'EXAMPLE_SQL_PASSWORD');
+
+UPDATE configuration
+SET value = 'EXAMPLE_SQL_SECRET'
+WHERE name = 'secret';
+
+---
+
+## 54. Secrets avec différents séparateurs
+
+api_key:EXAMPLE_COLON_API_KEY
+
+api_key=EXAMPLE_EQUALS_API_KEY
+
+api_key => EXAMPLE_ARROW_API_KEY
+
+api_key -> EXAMPLE_DASH_API_KEY
+
+api_key : EXAMPLE_SPACED_COLON_API_KEY
+
+---
+
+## 55. Secrets dans des phrases naturelles
+
+The API key used by the test application is EXAMPLE_NATURAL_LANGUAGE_API_KEY.
+
+Please authenticate using token EXAMPLE_NATURAL_LANGUAGE_TOKEN.
+
+The database password is EXAMPLE_NATURAL_LANGUAGE_PASSWORD.
+
+The webhook signing secret is EXAMPLE_NATURAL_LANGUAGE_WEBHOOK_SECRET.
+
+---
+
+## 56. Plusieurs secrets dans un même paragraphe
+
+The test environment uses API key EXAMPLE_PARAGRAPH_API_KEY, client secret EXAMPLE_PARAGRAPH_CLIENT_SECRET, and access token EXAMPLE_PARAGRAPH_ACCESS_TOKEN. The database password is EXAMPLE_PARAGRAPH_DATABASE_PASSWORD. These credentials are synthetic values used only for automated security testing.
+
+---
+
+## 57. Secrets précédés de différents mots-clés
+
+key = EXAMPLE_KEYWORD_KEY
+
+key: EXAMPLE_KEYWORD_KEY_2
+
+secret = EXAMPLE_KEYWORD_SECRET
+
+credential = EXAMPLE_KEYWORD_CREDENTIAL
+
+credential_value = EXAMPLE_KEYWORD_CREDENTIAL_VALUE
+
+token_value = EXAMPLE_KEYWORD_TOKEN
+
+password_value = EXAMPLE_KEYWORD_PASSWORD
+
+authentication_token = EXAMPLE_KEYWORD_AUTH_TOKEN
+
+---
+
+## 58. Variantes de casse des mots-clés
+
+Api-Key: EXAMPLE_CASE_API_KEY
+
+API-Key: EXAMPLE_CASE_API_KEY_2
+
+api-Key: EXAMPLE_CASE_API_KEY_3
+
+Api-Key-Value: EXAMPLE_CASE_API_KEY_4
+
+AUTHORIZATION: Bearer EXAMPLE_CASE_BEARER
+
+Authorization: Bearer EXAMPLE_CASE_BEARER_2
+
+authorization: bearer EXAMPLE_CASE_BEARER_3
+
+---
+
+## 59. Webhook
+
+webhook_secret="EXAMPLE_WEBHOOK_SECRET_123456"
+
+WEBHOOK_SECRET="EXAMPLE_WEBHOOK_SECRET_ABCDEF"
+
+webhook:
+secret: EXAMPLE_WEBHOOK_CONFIG_SECRET
+
+headers:
+X-Signature: EXAMPLE_WEBHOOK_SIGNATURE
+
+---
+
+## 60. OAuth-like configuration
+
+oauth:
+client_id: EXAMPLE_OAUTH_CLIENT_ID
+client_secret: EXAMPLE_OAUTH_CLIENT_SECRET
+access_token: EXAMPLE_OAUTH_ACCESS_TOKEN
+refresh_token: EXAMPLE_OAUTH_REFRESH_TOKEN
+
+---
+
+## 61. Clé privée simulée
+
+-----BEGIN EXAMPLE PRIVATE KEY-----
+EXAMPLE_NOT_A_REAL_PRIVATE_KEY
+EXAMPLE_TEST_KEY_MATERIAL_123456
+EXAMPLE_TEST_KEY_MATERIAL_789012
+-----END EXAMPLE PRIVATE KEY-----
+
+Ce bloc est intentionnellement invalide et ne constitue pas une véritable clé cryptographique.
+
+---
+
+## 62. Certificat simulé
+
+-----BEGIN EXAMPLE CERTIFICATE-----
+EXAMPLE_NOT_A_REAL_CERTIFICATE
+EXAMPLE_CERTIFICATE_DATA_123456
+-----END EXAMPLE CERTIFICATE-----
+
+-----END EXAMPLE CERTIFICATE-----
+
+---
+
+## 63. Secret avec préfixe et suffixe contextuels
+
+prefix_EXAMPLE_SECRET_123456_suffix
+
+before_EXAMPLE_API_KEY_123456_after
+
+production_EXAMPLE_TOKEN_123456_value
+
+test_EXAMPLE_PASSWORD_123456_end
+
+---
+
+## 64. Secret entouré de ponctuation
+
+(EXAMPLE_PARENTHESIZED_SECRET)
+
+[EXAMPLE_BRACKET_SECRET]
+
+{EXAMPLE_BRACED_SECRET}
+
+<EXAMPLE_ANGLE_SECRET>
+
+"EXAMPLE_QUOTED_SECRET"
+
+'EXAMPLE_SINGLE_QUOTED_SECRET'
+
+`EXAMPLE_BACKTICK_SECRET`
+
+---
+
+## 65. Plusieurs secrets sur une seule ligne
+
+API_KEY=EXAMPLE_INLINE_API_KEY SECRET=EXAMPLE_INLINE_SECRET TOKEN=EXAMPLE_INLINE_TOKEN PASSWORD=EXAMPLE_INLINE_PASSWORD
+
+---
+
+## 66. Secret dans une URL encodée
+
+https://example.test/api?token=EXAMPLE_URL_ENCODED_TOKEN%20123456
+
+https://example-user:EXAMPLE_URL_PASSWORD@example.test/resource
+
+---
+
+## 67. Secret dans une variable avec un nom trompeur
+
+configuration_value="EXAMPLE_HIDDEN_SECRET_123456"
+
+data="EXAMPLE_HIDDEN_TOKEN_123456"
+
+value="EXAMPLE_HIDDEN_API_KEY_123456"
+
+credential_data="EXAMPLE_HIDDEN_CREDENTIAL_123456"
+
+---
+
+## 68. Secret sans variable explicite
+
+Here is the credential: EXAMPLE_BARE_CREDENTIAL_123456
+
+Use EXAMPLE_BARE_TOKEN_123456 to authenticate.
+
+The expected secret is EXAMPLE_BARE_SECRET_123456.
+
+Authorization value: Bearer EXAMPLE_BARE_BEARER_TOKEN.
+
+---
+
+## 69. Cas volontairement difficiles
+
+secret_value_part_a = "EXAMPLE_DIFFICULT_"
+secret_value_part_b = "SECRET_123456"
+secret_value = secret_value_part_a + secret_value_part_b
+
+# Secret embedded inside an otherwise normal sentence:
+
+message = "configuration loaded: EXAMPLE_EMBEDDED_SECRET_123456 successfully"
+
+# Secret with an innocuous variable name:
+
+cache_key = "EXAMPLE_INNOCENT_NAME_SECRET_123456"
+
+# Secret stored in a nested generic value:
+
+config["data"]["value"] = "EXAMPLE_NESTED_GENERIC_SECRET"
+
+---
+
+## 70. Mélange de secrets et faux positifs
+
+API_KEY="EXAMPLE_MIXED_API_KEY"
+
+commit_hash="0123456789abcdef0123456789abcdef01234567"
+
+uuid="550e8400-e29b-41d4-a716-446655440000"
+
+password="EXAMPLE_MIXED_PASSWORD"
+
+version="1.2.3"
+
+random_identifier="a8F92kLmQ7xP4nV6zR3tY1uW"
+
+token="EXAMPLE_MIXED_TOKEN"
+
+placeholder="YOUR_TOKEN_HERE"
+
+---
+
+## 71. Configuration réaliste complète
+
+application:
+name: example-service
+
+authentication:
+api_key: EXAMPLE_REALISTIC_API_KEY_123456
+api_secret: EXAMPLE_REALISTIC_API_SECRET_123456
+
+```
+oauth:
+  client_id: EXAMPLE_REALISTIC_CLIENT_ID
+  client_secret: EXAMPLE_REALISTIC_CLIENT_SECRET
+  access_token: EXAMPLE_REALISTIC_ACCESS_TOKEN
+  refresh_token: EXAMPLE_REALISTIC_REFRESH_TOKEN
+```
+
+database:
+host: database.example.test
+port: 5432
+username: example
+password: EXAMPLE_REALISTIC_DATABASE_PASSWORD
+
+cache:
+host: cache.example.test
+password: EXAMPLE_REALISTIC_CACHE_PASSWORD
+
+webhooks:
+signing_secret: EXAMPLE_REALISTIC_WEBHOOK_SECRET
+
+---
+
+## 72. Exemple de fichier .env réaliste
+
+APP_ENV=test
+
+APP_NAME=example-service
+
+API_KEY=EXAMPLE_ENV_API_KEY_123456
+API_SECRET=EXAMPLE_ENV_API_SECRET_123456
+
+CLIENT_ID=EXAMPLE_ENV_CLIENT_ID
+CLIENT_SECRET=EXAMPLE_ENV_CLIENT_SECRET
+
+ACCESS_TOKEN=EXAMPLE_ENV_ACCESS_TOKEN
+REFRESH_TOKEN=EXAMPLE_ENV_REFRESH_TOKEN
+
+DATABASE_HOST=database.example.test
+DATABASE_USER=example
+DATABASE_PASSWORD=EXAMPLE_ENV_DATABASE_PASSWORD
+
+REDIS_HOST=cache.example.test
+REDIS_PASSWORD=EXAMPLE_ENV_REDIS_PASSWORD
+
+WEBHOOK_SECRET=EXAMPLE_ENV_WEBHOOK_SECRET
+
+---
+
+## 73. Mélange final destiné à un scanner
+
+config.apiKey = "EXAMPLE_FINAL_API_KEY_123456";
+config.secret = "EXAMPLE_FINAL_SECRET_123456";
+config.token = "EXAMPLE_FINAL_TOKEN_123456";
+
+Authorization: Bearer EXAMPLE_FINAL_BEARER_TOKEN
+
+X-API-Key: EXAMPLE_FINAL_HEADER_API_KEY
+
+database.password=EXAMPLE_FINAL_DATABASE_PASSWORD
+
+https://example:EXAMPLE_FINAL_URL_PASSWORD@example.test
+
+webhook_secret: EXAMPLE_FINAL_WEBHOOK_SECRET
+
+client_secret: EXAMPLE_FINAL_CLIENT_SECRET
+
+access_token: EXAMPLE_FINAL_ACCESS_TOKEN
+
+random_value: 7fA9cD3eB82kLm91QxP47z
+
+uuid: 550e8400-e29b-41d4-a716-446655440000
+
+placeholder: YOUR_API_KEY_HERE
+
+dummy: EXAMPLE_DUMMY_VALUE
+
+TODO: replace EXAMPLE_TODO_SECRET
+
+---
+
+## 74. Objectif du corpus
+
+Ce corpus doit permettre d'évaluer notamment :
+
+* la détection par **nom de variable** ;
+* la détection par **regex** ;
+* la détection par **entropie** ;
+* la détection des secrets dans plusieurs **formats de fichiers** ;
+* la détection des secrets dans du **code source** ;
+* la détection dans les **fichiers de configuration** ;
+* la détection dans les **logs** ;
+* la détection dans les **headers HTTP** ;
+* la détection dans les **URLs** ;
+* la détection des secrets **Base64** ;
+* la détection des secrets **hexadécimaux** ;
+* la détection de credentials **multilignes** ;
+* la détection de valeurs **concaténées ou interpolées** ;
+* la gestion des **majuscules/minuscules** ;
+* la gestion des différents **séparateurs** ;
+* la distinction entre **vrais positifs** et **faux positifs** ;
+* la reconnaissance des **placeholders** et valeurs de documentation.
+
+Toutes les valeurs `EXAMPLE_*`, `YOUR_*`, `CHANGE_ME`, `DUMMY`, `FAKE` et valeurs similaires de ce corpus sont volontairement synthétiques.

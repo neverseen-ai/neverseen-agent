@@ -36,6 +36,15 @@ type Pattern struct {
 	// the whole match.
 	Group int
 
+	// Verify is a rule about how this pattern's span was cut, where the category's
+	// Verify is a rule about the value. The two generic-secret expressions share a
+	// category and disagree here: a quoted value ends at its quote, so a bracket
+	// inside it is the password's own, while a bare span ends where the text
+	// resumes and an unclosed opener says it was cut out of an expression. Read on
+	// the category alone, `password="Ab(12cd"` was refused as code and went out in
+	// clear. Nil for almost every pattern.
+	Verify func(string) bool
+
 	// Refine shortens a span the regex had to over-match, returning the real end
 	// offset. Only the IBAN needs it: tolerating the conventional grouping by
 	// four makes the expression greedy enough to swallow the following word, and

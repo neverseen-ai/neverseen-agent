@@ -34,6 +34,48 @@ func TestMaskAndUnmaskRoundTrip(t *testing.T) {
 	}
 }
 
+// The second tier of vendor prefixes, through the whole round trip rather than
+// through Scan alone. The corpus says the span is right and the notation table
+// says the category is; neither says the token renders under the vendor's own
+// prefix, or that what went out comes back.
+//
+// Cerebras is here for a second reason. "csk-<48>" contains openAILegacyRe's
+// "sk-<20,>", which claimed it from offset 1 and rendered it as
+// "c[OPENAI_KEY_1]" — a fragment masked, the first character in clear. What
+// stops that is the tier scoring 98, equal to OpenAI's, so arbitration falls
+// through to the longer span. A row that only checked "something was masked"
+// would have passed over it.
+func TestVendorPrefixTokensRoundTrip(t *testing.T) {
+	d := New(Config{})
+
+	for _, tc := range []struct {
+		value string
+		token string
+	}{
+		{"figd_-DPHCUNWF0ZOR7FW12V626DN16I5MC9QL8KP8Q", "[FIGMA_TOKEN_1]"},
+		{"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", "[NOTION_TOKEN_1]"},
+		{"sbp_a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0", "[SUPABASE_TOKEN_1]"},
+		{"csk-i5skoewqkur3jq64nq6puxcmlzkruykqh7dx297gq8zxqyxj", "[CEREBRAS_TOKEN_1]"},
+	} {
+		t.Run(tc.token, func(t *testing.T) {
+			original := "Voici la clé " + tc.value + " à révoquer."
+
+			masked, minted, replaced := d.MaskOnce(original)
+			if replaced != 1 {
+				t.Fatalf("replaced %d values, want 1: %q", replaced, masked)
+			}
+			// The whole token, under the vendor's prefix: a span short by one
+			// character reads as a mask that worked and leaks the rest.
+			if want := "Voici la clé " + tc.token + " à révoquer."; masked != want {
+				t.Errorf("masked to %q, want %q", masked, want)
+			}
+			if got := Unmask(masked, minted); got != original {
+				t.Errorf("the round trip did not return the original:\n got %q\nwant %q", got, original)
+			}
+		})
+	}
+}
+
 // One value, one token — for as long as the session lives. Without it a model is
 // told about three different people where the text named one, and the vault
 // fills up with duplicates of the same person.
