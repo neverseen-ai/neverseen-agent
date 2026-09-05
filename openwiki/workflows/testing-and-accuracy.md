@@ -97,7 +97,7 @@ NIR is only reachable with `fr` on.
 | `TestEveryLocaleHasACorpusSuite`, `TestEveryLocaleIsDocumented` | a locale with no corpus suite, or no block in `.env.example` |
 | `TestSampleExercisesEveryCategory` + the four notation tests | a catalogue change that leaves `pkg/pii/sample.go` behind |
 | `TestDocumentedEnvironmentMatchesTheCode` | a variable documented and unread, **or** read and undocumented |
-| `TestUsageNamesEverySetting` | usage text drifting from the code (by a hand-kept list — see [configuration](../operations/configuration.md)) |
+| `TestUsageNamesEverySetting` | usage text drifting from the code — by a hand-kept list, so a new setting goes into the test too |
 | `TestHeartbeatCarriesNoContent` | a new string field on the supervision contract |
 | `TestHeartbeatWireFormat` | the shared golden not regenerated with a contract change |
 | `TestReservedRoutesCannotBeProviders` | a provider taking a route the agent answers itself (`/healthz`, `/test`, `/policy`, `/mask`, `/unmask`) |

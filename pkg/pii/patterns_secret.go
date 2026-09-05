@@ -561,8 +561,9 @@ const authHeaderTail = `['"]?[ \t]*[=:][ \t]*['"]?[ \t]*` +
 //
 // TODO: four real credentials are missing because their only literal is
 // interior, which no prefix scan can use: Terraform Cloud
-// ("<14>.atlasv1.<60>"), MaxMind ("<6>_<29>_mmk"), a Tableau PAT and a
-// Facebook access token. Each costs 0.6-1.7ms alone, twenty times the rest of
+// ("<14>.atlasv1.<60>"), MaxMind ("<6>_<29>_mmk"), a Tableau PAT and the numeric
+// Facebook access token ("<15-16 digits>|<27-40>" -- the EAA... page token has a
+// prefix and is in the table). Each costs 0.6-1.7ms alone, twenty times the rest of
 // this tier put together. The upgrade is a required-literal prefilter --
 // strings.Contains before the regex -- which is worth building for a class,
 // not for four.

@@ -55,9 +55,9 @@ token is the default. Credentials are tokenized either way.
 --locales replaces the selection, so name every country you want. With none, only the
 locale-independent identifiers and the credentials are found.
 
-Changes last until the agent restarts, deliberately: this is for the exchange you
-are looking at, not a policy. What should hold across restarts belongs in
-~/.cloakfleet/.env.
+Changes survive a restart: the agent stores what it was last told in
+~/.cloakfleet/policy.json, and with that file present the environment's own
+settings are not read. Delete the file to hand the agent back to its environment.
 `
 
 // runMask lists or changes what is masked.

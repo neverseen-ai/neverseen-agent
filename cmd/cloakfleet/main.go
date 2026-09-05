@@ -75,6 +75,7 @@ Configuration:
                                none, or a comma-separated list. Unset means none.
   %-28s values never to mask, separated by commas.
   %-28s what a masked value looks like: token or fake.
+  %-28s weakest named secret to mask: weak, medium or strong.
   %-28s address to listen on (default %s).
   %-28s upstream overrides, as code=url pairs.
   %-28s 32-byte hex key for the session mapping.
@@ -180,6 +181,7 @@ func printUsage(w io.Writer) {
 		detector.EnvLocale, strings.Join(pii.LocaleCodes(), ", "),
 		detector.EnvAllowList,
 		detector.EnvSubstitution,
+		detector.EnvSecretLevel,
 		proxy.EnvListen, proxy.DefaultListen,
 		proxy.EnvProviders,
 		proxy.EnvEncryptionKey,

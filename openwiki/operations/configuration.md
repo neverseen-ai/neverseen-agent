@@ -25,11 +25,10 @@ Every one of these is documented in **`.env.example`**, and
 `TestDocumentedEnvironmentMatchesTheCode` (`cmd/cloakfleet/env_test.go:22`) fails in **both**
 directions: a variable the code reads and the file does not mention fails the build, and so
 does one the file documents and no code reads. `TestUsageNamesEverySetting` holds the usage
-text to a weaker standard — `printUsage` builds it from the constants and the locale
-registry, so a name cannot go stale under a rename, but the test lists the constants by
-hand and a constant it does not list is one the usage may omit. `CLOAKFLEET_SECRET_LEVEL`
-is that case today: read by the code, documented in `.env.example`, absent from both the
-usage text and the test's list (`cmd/cloakfleet/env_test.go:72-76`).
+text to the same standard — `printUsage` builds it from the constants and the locale
+registry, so a name cannot go stale under a rename. The test lists the constants by hand,
+so a new setting is added to both or the usage silently omits it: `CLOAKFLEET_SECRET_LEVEL`
+was missing from both for a while, and nothing failed.
 
 **`CLOAKFLEET_PII_LOCALE` unset means none, deliberately.** Scanning one country's data with
 another country's patterns is worse than scanning none of it, and an operator who never set

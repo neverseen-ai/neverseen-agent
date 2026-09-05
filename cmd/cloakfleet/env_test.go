@@ -71,6 +71,7 @@ func TestUsageNamesEverySetting(t *testing.T) {
 
 	for _, name := range []string{
 		detector.EnvLocale, detector.EnvAllowList, detector.EnvSubstitution,
+		detector.EnvSecretLevel,
 		proxy.EnvListen, proxy.EnvProviders, proxy.EnvEncryptionKey,
 		proxy.EnvBackendURL, proxy.EnvEnrolmentToken, proxy.EnvIdentityFile,
 	} {
