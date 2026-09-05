@@ -55,6 +55,17 @@ people.
 The count includes repeats, like the log line and the recorder: a value masked three
 times is three values that did not leave the machine.
 
+The reply is read positionally, and a reply whose `texts` is not the length that was sent
+blocks the send (`src/agent.ts`): a short list would put one field's masked text into
+another field. A mask ask carries at most `MAX_TEXTS` (64) fields (`src/bridge.ts`), the
+other thing the page is not trusted about.
+
+The route feeds the recorder like a proxied request — `Request(session, "extension", "")`
+and `Masked(session, counts)` — so browser traffic is counted in the fleet view under the
+`extension` client, which is why the options page probes `/unmask` and not this route.
+And it fails closed on the vault write: if the mapping cannot be stored the answer is a 500
+rather than replacements nothing can ever expand, the request path's own rule.
+
 ### `POST /unmask`
 
 `{"text": "…", "tail": "…", "final": false}` → `{"expanded": "…", "tail": "…"}`, in the
@@ -82,6 +93,10 @@ that something went wrong.
 
 ### What guards them
 
+- **A body of at most 1 MiB** (`extensionMaxBytes`), answered 413 above that and 400 when
+  it is not the JSON object the route takes (`decodeExtensionBody`,
+  `TestExtensionRoutesRefuseABodyTheyCannotRead`). Far above `/test`'s 32 kB, because a
+  chat message can carry a pasted file.
 - **The shared auth helper** (`Server.authorised`), extracted from `PUT /policy` and used
   by all three, comparing with `subtle.ConstantTimeCompare`. `==` on a secret returns at
   the first differing byte, and this socket is reachable by every process on the
@@ -114,7 +129,7 @@ Three worlds, because no two of them can reach each other:
 | --- | --- | --- |
 | `src/interceptor.ts` → `src/intercept.ts` | page (`MAIN`) | replaces `fetch`; guards XHR, `sendBeacon`, `WebSocket` |
 | `src/relay.ts` | content (`ISOLATED`) | the trust boundary: names the session, writes the banner's words, relays the rest |
-| `src/background.ts` → `src/agent.ts` | service worker | the only place that holds the key and talks to the agent |
+| `src/background.ts` → `src/agent.ts` | service worker | holds the key and talks to the agent on the page's behalf |
 
 The page's world has no `chrome.runtime`. The isolated world has no reach into the page's
 globals. And the page's own Content-Security-Policy governs what a content script may
@@ -122,8 +137,14 @@ connect to — claude.ai's does not list `127.0.0.1` — while extension messagi
 to neither. So the ask crosses twice, and the fetch happens where the page has no reach
 at all.
 
-**The key never leaves the service worker.** A key readable from the page is a key any
-script the site loads can read, and it opens `/unmask`.
+**The key never reaches the page's world, or the content script.** A key readable from the
+page is a key any script the site loads can read, and it opens `/unmask`. Two surfaces hold
+it, both extension code: the service worker, and the options page (`src/options.ts`), which
+talks to the agent directly rather than through the worker — it is where the key is typed,
+and a hop that could only fail buys nothing there. Its probe names the session
+`cloakfleet:probe`, outside the `claude:` namespace `namesAWebSession` enforces; that check
+lives in the worker (`background.ts`), so this is the one path it does not cover — a
+constant of this extension's own, never a value a page chose.
 
 ### The trust boundary, and what it is not
 
@@ -186,7 +207,13 @@ nothing.
 
 ### Restoring a stream
 
-`src/restore.ts` is the streaming rehydrator's problem from the browser side.
+`src/restore.ts` is the streaming rehydrator's problem from the browser side. Only a
+`text/event-stream` answer is wrapped; anything else passes straight through. And it is
+wrapped **whether or not this turn masked anything** (`restore`, `src/intercept.ts`): the
+conversation's mapping outlives the turn that minted it, so an answer echoing a value from
+three messages ago still arrives with a replacement in it. On the way out, a retry is a
+send too — `isSend` matches `/retry_completion` beside `/completion` (`src/site/claude.ts`),
+because an exemption for it would be a path that reaches the model in clear.
 
 - **Complete events only.** A network chunk boundary and an event boundary are unrelated,
   and half an event is not something to parse or to hand the page.
@@ -215,6 +242,13 @@ Outbound and inbound fail **opposite ways, deliberately**:
   Failing closed here would throw away an answer that has already been paid for and
   already arrived, to prevent nothing — unexpanded text is the caller's own replacement
   showing as `[EMAIL_1]`, which is unreadable rather than unsafe.
+- **Neither**: the one outcome the design must not have is a send left neither masked nor
+  refused. The relay can vanish between the post and the answer — an extension update
+  leaves an open tab whose content scripts have lost their runtime — so the page's ask
+  times out after thirty seconds (`ASK_TIMEOUT_MS`, `src/interceptor.ts`) and a
+  `chrome.runtime.sendMessage` that throws in the relay is answered as `unreachable`
+  (`src/relay.ts`); both block the send with a banner rather than leave the site's fetch
+  pending for ever.
 
 Every block also raises a banner naming the command that fixes it
 (`guidance.blockedMessage`). A rejected fetch alone reads to the site as a network
@@ -273,7 +307,7 @@ network), and native messaging (structural auth, for fleet deployment).
 | Suite | What it can prove |
 | --- | --- |
 | `internal/proxy/extension_test.go` | the routes: auth, loopback, the split token, the flush, no audit capture |
-| `internal/proxy/contract_test.go` | the real agent answers the recorded responses |
+| `internal/proxy/contract_test.go` | the real agent answers the recorded responses; `TestContractCoversWhatMatters` holds the fixture to still exercising `/mask`, `/unmask`, a carried tail and a final flush |
 | `extension/test/contract.test.ts` | the client sends the recorded requests and reads those answers |
 | `extension/test/restore.test.ts` | the stream: splits, flush, JSON escaping, serialisation |
 | `extension/test/intercept.test.ts` | outbound masking, fail closed, the three refused transports |

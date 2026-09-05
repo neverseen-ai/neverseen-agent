@@ -14,8 +14,8 @@ request  →  resolve provider from first path segment
 response →  expand the masked values back (buffered or streamed)
 ```
 
-`Server.forward` (`proxy.go:172`) is that sequence end to end;
-`Server.maskRequest` (`:204`) is the outbound half, `Server.unmask` (`:301`) the inbound.
+`Server.forward` (`proxy.go:306`) is that sequence end to end;
+`Server.maskRequest` (`:352`) is the outbound half, `Server.unmask` (`:479`) the inbound.
 
 ## Provider routing
 
@@ -27,17 +27,18 @@ reaches `api.openai.com` (`provider.go:10-18`). Eight providers ship in
 Routing on an explicit segment rather than sniffing the path is what makes eight
 providers work on one port: six of them speak the same OpenAI-compatible paths, so
 `/v1/chat/completions` names no upstream at all. An unknown code is refused **by name**
-with the list of the ones that exist (`proxy.go:176-184`) — a proxy that silently picked
+with the list of the ones that exist (`proxy.go:309-316`) — a proxy that silently picked
 a provider would send one vendor's key to another vendor.
 
 `CLOAKFLEET_PROVIDERS` applies `code=url` **overrides** onto the default set rather than
 replacing it (`ParseProviders`, `provider.go:51`): a deployment pointing one provider at
 its own gateway must not silently lose the other seven.
 
-**Reserved routes.** `reservedRoutes` = `healthz`, `test` (`proxy.go:146`). A provider may
+**Reserved routes.** `reservedRoutes` = `healthz`, `test`, `policy`, `mask`, `unmask`
+(`proxy.go:201`) — every route the agent answers itself. A provider may
 not take one of those codes — `/healthz` would reach the agent while `/healthz/v1/…`
 reached the provider, a routing table nobody could reason about. `New` refuses it
-(`proxy.go:99-104`, asserted by `TestReservedRoutesCannotBeProviders`).
+(`proxy.go:156-160`, asserted by `TestReservedRoutesCannotBeProviders`).
 
 **No API keys.** Whatever credential the caller sent — a bearer token, an `x-api-key`
 header — is forwarded untouched, because the tool making the request already has it. A
@@ -53,14 +54,14 @@ request failed with "invalid escaped character". The same applies in reverse: an
 carrying a quote or a newline cannot be spliced into raw JSON.
 
 `mapJSONStrings` (`jsonbody.go:38`) decodes, maps every string value, and re-encodes;
-`mapStrings` (`:52`) walks the tree. A body that is not JSON is masked as flat text
-(`proxy.go:246-252`). Either way it is **one pass over the whole body**, so a value
+`mapStrings` (`:54`) walks the tree. A body that is not JSON is masked as flat text
+(`proxy.go:402-411`). Either way it is **one pass over the whole body**, so a value
 repeated in two fields keeps one identity. A body carrying more than one JSON document is
-an error, not a guess (`errTrailingJSON`, `jsonbody.go:257`).
+an error, not a guess (`errTrailingJSON`, `jsonbody.go:259`).
 
 **Key order is preserved, and that took an ordered representation.** An object is
-decoded into `jsonObject` (`jsonbody.go:163`) — a slice of `jsonMember`, read a
-token at a time by `decodeValue` (`:109`) — rather than into `map[string]any`, because a Go map
+decoded into `jsonObject` (`jsonbody.go:165`) — a slice of `jsonMember`, read a
+token at a time by `decodeValue` (`:111`) — rather than into `map[string]any`, because a Go map
 has no order and the body forwarded to the provider came out in Go's sorted marshal
 order instead of the caller's. Semantically the same document, and nothing depended
 on it; what made it worth fixing is that the audit console prints the body received
@@ -89,14 +90,14 @@ have lost every token count. What caught it is that `TestDeltaText` and `TestUsa
 build their input from raw JSON through the real decoder — a test constructing a map by
 hand would have gone on passing over dead code.
 
-**Fail closed.** `readBody` (`proxy.go:279`) decompresses a compressed body and returns an
+**Fail closed.** `readBody` (`proxy.go:457`) decompresses a compressed body and returns an
 error for an encoding it cannot read. Forwarding a body the agent could not inspect is the
 one failure mode a data-loss-prevention tool must never have — hence the 415
 (`TestUnreadableEncodingFailsClosed`, `TestGzippedRequestBodyIsMasked`).
 
 ## A pass keeps one identity per value
 
-`detector.Pass` (`internal/detector/mask.go:56`) carries the identity of values across one
+`detector.Pass` (`internal/detector/mask.go:17`) carries the identity of values across one
 exchange. A request is not one piece of text: a body has several fields and a conversation
 has several turns, and the same person's address must come out as the same thing in all of
 them — otherwise the model is told about three different people and the vault fills with
@@ -168,7 +169,7 @@ field this exists to protect.
 
 `internal/vault` holds one mapping per session, **masked → original** — the direction the
 response path reads it. The originals are encrypted at rest with AES-256-GCM, and the key
-may be nil, in which case one is generated for the life of the process (`vault.go:50-62`).
+may be nil, in which case one is generated for the life of the process (`vault.go:64-70`).
 There is deliberately no second, plaintext mode that only shows up in a deployment nobody
 tested.
 
@@ -180,27 +181,41 @@ known requirement (Redis, for a mapping surviving a restart) rather than a specu
 
 - The nonce is fresh per value, so two identical originals under two tokens do not produce
   identical ciphertext — which would tell anyone reading the store that they are the same
-  person (`vault.go:133`, `TestIdenticalOriginalsSealDifferently`).
-- An entry that cannot be decrypted is **dropped, not reported** (`vault.go:94`): it means
+  person (`vault.go:145-154`, `TestIdenticalOriginalsSealDifferently`).
+- An entry that cannot be decrypted is **dropped, not reported** (`vault.go:102-104`): it means
   the process restarted under a new ephemeral key, so the token is simply unknown and the
   response path leaves it alone rather than failing a request over bookkeeping.
 - `DefaultTTL` is 30 minutes (`vault.go:26`) — long enough for a conversation with a pause
   in it to keep one identity per value, short enough that a workstation left running does
   not accumulate the day's data. It is a privacy setting as much as a cache setting.
 
-**Sessions scope the mapping.** `sessionOf` (`proxy.go:375`) reads which conversation a
-request belongs to, falling back to a single name. That is right for one person at one
+**Sessions scope the mapping.** `sessionOf` (`proxy.go:659`) reads the session a request
+belongs to — `X-Session-Id`, else `X-Request-Id` — falling back to a single name. The
+*conversation* the heartbeat counts is a separate identity, `conversationOf`
+(`identifiers.go:155`): the same header, else the id Claude Code writes in
+`metadata.user_id`, else the default; it names nothing the mapping is scoped by, and it
+never leaves the recorder (see [supervision](supervision.md)). That is right for one person at one
 workstation, which is what this agent is — and it is exactly why `DefaultListen` binds the
-loopback interface only (`env.go:60-66`): the agent trusts whoever reaches it, forwards
+loopback interface only (`env.go:43-49`): the agent trusts whoever reaches it, forwards
 their credentials, and scopes the mapping by a header they control.
 
 ## Expansion on the way back
 
 Streaming and buffered responses go through the **same** expansion, so a value restored in
-one is restored in the other (`proxy.go:295-300`). They differ only in how much text the
+one is restored in the other (`proxy.go:475-478`). They differ only in how much text the
 expander can see at a time.
 
-`isTextual` (`proxy.go:350`) gates it: an image or an audio stream is passed through
+Read for three things, rewritten for one. Every textual answer is decoded — for its token
+counts (`usageFrom`) and for the tool calls the model asked for (`reportToolCalls` on the
+buffered path, `stream.onTool` on the streamed one) — but the decode-and-encode round trip
+is not byte-preserving, so the body is re-encoded only when the session has minted something
+(`len(known) > 0`, `proxy.go:551-561`; `streamRehydrator.observe` for a stream). A stream
+also reports a tool call whose arguments never formed a document through `onDegraded`
+(`proxy.go:508`), which is the heartbeat's `degraded` count. The console and the trace file
+that read these same two bodies are the operator's surface, described in
+[configuration](../operations/configuration.md).
+
+`isTextual` (`proxy.go:634`) gates it: an image or an audio stream is passed through
 untouched (`TestNonTextualResponseIsUntouched`).
 
 **Both shapes of a masked value are expanded.** A bracket token is expanded by
@@ -215,7 +230,7 @@ expand one into a live secret on its way to a caller. `TestFakeMode` asserts bot
 See [Detection engine](detection-engine.md#substitution-modes).
 
 **Expansion is one forward walk, not a replacement per entry** (`UnmaskSeen`,
-`internal/detector/mask.go:246`). One stand-in can contain another — a fake postcode inside
+`internal/detector/mask.go:226`). One stand-in can contain another — a fake postcode inside
 the fake address it belongs to — and replacing them in turn expands the shorter one inside
 text already expanded, putting a value inside a value. A session that minted only tokens
 keeps the single-regex fast path it always had (`standInsOf` is empty), so token mode is
@@ -229,7 +244,7 @@ that could be the start of a masked value and prepends it to the next piece, so 
 emits is always a whole event — occasionally a few characters shorter, with those
 characters moving to the event after it.
 
-The held-back length comes from `detector.TailLen` (`mask.go:325`), **not**
+The held-back length comes from `detector.TailLen` (`mask.go:305`), **not**
 `pii.TokenTailLen` alone: a stand-in the model echoed is split across two events exactly as
 a token is, and answering only for tokens left `fake` mode restoring nothing in a streamed
 answer while a buffered one round-tripped (`TestTailLenCoversBothShapes`).
@@ -297,7 +312,7 @@ It carries what the agent is *applying* and nothing about who is using it: no co
 addresses, no backend URL. The route is unauthenticated on the loopback interface, and
 anything richer would be a local oracle for what a person has been doing.
 
-`proxy.Query` (`status.go:61`) is the only place that asks whether the agent is there. It
+`proxy.Query` (`status.go:207`) is the only place that asks whether the agent is there. It
 returns **no error**, because "nothing is listening" is an answer to the question and not a
 failure to answer it. `Status.Masking()` is deliberately not `Answering`: an agent with no
 locale selected is up, healthy, and recognises almost nothing — the state a green light
@@ -312,8 +327,11 @@ icon both follow this rather than `Masking()`. An agent that answers without the
 read from what it did carry: a build with no policy route cannot have anything switched
 off, so `LevelFull` is a fact about that build rather than an assumption.
 
-**`PUT /policy` is the one route that changes what the agent does, and the only
-authenticated one** (`internal/proxy/policy.go`). Everything else the agent serves is a
+**`PUT /policy` is the one route that changes what the agent does, and it is
+authenticated** (`internal/proxy/policy.go`), through the one helper `Server.authorised`
+that also guards the extension's `POST /mask` and `POST /unmask` — three routes, one
+constant-time check, because a second copy is the one that drifts (see
+[browser extension](browser-extension.md)). Everything else the agent serves is a
 proxy hop carrying the caller's own credential, or a read-only description of the
 configuration — safe unauthenticated on the loopback because the worst it gives a local
 process is that description. This one switches masking off, and left open, any local
@@ -343,7 +361,7 @@ bill the same tokens twice, so the OpenAI breakdown is deliberately not read.
 A refused request is not counted, and the test page is not counted
 (`TestARefusedRequestIsNotCounted`, `TestTheTestPageIsNotCounted`). The log line per
 exchange carries **counts and category names only** — the log is the one place a masked
-value could come back into the clear by accident (`proxy.go:266-271`).
+value could come back into the clear by accident (`proxy.go:440-442`).
 
 ## Where to start on a change here
 

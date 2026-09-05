@@ -13,6 +13,9 @@ make lint          # golangci-lint (British spelling is configured here)
 make score         # per-category precision/recall against the committed floor
 make bench-accuracy
 make e2e-claude    # real CLI, real provider (opt-in, spends quota)
+make extension     # typecheck, test and build the browser extension
+make extension-e2e # the extension through a real Chrome against a real agent
+make contract-update  # re-record extension/testdata/contract.json — explain the delta
 ```
 
 CI (`.github/workflows/ci.yml`) runs, on the **real default branch** — Agent Veil's workflow
@@ -23,7 +26,12 @@ was keyed to `main` while the default branch was `master`, so it never ran once:
 3. the race suite with coverage, gated at **80%**,
 4. `golangci-lint`,
 5. `goreleaser check` plus a snapshot build,
-6. a portability check on `install.sh`.
+6. a portability check on `install.sh`,
+7. the extension's own typecheck, tests and build,
+8. the **contract** job: the agent's side of the recorded exchanges, the extension's side,
+   and `git diff --exit-code` on `extension/testdata/contract.json` — the one job that fails
+   when neither side is broken on its own,
+9. the extension end to end, in a real Chrome against a real agent.
 
 ## The corpus, not unit tests
 
@@ -83,16 +91,16 @@ NIR is only reachable with `fr` on.
 
 | Test | What it refuses to let you forget |
 | --- | --- |
-| `validateCatalogue` (init, `pkg/pii/category.go:210`) | a pattern emitting a category with no registry entry — panics at package initialisation rather than masking a value under a nameless token |
+| `validateCatalogue` (init, `pkg/pii/category.go:526`) | a pattern emitting a category with no registry entry — panics at package initialisation rather than masking a value under a nameless token |
 | `TestCategoryPrefixesAreUnique` | two categories that would produce the same token prefix |
 | `TestLocaleRegistryIsComplete`, `TestLocalesAreSortedByPriority`, `TestAllPatternsCoversEveryLocale` | a locale entry that is half-added |
 | `TestEveryLocaleHasACorpusSuite`, `TestEveryLocaleIsDocumented` | a locale with no corpus suite, or no block in `.env.example` |
 | `TestSampleExercisesEveryCategory` + the four notation tests | a catalogue change that leaves `pkg/pii/sample.go` behind |
 | `TestDocumentedEnvironmentMatchesTheCode` | a variable documented and unread, **or** read and undocumented |
-| `TestUsageNamesEverySetting`, `TestUsageNamesTheAuditCommand` | usage text drifting from the code |
+| `TestUsageNamesEverySetting` | usage text drifting from the code (by a hand-kept list — see [configuration](../operations/configuration.md)) |
 | `TestHeartbeatCarriesNoContent` | a new string field on the supervision contract |
 | `TestHeartbeatWireFormat` | the shared golden not regenerated with a contract change |
-| `TestReservedRoutesCannotBeProviders` | a provider taking `/healthz` or `/test` |
+| `TestReservedRoutesCannotBeProviders` | a provider taking a route the agent answers itself (`/healthz`, `/test`, `/policy`, `/mask`, `/unmask`) |
 | `TestPipelineParityAcrossProviders` | one provider's path behaving differently from another's |
 
 ## The end-to-end test

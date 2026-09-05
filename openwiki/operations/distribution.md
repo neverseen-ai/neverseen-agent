@@ -99,8 +99,11 @@ the platform event loop, and on macOS that loop must be the main thread.
 ### What is testable is kept away from the toolkit
 
 Everything in `internal/tray` that decides **what** to show is separate from the toolkit.
-`render` (`tray.go:93`) and `watch` (`:152`) take no part of `fyne.io/systray` and are covered
-by tests; the adapter that touches the toolkit (`systray.go`) has three methods and no logic.
+`render` (`tray.go:190`) and `watch` (`:394`) take no part of `fyne.io/systray` and are covered
+by tests; the adapter that touches the toolkit (`systray.go`) builds the menu from what
+`render` decided and holds no decision of its own — it has grown to a couple of dozen small
+functions as the menu gained switches, modes, levels and locales, and the pool sizing for the
+category rows is the one piece of arithmetic in it.
 A menu bar cannot be asserted on in CI, so what can be is kept where a test reaches it — the
 alternative is a feature whose behaviour has only ever run on somebody's screen.
 
@@ -149,7 +152,7 @@ alternative is a feature whose behaviour has only ever run on somebody's screen.
 
 `go run ./internal/tray/icons/generate.go`. Committed for the reason
 `testdata/heartbeats.json` is: a generated asset a reviewer can look at beats a build step
-nobody can, and the alternative is an SVG rasteriser in `go.mod` for two 32×32 pictures. They
+nobody can, and the alternative is an SVG rasteriser in `go.mod` for three 32×32 pictures. They
 are black plus alpha because macOS is handed them as template images and recolours them for a
 light or a dark bar. The state is carried by the mark's own vocabulary — the right-hand square
 outlined while that value is being replaced, filled when it is not — rather than by a badge
@@ -167,9 +170,11 @@ tables:
 | `CLI` | the command everybody runs against that variable; empty means "no single obvious one", which is not the same as "there is no CLI" |
 | `Caveat` | what somebody has to know before trusting the line, where the tool does not simply honour the variable |
 
-`PointAt` (`:101`) builds the line and `CaveatFor` (`:87`) the warning, so `cloakfleet env`,
-the audit console and the menu bar hand over **the same thing** — two spellings of that line
-would be two chances to be wrong about how somebody's traffic gets masked.
+`PointAt` (`:101`) builds the line the banner and the menu bar hand over, `CaveatFor` (`:87`)
+the warning; `ShellEnv` writes its `export` from the same table (`:142`) rather than through
+`PointAt`, because its line is for a login file and `PointAt`'s is for one shell. What all
+three share is the table and the caveat — two spellings of the variable would be two chances
+to be wrong about how somebody's traffic gets masked.
 
 **Only two providers are in it**, and the reason is the same one that keeps the other six as
 comments in `cloakfleet env`: a guessed variable name is an instruction that does nothing, and

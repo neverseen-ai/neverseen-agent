@@ -5,6 +5,10 @@ Supervision is **optional, and the agent is a complete product without it**. Set
 how many requests it proxied, how many values it masked in which categories, how many
 tokens went to which model, and what configuration it is actually applying.
 
+For the reader of the fleet view rather than of the code — what each figure answers
+and what the heartbeat deliberately does not say — see
+[`docs/telemetry-for-ai-governance.md`](../../docs/telemetry-for-ai-governance.md).
+
 ## Two hard rules
 
 **`pkg/telemetry` is public and the backend imports it — never the reverse.** The paid
@@ -15,7 +19,7 @@ change touches the shared contract; never add it as a dependency.
 **Nothing in `internal/telemetry` may reach the request path.** The reporter runs on its own
 goroutine, returns no errors to anybody, and an agent with no backend has **no reporter at
 all** rather than one that quietly does nothing (`reporterFromEnv`,
-`internal/proxy/env.go:155`, `TestNoBackendMeansNoReporter`). A supervision backend that
+`internal/proxy/agent.go:288`, `TestNoBackendMeansNoReporter`). A supervision backend that
 cannot be reached must never stop the masking, or the security control is taken down by the
 tool that watches it.
 
@@ -23,7 +27,7 @@ tool that watches it.
 
 `SchemaVersion` is 2. A `HeartbeatBatch` carries the agent id, `SentAt`, the live `State`,
 and a slice of `Bucket` — each bucket a `Window` (start, end) plus `Counters`.
-`Windows()` (`contract.go:101`) expands a batch into the single-window `Heartbeat` shape.
+`Windows()` (`contract.go:102`) expands a batch into the single-window `Heartbeat` shape.
 
 `Counters` holds `Requests`, `Masked map[string]int` (per category name), `Models
 map[string]TokenUsage`, `Restarts` and `Dropped` — and, since the heartbeat started
@@ -39,12 +43,12 @@ time one did.
 
 ### Nothing in a heartbeat is content
 
-`TestHeartbeatCarriesNoContent` (`contract_test.go:36`) **walks the type** and fails on any
+`TestHeartbeatCarriesNoContent` (`contract_test.go:46`) **walks the type** and fails on any
 string field not on an explicit allow list, each entry carrying its reason. A new string
 field fails the build until it is listed. Do not add one to make a dashboard nicer.
 
 **`State.Addresses` is the one field in the contract that is personal data**, and it is the
-exception that shows what the rule means (`contract.go:197`). Everything else is a count, a
+exception that shows what the rule means (`contract.go:198`). Everything else is a count, a
 category name or a build string; an IP address identifies a machine and through it a person.
 It is there because the fleet view's whole purpose collapses without it — "agt_4742be… is
 silent" sends somebody to a database, "the laptop at 10.4.2.87 is silent" sends them to a
@@ -94,7 +98,8 @@ requests, input tokens (cache included), output tokens, tool calls, values maske
 into `Histogram`s with fixed power-of-two edges, and the backend reads a median or a p95
 from those. Fixed edges rather than a map keyed by a range label, so the contract gains no
 string. Sessions are swept on `Take` and `Snapshot`, the two moments the recorder is read
-with a clock; `Recorder.clock` is injectable for the same reason `Config.Now` is.
+with a clock; the clock is injectable (`WithClock`, which the replay calls) for the same
+reason `Config.Now` is.
 
 ### Tools
 
@@ -123,7 +128,10 @@ Anthropic's shape only, the gap `jsonFragment` already records.
 
 ### The agent's own exposure, and the health of the control
 
-`State` gained the four facts about the agent itself that the rest of it cannot say:
+`State` carries what the detector is applying — `Masking`, `SwitchedOff`, `SecretLevel`,
+filled by `detectorState` at every heartbeat (`internal/proxy/telemetry.go`) because they
+change while the process runs — and five facts about the agent itself that the rest of it
+cannot say:
 `Console` (`-a`, values printed in clear — under the installer's service, a file),
 `Tracing` (`-v`, bodies on disk), `Exposed` (listening beyond loopback, where `/test` is a
 masking oracle), `Rerouted` (provider codes whose route does not go to the vendor's own
@@ -154,8 +162,9 @@ A trace holds almost everything a heartbeat is made of, one exchange per file, a
 the conversation from `metadata.user_id`, the categories by **masking the IN body again
 with today's detector** (the trace holds a count; the replay answers what the current
 catalogue makes of the traffic), the model and tokens from the header the tracer wrote,
-the tool calls from the answer as it arrived. Windows are aligned on the interval and
-dated by the file name. The mapping a tool call's `Restored` is decided against is **the
+the tool calls from the answer as it arrived. Windows are aligned on the interval
+(`ReplayInterval`, the reporter's own) and dated by the file name; a window in which
+nothing was requested and no session closed is dropped rather than filed empty. The mapping a tool call's `Restored` is decided against is **the
 trace's own, recovered from its two bodies** (`recoverMapping`): token indices are a
 counter on the detector, so a replay numbers the same address `[EMAIL_2]` where the trace
 said `[EMAIL_1]`, and an answer carries the trace's number. Token mode only; a `TODO` names
@@ -172,7 +181,9 @@ so a replay never reports them: the client's User-Agent and how the provider ans
 
 ### The golden must exercise the new field
 
-`pkg/telemetry/testdata/heartbeats.json` is the shared golden, regenerated with
+`pkg/telemetry/testdata/heartbeats.json` is the shared golden — exported as
+`ExampleHeartbeatsJSON` through `//go:embed` (`pkg/telemetry/example.go`), which is what
+`TestAFullBatchFitsTheBackendsBodyBound` and the backend read — regenerated with
 `go test ./pkg/telemetry/ -update-golden` and asserted by `TestHeartbeatWireFormat`. Adding
 a field to the contract means updating it **in the same commit**, and the example must
 *exercise* the field: `Addresses` is `omitempty`, so an example that left it out would be a
@@ -182,10 +193,10 @@ a real machine.
 
 ### Enrolment and signing
 
-`EnrolRequest` / `EnrolResponse` (`contract.go:267`): the operator's token is presented once
+`EnrolRequest` / `EnrolResponse` (`contract.go:495`): the operator's token is presented once
 and traded for a per-agent id and key, the way Wazuh's enrolment works, so one workstation
 can be revoked without touching the others. Requests carry `X-Cloakfleet-Agent` and
-`X-Cloakfleet-Signature`; `Sign` / `VerifySignature` (`contract.go:319`) are the HMAC pair,
+`X-Cloakfleet-Signature`; `Sign` / `VerifySignature` (`contract.go:547`) are the HMAC pair,
 shared by both repositories so they cannot disagree.
 
 The issued identity is stored by `internal/telemetry/identity.go` at
@@ -195,8 +206,11 @@ half-used (`TestIncompleteIdentityIsRefused`); a missing one is not an error.
 
 ## The recorder (`internal/telemetry/recorder.go`)
 
-`Recorder` accumulates the current window: `Request()`, `Masked(counts)`, `Usage(model,
-usage)`, `Drop(n)`. `Take(now)` closes the window and starts a new one; `Snapshot(now)`
+`Recorder` accumulates the current window. The request path feeds it per session:
+`Request(session, client, provider)`, `Masked(session, counts)`, `Usage(session, model,
+usage)`, `Tool(session, call)`; the control's own health arrives through `Refused()`,
+`Upstream(status)` — classed as ok, rate-limited (429), rejected (4xx), failed (5xx) or
+unreachable (0) — `Policy(applied)` and `Degraded()`; the buffer reports `Drop(n)`. `Take(now)` closes the window and starts a new one; `Snapshot(now)`
 reads it without closing, and returns a **change count** — which is what makes an idle
 workstation stop rewriting the same bytes every thirty seconds.
 
@@ -222,9 +236,12 @@ restarted, or whether the policy changed halfway through.
 **On disk**, because the buffer is otherwise only as durable as the process. A workstation
 rebooted, suspended or updated mid-outage lost every queued bucket *and* the dropped counter
 that recorded the loss, which is the one outcome that counter exists to prevent. The file is
-written by **rename, not in place** (`writeFile`, `buffer.go:287`): a torn file is
+written by **rename, not in place** (`writeFile`, `buffer.go:297`): a torn file is
 unreadable at the next start, which loses exactly what the persistence was added to keep
-(`TestATornBufferFileIsRefusedNotGuessed`).
+(`TestATornBufferFileIsRefusedNotGuessed`). And a queue or live file that cannot be read
+or parsed is **counted** into `dropped` (`loadBuffer`,
+`TestAnUnreadableQueueCountsItsLoss`), for the reason two paragraphs down: a gap nobody
+counted looks like a quiet period.
 
 **Two bounds, because the interval is configurable**: seven days of age (`maxWindowAge`) and
 2016 buckets (`maxBufferedBuckets`). An agent set to report every ten seconds reaches the
@@ -239,12 +256,12 @@ an auditor needs (`TestBufferBoundsAreEnforcedAndCounted`).
 be lost by exactly the crash the file exists to survive
 (`TestTheDroppedCountSurvivesARestart`). It keeps the file alive on its own: an empty queue
 that discarded the count would report the gap as a quiet period. And **one unusable bucket
-costs one bucket** — `keepUsable` (`buffer.go:158`) steps over it and counts it, rather than
+costs one bucket** — `keepUsable` (`buffer.go:168`) steps over it and counts it, rather than
 refusing the file and throwing away every good bucket beside it
 (`TestAnUnusableBucketIsSteppedOverAndCounted`).
 
 **Two files, and that is the reason.** The queue is rewritten only when a bucket is closed or
-delivered; the bucket in progress lives beside it under `livePathFor(path)` (`buffer.go:150`)
+delivered; the bucket in progress lives beside it under `livePathFor(path)` (`buffer.go:160`)
 and is the one rewritten often. In one file, a snapshot every thirty seconds re-serialised
 the whole backlog — during a long outage on a busy workstation, a megabyte of JSON onto the
 disk twice a minute for as long as the outage lasted.
@@ -302,11 +319,11 @@ the agent from stopping (`TestTheLastWindowIsFiledBeforeTheCommandReturns`,
 
 ## What `State` reports, and why it is read from the running server
 
-`Server.State()` (`internal/proxy/env.go:187`) reads the **running** server rather than the
+`Server.State()` (`internal/proxy/telemetry.go:26`) reads the **running** server rather than the
 configuration it was built with, because the question a security officer is asking is not
 "what was it told to do" but "what is it doing" — an agent running with no locale selected
 masks almost nothing while looking perfectly healthy. `proxy.Version` is a package variable
-stamped by the command at start-up (`env.go:207`), because a dashboard showing "dev" for
+stamped by the command at start-up (`agent.go:28`, `cmd/cloakfleet/main.go:243`), because a dashboard showing "dev" for
 every workstation is a fleet nobody can audit.
 
 ## Where to start on a change here

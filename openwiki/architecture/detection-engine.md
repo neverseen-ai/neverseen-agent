@@ -10,13 +10,15 @@ that runs the catalogue over text. The catalogue knows nothing about the engine.
 the selected locales' pattern sets, in registry order
   → the locale-independent identifiers
   → the credentials
-→ every regex hit that is not allow-listed, clears its checksum,
-  and reaches minConfidence          (Detector.candidates)
+→ every regex hit that is not allow-listed, clears its Verify,
+  reaches minConfidence and the secret level, is not refused by
+  where it sits, and — in text that reads as code — is not a
+  category source code satisfies      (Detector.candidates)
 → overlap resolution keeps one match per stretch of text   (resolveOverlaps)
 → matches returned in reading order                        (Detector.Scan)
 ```
 
-`Detector.Scan` (`internal/detector/detector.go:131`) reports the **resolved** set, not
+`Detector.Scan` (`internal/detector/detector.go:150`) reports the **resolved** set, not
 every regex hit: a raw list counts a postal code and the address containing it as two
 findings, which would tell an auditor that two values leave the machine where one does.
 
@@ -26,7 +28,7 @@ A `Category` is the string that appears in a token (`[EMAIL_1]`), in the corpus,
 per-category counters the agent reports (`pkg/pii/category.go:24`). Three groups:
 
 - **Locale-independent identifiers** (`category.go:32`) — `EMAIL`, `CREDIT_CARD`, `IBAN`,
-  `IP_ADDRESS`, `MONGO_ID`, `DOB`. These stay on whatever locale a deployment selects,
+  `IP_ADDRESS`, `IPV6_ADDRESS`, `MONGO_ID`, `DOB`. These stay on whatever locale a deployment selects,
   because disabling a country must never disable email detection. The IBAN belongs here
   rather than to a European locale: one expression and one checksum cover every issuing
   country, and a French deployment banking in Germany still needs the German account
@@ -36,19 +38,19 @@ per-category counters the agent reports (`pkg/pii/category.go:24`). Three groups
   contribute their own pattern for under one category: `PHONE`, `ADDRESS`, `POSTAL_CODE`,
   `LICENSE_PLATE` — a postcode is a postcode whether it is five digits and a commune, an
   alphanumeric outward code, or a state and a ZIP.
-- **Credentials** (`category.go:79`) — 21 categories: keys for OpenAI, Anthropic, Google,
-  AWS (access and secret), GitHub, GitLab, Slack, Stripe, SendGrid, Twilio, npm, PyPI,
-  Docker, Hugging Face, Replicate, plus `SECRET_PEM_KEY`, `SECRET_JWT`,
+- **Credentials** — 23 first-tier categories: keys for OpenAI, Anthropic, Google, Groq,
+  xAI, AWS (access and secret), GitHub, GitLab, Slack, Stripe, SendGrid, Twilio, npm,
+  PyPI, Docker, Hugging Face, Replicate, plus `SECRET_PEM_KEY`, `SECRET_JWT`,
   `SECRET_CONN_STR`, `SECRET_GENERIC`, `SECRET_HEX_KEY`.
 
-`CatCustom` (`category.go:75`) carries what a deployment declares sensitive itself. It is
+`CatCustom` (`category.go:76`) carries what a deployment declares sensitive itself. It is
 the one category with no regex in the catalogue — its patterns are built from
 configuration.
 
 ### `CategoryInfo` — one entry is the whole registration
 
-`categoryRegistry` (`category.go:136`) maps each category to four facts
-(`CategoryInfo`, `:105`):
+`categoryRegistry` (`category.go:288`) maps each category to the facts that register it
+(`CategoryInfo`, `:223`):
 
 | Field | What it decides |
 | --- | --- |
@@ -56,13 +58,14 @@ configuration.
 | `Score` | confidence 1–100; orders candidates competing for the same span and gates against the reporting threshold. **Not a probability**, and no two categories' scores need to be comparable in any other sense |
 | `Verify` | the rule the regex cannot express — a checksum, almost always. Nil when the shape stands on its own |
 | `Secret` | marks a credential; credentials **outrank** the confidence scale in overlap resolution |
+| `NoisyInCode` | marks a category whose shape source code satisfies — `DOB`, `PHONE`, `POSTAL_CODE` — so a value found inside text that reads as code is not reported (see [where a value sits](#where-a-value-sits-and-what-the-text-is)). Per category rather than one sensitivity knob, and **no credential is ever marked**: a key in a `.env` a coding agent has just read is the most valuable thing this agent sees all day |
 
-**`validateCatalogue` runs at package initialisation** (`category.go:200`) and panics if a
+**`validateCatalogue` runs at package initialisation** (`category.go:526`) and panics if a
 pattern emits a category with no registry entry. That is what makes "one entry in one
 registry" the whole of adding a category — the four-places-to-forget problem cannot come
 back.
 
-### Groups and labels: how forty categories are put in front of a person
+### Groups and labels: how a hundred and fifty categories are put in front of a person
 
 `CategoryInfo` also carries a `Group` and a `Label` (`pkg/pii/group.go`), and both are
 catalogue facts rather than presentation: the catalogue's job is what counts as sensitive,
@@ -76,11 +79,11 @@ accident, above the personal details they came for:
 | --- | --- | --- |
 | Personal details | 10 | what people reach for, and the largest — so a group switch alone is not enough |
 | Company identifiers | 3 | the strongest case for switching off: a registration number is public, and nine digits under a Luhn key is every internal fleet id too |
-| Technical identifiers | 2 | the other strong case: debugging a network needs the address in the prompt |
+| Technical identifiers | 3 | the other strong case: debugging a network needs the address in the prompt |
 | Banking | 3 | all three carry a checksum, so none is a false positive somebody switches off in irritation |
 | Declared by this deployment | 1 | `CUSTOM`, the only category somebody authored on purpose |
 | Connection strings | 1 | a group of one, and it earns it — `postgres://admin:pw@db` is what a person looks for |
-| Secrets and keys | 20 | the API keys and tokens |
+| Secrets and keys | 131 | the API keys and tokens, both tiers |
 
 **`pii.Switchable` follows `Secret`, not the group**, and the two are deliberately not
 merged. The flag decides what may be switched off; the group decides how a person finds it.
@@ -88,9 +91,11 @@ That is why connection strings sit apart and are still locked, and why `CUSTOM` 
 too — switching off what a deployment declared itself would undo the one decision somebody
 made explicitly.
 
-`validateCatalogue` enforces all of it at package initialisation: a category with no group,
-a group that is not registered, a missing label, or **a label another category already
-uses**. That last one is the same class as the unique-prefix rule one level up — NIR and SSN
+`validateCatalogue` enforces all of it at package initialisation: a prefix that does not
+make a token by `tokenRe` (the `1PASSWORD_TOKEN` case), a score outside 1–100, a category
+with no group, a group that is not registered, a missing label, or **a label another
+category already uses**. That last one is the same class as `TestCategoryPrefixesAreUnique`
+one level up — NIR and SSN
 are both "social security number" until the catalogue says which country's, and two
 identical rows in a menu is a person unticking one with no idea which they got.
 
@@ -144,7 +149,14 @@ Checksums live in `pkg/pii/checksum.go`: `LuhnCheck` (cards), `IBANCheck`, `NIRC
 `NHSNumberCheck`, `NINOCheck` (letter rules, not a checksum — six letters excluded from
 the first position, seven from the second, seven whole prefixes unissued), `SSNCheck`,
 `RoutingNumberCheck` (ABA weights), `DOBCheck` (a year in the past), `PostcodeCheck` (the
-commune is not a month).
+commune is not a month), `IPAddressCheck` (`netip.ParseAddr`, then the ranges that name
+nobody — guarding both IP categories) and `DocumentationEmailCheck` (the RFC 2606/6761
+domains are never anybody's address).
+
+Two more hang off a **pattern** rather than a category (`Pattern.Verify`,
+`pkg/pii/pattern.go:40`), because the two generic-secret expressions share a category and
+disagree about the value: `UnclosedBracketCheck` on the bare spans only, and
+`AuthHeaderCheck` on the two header patterns — see the rules table below.
 
 #### How much work each checksum does alone
 
@@ -198,8 +210,8 @@ nothing. The optional trailing group of three is what covers it:
 
 **Discover stays at sixteen deliberately.** ISO/IEC 7812 permits up to nineteen, and no
 source confirms the network issues one. A guessed length here either misses real cards
-or claims references, and both are silent — the same reason Mistral, Together and
-DeepInfra have no key pattern of their own.
+or claims references, and both are silent — the same reason Mistral and DeepInfra have
+no key pattern of their own (Together AI gained one, `tgp_v1_`, with the second tier).
 
 #### The IBAN length table, and why a key alone was not enough
 
@@ -394,26 +406,28 @@ None is a credential, and the model received a review of code whose identifiers 
 replaced by opaque tokens. The trailing `(` and the missing `>` are `noSentenceTail`
 trimming the closing half of what the pattern had already eaten.
 
-**Six rules, each narrower than the obvious version**, because the tree already held a
-case against each over-reach. Four of the six were narrowed again after
+**Each rule is narrower than the obvious version**, because the tree already held a
+case against each over-reach. Four of them were narrowed again after
 `docs/secret-shapes-to-label.md` put forty-four shapes to a person one at a time: twelve
 came back as credentials the engine was refusing, and the rules that refused them had all
 been reading the *form* of the value rather than anything about code.
 
 | Rule | Rejects | Why not wider |
 |---|---|---|
-| An **unclosed** bracket | `security.authorize({`, `generateSecret(`, `CreationOptional<string` | The balance is the rule, not the presence. The span was cut out of the surrounding text, so an opener with no closer says the expression carries on past the end of the value; a matched pair inside a quoted value is punctuation somebody typed, and refusing it left `password="pa(ren)th1s"` and `password="[brackets]1"` in clear. A stray *closer* stays allowed — `password="hunter2)"` is a real credential ending on one, held by `bound-generic-secret-quoted-keeps-its-punctuation`. `;` and `,` left this rule entirely: no case in `TestGenericSecretCheckRejectsSourceCode` carries either, and `password="a;b;c1234x"` and `API_TOKENS=abc12345,def67890` were refused for holding one |
+| An **unclosed** bracket — on the **bare** spans only (`UnclosedBracketCheck`, a `Pattern.Verify`, not part of `GenericSecretCheck`) | `security.authorize({`, `generateSecret(`, `CreationOptional<string` | The balance is the rule, not the presence. And it hangs off the bare pattern because the check is handed the value without its quotes: a quoted value ends at its quote, so `password="Ab(12cd"` is somebody's one special character, and under the category it was refused as code. The span was cut out of the surrounding text, so an opener with no closer says the expression carries on past the end of the value; a matched pair inside a quoted value is punctuation somebody typed, and refusing it left `password="pa(ren)th1s"` and `password="[brackets]1"` in clear. A stray *closer* stays allowed — `password="hunter2)"` is a real credential ending on one, held by `bound-generic-secret-quoted-keeps-its-punctuation`. `;` and `,` left this rule entirely: no case in `TestGenericSecretCheckRejectsSourceCode` carries either, and `password="a;b;c1234x"` and `API_TOKENS=abc12345,def67890` were refused for holding one |
 | Optional chaining, `?.` | `user?.token2`, `user.password?.replace(/./g` | The three code cases carrying a `?` all carry `?.`. A bare question mark before a letter is punctuation in a typed password, and refusing it left `password="Wh4t?Really"` in clear |
-| Identifier-shaped **and** an **interior** capital, with no digit | `newPassword`, `totpToken`, `publicKey`, `newPasswordInString` | The rule was "no digit", and the digit cannot carry it: `PASSWORD=correcthorse`, `PASSWORD=changeme` and `password="correcthorse"` are real credentials of nothing but lowercase letters, and all three were forwarded in clear — the whole of the gap this catalogue was measured against betterleaks on. Every dotless digitless code case asserted in the tree is camelCase, because that is how code joins words into a name. **Interior**, because `MyPassword123!` and `Sup3rS3cr3tValue123` open on a capital and must stay credentials. The length floor came down with it, seven characters to six: `PASSWORD=mcjrx4` is a bad password, not an absent one |
+| Identifier-shaped **and** a capital **after a lowercase letter** (`hasCamelCaseJoin`), with no digit | `newPassword`, `totpToken`, `publicKey`, `newPasswordInString` | The rule was "no digit", and the digit cannot carry it: `PASSWORD=correcthorse`, `PASSWORD=changeme` and `password="correcthorse"` are real credentials of nothing but lowercase letters, and all three were forwarded in clear — the whole of the gap this catalogue was measured against betterleaks on. Every dotless digitless code case asserted in the tree is camelCase, because that is how code joins words into a name. A camelCase **join** and not any interior capital: read as any capital, `PASSWORD=HUNTER` was refused as an identifier while `PASSWORD=Hunter` was masked, and `MyPassword123!` and `Sup3rS3cr3tValue123` open on a capital and must stay credentials. The length floor came down with it, seven characters to six: `PASSWORD=mcjrx4` is a bad password, not an absent one |
 | A word the language reserved | `string`, `default`, `null`, `boolean` | The cost of the rule above rather than a separate idea. Once a lowercase word counted as a credential, `secret_level: string` in this repository's own TypeScript claimed the type and `'X-Session-Id': 'default'` in its extension claimed the session name — both found by `TestOurOwnSourceGrowsNoCredentials`, which is the measure that matters because it is what a code review through this agent would have seen. `reservedWords` is a closed set of tokens some language spells exactly that way, so it can be checked rather than argued about. What it gives up is somebody whose password is literally `default` |
 | A lowercase slug carrying the keyword | `reset-password`, `forgot-password`, `access-token`, `your-api-key-here` | Lowercase and hyphens only, so `MyPassword123!` — which carries the word too — stays a credential. The two-word keywords take either joiner: the rule listed `api_key` and not `api-key`, so `your-api-key-here` was masked while `your_api_key_here` was not |
-| A **dotted chain** that *reads* a credential | `c.S3.SecretAccessKey`, `client.oauth2.Token`, `opts.Sha256Digest`, `secret = config.password` | Two bounds first, both still there: every segment letter-led and at most forty characters, because without them `WARP_READ_TOKEN=yrqUJ…Vhq8.37Zim…XlF` went out in clear — a hundred and eighty-two characters of base64url that bought this promise with one dot — and the dot has to be **interior** (`password="hunter2."` hands the check `hunter2.`, whose dot is the credential's own). But the chain also has to *say* something, because no shape can: `query.current` is two lowercase segments of ordinary length naming nothing, and so is `abcdef.ghijkl`. `readsACredential` takes either mark — **the last segment names the credential** (`config.password` is code fetching one, and so are `req.cookies.token`, `aws.Config.Credentials`, `headers.authorization`) or **the chain carries an interior capital** (which keeps `opts.Sha256Digest` and `utf8.RuneCountInString` refused). The first is the sentence the slug rule already writes for `reset-password`: a passphrase names neither what it unlocks nor where it was read from. **Six member accesses were given up to get `secret=abcdef.ghijkl` masked** — `query.current`, `query.new`, `query.repeat`, `body.new`, `body.repeat`, `a.b2` — and `TestGenericSecretCheckOverMasksLowercaseMemberAccess` holds them so a later recovery is noticed instead of read as a bug. The halves are unequal: a property access masked in a review is over-masking somebody can see and undo, and a password in clear is delivered |
+| A **dotted chain** that *reads* a credential | `c.S3.SecretAccessKey`, `client.oauth2.Token`, `opts.Sha256Digest`, `secret = config.password` | Two bounds first, both still there: every segment letter-led and at most forty characters, because without them `WARP_READ_TOKEN=yrqUJ…Vhq8.37Zim…XlF` went out in clear — a hundred and eighty-two characters of base64url that bought this promise with one dot — and the dot has to be **interior** (`password="hunter2."` hands the check `hunter2.`, whose dot is the credential's own). But the chain also has to *say* something, because no shape can: `query.current` is two lowercase segments of ordinary length naming nothing, and so is `abcdef.ghijkl`. `readsACredential` takes either mark — **the last segment names the credential** (`config.password` is code fetching one, and so are `req.cookies.token`, `aws.Config.Credentials`, `headers.authorization`) or **the chain carries an interior capital** (which keeps `opts.Sha256Digest` and `utf8.RuneCountInString` refused). The first is the sentence the slug rule already writes for `reset-password`: a passphrase names neither what it unlocks nor where it was read from. The short tail keywords need a boundary in front of them (`credentialNameTailRe`): bare `key` matched the end of `monkey.donkey` and a real password behind `password:` was called code. **Six member accesses were given up to get `secret=abcdef.ghijkl` masked** — `query.current`, `query.new`, `query.repeat`, `body.new`, `body.repeat`, `a.b2` — and `TestGenericSecretCheckOverMasksLowercaseMemberAccess` holds them so a later recovery is noticed instead of read as a bug. The halves are unequal: a property access masked in a review is over-masking somebody can see and undo, and a password in clear is delivered |
+| A value that is entirely a **variable reference** (`interpolationRe`) | `${DB_PASSWORD}`, `{{ secret }}`, `$(cat token)`, `%(pw)s` | Where a credential is read from, not one: a pasted `docker-compose.yml` came back with its references replaced by `[SECRET_n]`. A closed set of four syntaxes, matched whole |
+| A value of **digits only** (`allDigits`) | `max_tokens=200000`, `SESSION_TTL=3600` | A number behind a keyword name is a tunable; `_TTL`, `_LENGTH`, `_COUNT` say so where the check cannot see the name |
 | A leading `*` or `&`, **stripped rather than refused** | `*secretLevel`, `&cfg.Token`, `*opts.apiKey` | `want.SecretLevel = *secretLevel` — a line in this agent's own mask command — was claimed the moment a keyword no longer had to be the last segment of the name: a star is not an identifier character, so the digit rule never looked at the name behind it. Refusing it outright would drop `PASSWORD=*Hunter2*`, a real password; stripping hands the rest to the rules above, so it is only dropped when what it points at is *also* code-shaped by them, and `*secret123` keeps its digit |
 
 The slash and the plus are deliberately **not** code punctuation: base64 is made of them,
 and a secret is often base64.
 
-**The third rule is where shape runs out.** `MASK reset-password TO [SECRET_2]`, behind
+**The slug rule is where shape runs out.** `MASK reset-password TO [SECRET_2]`, behind
 `password:` in an object literal, is neither syntax nor an identifier — and it has the
 *same shape* as `troisieme-valeur-longue`, which is a real credential in this corpus.
 Lowercase words joined by hyphens describes both, so no rule about form was ever going
@@ -426,7 +440,7 @@ lowercase, hyphens and underscores, and that restriction is what keeps a weak-bu
 password out of it: `MyPassword123!` carries the word too, and its capitals, digits and
 punctuation say it was typed as a secret rather than written as a route.
 
-**The segment bounds in the fourth rule are deliberately loose.** Forty characters is well
+**The segment bounds in the dotted-chain rule are deliberately loose.** Forty characters is well
 past the longest type and method names code really writes, and a cap tight enough to cut a
 real member access would stop masking nothing — it would only start claiming code again,
 which is what the rule exists to prevent. So
@@ -448,12 +462,14 @@ every dot-separated run is short and letter-led, `secret=abcdef.ghijkl`. The upg
 both is to read whether the value was quoted where it was found, which `Verify` cannot
 see: it is handed the group, not its surroundings.
 
-**Four shapes the name-is-the-evidence rule reaches, beyond `NAME=value`.** Each was a
+**Seven shapes the name-is-the-evidence rule reaches, beyond `NAME=value`.** Each was a
 credential this catalogue forwarded whole, and each is one line of expression away.
 
 | Shape | Written as | The guard that keeps it narrow |
 |---|---|---|
-| An `Authorization` header | `authHeaderRe`, anchored on the header name, taking what follows `Bearer`, `Basic` or `token` | The scheme is the evidence, not a field name — after `Bearer` there is a credential and nothing else. `Digest` is deliberately absent: its value is a parameter list, and masking it whole would replace the realm and the nonce along with the response. It reports `SECRET_GENERIC` **on purpose**, so it inherits `GenericSecretCheck` — "Bearer authentication" in a sentence has the shape of a header. The digitless-identifier rule used to refuse it; once that rule became a question about case, an all-lowercase word no longer reached it, so `auth` went into the slug rule instead. The value names the mechanism, which is the same sentence as `reset-password` |
+| An `Authorization` header | `authHeaderRe` and `authHeaderLowercaseRe` — two patterns so each opens on a literal — taking what follows `Bearer`, `Basic` or `token` | The scheme is the evidence, not a field name — after `Bearer` there is a credential and nothing else. `Digest` is deliberately absent: its value is a parameter list, and masking it whole would replace the realm and the nonce along with the response. It reports `SECRET_GENERIC` **on purpose**, so it inherits `GenericSecretCheck` — "Bearer authentication" in a sentence has the shape of a header. The digitless-identifier rule used to refuse it; once that rule became a question about case, an all-lowercase word no longer reached it. `auth` went into the slug rule for a while and came back out: with no boundary in front of it, a four-letter run refused `author-of-words` and `my-authentic-horse` behind `PASSWORD=` — the `monkey.donkey` failure in the sibling rule. So `AuthHeaderCheck` carries the refusal on these two patterns alone |
+| An XML **attribute** pair | `nugetPasswordRe` and its twin, `<add key="Password" value="…" />` | How NuGet writes a feed's password, and the file somebody pastes whole to ask why a restore fails. Two patterns because attribute order is not significant and `Group` is one index; case-insensitive past the element name. `SECRET_GENERIC` on purpose, as the header is, because a `value="…"` is as likely a path or a version |
+| A session token | `sessionSecretRe`, `SESSION=<24+>` | `SESSION` is a name too common to be evidence alone — a type annotation `session: Http2Session` defeats the digit rule — so this one carries its own floor of twenty-four characters |
 | An XML element | `xmlSecretRe`, `<apiKey>…</apiKey>` | A pattern of its own rather than `>` added to the separator, because the value has to stop where the closing tag opens: under the shared bare expression the span ran into `</apiKey` and the mask ate the tag. **The closing `</` is the guard** — `if (secret > threshold)` has the name, the separator and a value of the right size, and no tag after it |
 | A hash arrow | `genericSecretSeparator`, `'token' => '…'` and `api_key -> …` | The two-character forms come **first** in the alternation: Go's regexp is leftmost-first, so with `[=:]` in front, `=>` matched on its `=` and the value began on the `>`. What this risks claiming is a dereference, and the check above refuses it — `$secret->getValue()` ends on an unclosed call, `$token->id` is under the value floor, `$password->hashedValue` is camelCase without a digit |
 | A short declaration or a Makefile assignment | `genericSecretSeparator`, `apiKey := "…"`, `TOKEN ?= …`, `DB_PASSWORD ::= …` | With `[=:]` alone the colon was the separator and `\s*` could not step over the `=`, so `apiKey := "8dyfuiRyq=vVc3RRr_edRk-fK__JItpZ"` — Go, the language this agent reads most — went out in clear. Same leftmost-first reason as the arrows, same guard: `token := utils.jwtFrom(req)` ends on an unclosed call and `tokenName := 'ProdMyService'` is camelCase without a digit. `sec-generic-short-declaration` and `sec-generic-code-short-declaration` are the pair |
@@ -479,13 +495,16 @@ including both references in this tree. Neither is meaningful alone.
 
 `SECRET_GENERIC` is the one pattern whose evidence is a *name* beside the value, so the
 value itself may be a generated key or an ordinary word. The level says how far down
-that scale to mask, and `Detector.strongEnough` drops a match below it.
+that scale to mask, and `Detector.strongEnough` drops a match below it. The starting
+value is `CLOAKFLEET_SECRET_LEVEL` (`detector.EnvSecretLevel`, parsed by
+`ParseSecretLevel`; `SecretLevels` lists the names a surface may offer), and the menu
+bar, `cloakfleet mask --secret-level` and `PUT /policy` move it while the agent runs.
 
 | Level | Masks | For |
 |---|---|---|
 | `weak` | everything the pattern finds, passphrases of plain words included | the default — what the agent did before the level existed |
 | `medium` | values mixing two classes and up | ordinary use |
-| `strong` | three classes or more, or long enough that nobody typed it | reviewing source code: almost no identifier reaches it |
+| `strong` | three classes or more, or long enough that nobody typed it | generated keys only. **Not** the answer to over-masking source code, and `strength.go` says it used to claim it was: measured over four megabytes of TypeScript, weak and strong claim the same values, because what a code review over-masks is personal-data categories no level touches — that is what `NoisyInCode` is for |
 
 **It grades one pattern and only one.** Every other credential here is identified by a
 prefix somebody can verify — `gsk_`, `sk-ant-`, `ghp_` — and a level that could stop
@@ -516,23 +535,48 @@ needs no setting — which is stronger than a setting would be, because it canno
 configured wrong.
 
 Measured as well as argued: reversing the two sets in `newCatalogue` and running the
-whole corpus and the reference sample through both — 199 texts — produced **no
-difference at all**.
+whole corpus and the reference sample through both — 199 texts at the time; the corpus
+alone is 515 cases today — produced **no difference at all**.
 
 Load order still decides between *locales*, which is what `Locale.Priority` is for: nine
 bare digits are a French SIREN and a US routing number, both non-secret, both scoring
 the same, so the tie-break is reached and the earlier locale names the value.
 
-`minConfidence` is 50 (`internal/detector/config.go:38`), set just at the level of the
+`minConfidence` is 50 (`internal/detector/config.go:43`), set just at the level of the
 weakest category worth reporting so every registered category is reportable and the
 checksums do the discriminating. It is a constant, not a knob: a `TODO` records that a
 deployment wanting only high-confidence matches would need it exposed, and that a knob
 nothing sets is a knob nobody tested.
 
+### Where a value sits, and what the text is
+
+Two stages of `candidates` read outside the value, and both run last because everything
+cheaper has already had its chance to reject.
+
+**Placement** (`pkg/pii/placement.go`). `RejectedByPlacement` is handed the value and
+`WindowSize` (32) bytes either side of it — enough for the name it was assigned to and the
+punctuation around it, short enough that the rule cannot quietly become a scan of the
+document. Three rules: `isNetworkPrefix` (`10.0.0.0/8` is a range, not a host),
+`isObjectIdentifier` (a dotted run beside the word "oid") and `isPropertyValue`
+(`z-index:2147483647` is not a phone number). **Credentials are never asked**: a secret is
+recognised *by* its placement — a name and an assignment — so a rule reading the same
+evidence the other way is the one that stops masking keys in configuration files.
+
+**Code-awareness** (`internal/detector/code.go`). `looksLikeCode` is asked once per
+scanned string: at least `codeMinLines` (3) lines, and either a fence or a shebang, or two
+independent signals agreeing (`codeMinSignals`) — because each alone has an innocent
+reading: prose in a narrow column has short lines, a numbered list has leading spaces, a
+sentence about arithmetic has operators. In text that reads as code, a category marked
+`NoisyInCode` is skipped. Only `DOB`, `PHONE` and `POSTAL_CODE` are marked; `EMAIL` is
+not (an address in a fixture is still somebody's), `IP_ADDRESS` is not (a pasted
+configuration *is* code, and an internal host in it is a topology), and no credential
+ever is.
+
 ## The catalogue: patterns
 
 `pii.Pattern` (`pkg/pii/pattern.go:12`) is one recognisable shape plus its category,
-`Label`, `Locale`, `Group` and `Refine`. Pattern files: `patterns_fr.go`,
+`Label`, `Locale`, `Group`, `Refine` and a per-pattern `Verify` (nil for almost every
+pattern — see the checksum section for the two that carry one). Pattern files: `patterns_fr.go`,
 `patterns_gb.go`, `patterns_us.go`, `patterns_intl.go`, `patterns_secret.go`.
 
 **Order within a set is correctness, not taste.** The first pattern to claim a literal
@@ -546,10 +590,11 @@ identifiers before Vietnam's CMND, which matches any bare nine digits.
 generic `TOKEN=...` hint must never claim a span a documented prefix can name.
 
 The first tier is the shapes reasoned about one at a time, each with its own `var` and
-its own paragraph. The second is `vendorPrefixes`, a table of 109 vendors and 150
-patterns derived from the gitleaks/betterleaks catalogue (MIT, see `NOTICE`) and
-rewritten to the rules below. It is a table rather than 150 named `var`s because a
-comment per row could only paraphrase the row; the reasoning that applies to all 150 is
+its own paragraph. The second is `vendorPrefixes`, a table of 108 vendors and 156
+patterns (with ClickHouse's `4b1d<38>` sitting outside it, because that table has no
+`Group` and a four-hex-character prefix has to be bounded at both ends) derived from the gitleaks/betterleaks catalogue (MIT, see `NOTICE`) and
+rewritten to the rules below. It is a table rather than a hundred and fifty named `var`s because a
+comment per row could only paraphrase the row; the reasoning that applies to all of them is
 written once at the head of the table.
 
 **Only the *value-only* rules were taken.** Roughly 40% of that catalogue identifies a
@@ -565,8 +610,9 @@ rather than credentials — an Azure tenant id, an eBay client id, a storage acc
 is the shape a commit SHA and a build id already have.
 
 **Four real credentials are missing and it is recorded as a `TODO`**: Terraform Cloud
-(`<14>.atlasv1.<60>`), MaxMind (`<6>_<29>_mmk`), a Tableau PAT and a Facebook access
-token. Each has a literal, but an *interior* one, which no prefix scan can use — so each
+(`<14>.atlasv1.<60>`), MaxMind (`<6>_<29>_mmk`), a Tableau PAT and the numeric Facebook access
+token (`<15-16 digits>|<27-40>` — the `EAA…` page token has a prefix and is in the
+table). Each has a literal, but an *interior* one, which no prefix scan can use — so each
 costs 0.6-1.7 ms alone, twenty times the rest of the tier put together. The upgrade is a
 required-literal prefilter (`strings.Contains` before the regex), worth building for a
 class and not for four.
@@ -575,11 +621,12 @@ class and not for four.
 reading of this tier is that 150 more patterns need one, because betterleaks affords 417
 rules by running almost none of them. Measured per pattern over the corpus, three
 patterns are 73% of this engine's scan — `xmlSecretRe` and the two
-`genericSecret*Re` — and a keyword prefilter cannot touch those: their keyword set is
-`password|secret|token|apikey|credential`, present in nearly any configuration text.
+`genericSecret*Re` — and a keyword prefilter cannot touch those: their keyword set
+(`genericSecretKeywordNames`, twenty-three names from `PASSWORD` and `TOKEN` to `DBPASS`
+and `SESSIONKEY`) is present in nearly any configuration text.
 The 150 that were added cost 0.56 ms, 1.4% on top of the scan as it stood.
 
-`AllPatterns` (`pattern.go:57`) reads the locale registry rather than concatenating sets by
+`AllPatterns` (`pattern.go:66`) reads the locale registry rather than concatenating sets by
 hand. Agent Veil's hand-written version shipped with one set missing, which silently
 exempted two thirds of the catalogue from every test that swept "each category".
 
@@ -646,7 +693,7 @@ exempted two thirds of the catalogue from every test that swept "each category".
   Tolerating the conventional grouping by four makes the expression greedy enough to
   swallow the following word, and only the checksum knows where the account ends. A pattern
   with a `Refine` is scanned **one match at a time, resuming after the refined end**
-  (`refinedSpans`, `detector.go:201`): scanning them all at once resumes after the greedy
+  (`refinedSpans`, `detector.go:308`): scanning them all at once resumes after the greedy
   end, so a second IBAN immediately after the first was never seen — forwarded in clear.
 
 ## Locales
@@ -662,11 +709,11 @@ US routing number under the ABA weights; the earlier locale in the registry name
 a new locale gets it without anybody remembering to. That stamp is load-bearing — see
 stand-ins below.
 
-`ParseLocales` (`internal/detector/config.go:75`) accepts a code, a comma-separated list, or
+`ParseLocales` (`internal/detector/config.go:85`) accepts a code, a comma-separated list, or
 `none`. **Unset means none**, deliberately: a wrong locale is worse than none — scanning
 French data with the Vietnamese set masks its invoice numbers and timestamps as identity
 cards — and an operator who never set the variable has not chosen that
-(`DefaultConfig`, `config.go:67`).
+(`DefaultConfig`, `config.go:77`).
 
 ## Overlap arbitration
 
@@ -689,11 +736,11 @@ match is dropped whole rather than clipped.
 
 ## Substitution modes
 
-`Substitution` (`internal/detector/mask.go:15`) is `token` or `fake`, read from
-`CLOAKFLEET_PII_SUBSTITUTION`. The zero value is `token`, so a `Config` built by hand keeps
+`Substitution` (`internal/detector/policy.go:118`, `ParseSubstitution` at `:142`) is `token`
+or `fake`, read from `CLOAKFLEET_PII_SUBSTITUTION`. The zero value is `token`, so a `Config` built by hand keeps
 the reversible behaviour without saying so.
 
-`Detector.render` (`mask.go:132`) applies the mode to one index:
+`Detector.render` (`mask.go:102`) applies the mode to one index:
 
 ```go
 if fake mode && !pii.IsSecret(cat) { if stand-in available for (cat, locale, index) → use it }
@@ -725,7 +772,7 @@ back to a token.
 **The known gap is named rather than hidden.** A short stand-in can be matched by
 coincidence: a fake postcode is five digits, and a model that wrote those five digits about
 something else has them replaced by the caller's real postcode. The `TODO` on
-`detector.Unmask` (`mask.go:225`) carries it, with the upgrade path — a minimum length, or
+`detector.Unmask` (`mask.go:213`) carries it, with the upgrade path — a minimum length, or
 marking the substitution invisibly.
 
 ## Tokens
@@ -735,7 +782,7 @@ marking the substitution invisibly.
 `ReplaceTokens` walks text expanding them, and `TokenTailLen` says how much of a trailing
 fragment could still become a token. `maxTokenLen` is 48 (`token.go:113`).
 
-Indices come from `Detector.nextIndex` (`mask.go:151`), per category, and are safe under
+Indices come from `Detector.nextIndex` (`mask.go:121`), per category, and are safe under
 concurrency: `TestConcurrentPassesNeverShareAMask`.
 
 ## The sample is a reference, and must stay one
@@ -747,7 +794,7 @@ identifier compact and spaced, an address with and without its town. It is what 
 reads to check their own data shape is covered, so a gap in it reads as a gap in the engine.
 
 Any change to the catalogue — a new category, a newly accepted notation, a widened or
-narrowed pattern — means updating the sample **in the same commit**. Five tests hold it for
+narrowed pattern — means updating the sample **in the same commit**. Six tests hold it for
 every locale in the registry: `TestSampleExercisesEveryCategory` sweeps the live catalogue,
 so a new category with no line fails; `TestSampleShowsEveryNotation` is an explicit table
 of every accepted form with the category it must be read as; and

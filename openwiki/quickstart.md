@@ -24,7 +24,7 @@ never import it, and must compile and run with no backend at all.
 | [Detection engine](architecture/detection-engine.md) | `pkg/pii` catalogue + `internal/detector` engine — categories, locales, checksums, overlap arbitration, token vs. stand-in |
 | [Browser extension](architecture/browser-extension.md) | `extension/` + `POST /mask` and `POST /unmask` — masking a web chat by wrapping the page's own `fetch` |
 | [Supervision](architecture/supervision.md) | `pkg/telemetry` contract + `internal/telemetry` recorder, on-disk buffer, reporting loop |
-| [Configuration](operations/configuration.md) | The six environment variables, every CLI command, the test page, the audit console |
+| [Configuration](operations/configuration.md) | The ten environment variables, every CLI command, the test page, the audit console |
 | [Distribution](operations/distribution.md) | `install.sh`, launchd services, GoReleaser, the menu bar binary, `cloakfleet env` |
 | [Extending the catalogue](workflows/extending-the-catalogue.md) | Adding a PII category, a locale, a provider, a telemetry field |
 | [Testing and accuracy](workflows/testing-and-accuracy.md) | The corpus, the per-category score floor, CI gates, the end-to-end test |
@@ -34,7 +34,8 @@ never import it, and must compile and run with no backend at all.
 ```
 cmd/cloakfleet/        the agent — the ONLY binary that masks anything
 cmd/cloakfleet-tray/   menu bar icon; assembles no pipeline (see Distribution)
-internal/proxy/        the request path, /healthz, /test, the audit console
+internal/proxy/        the request path, the routes the agent answers itself
+                       (/healthz, /test, /policy, /mask, /unmask), the console and the traces
 internal/detector/     the engine that runs the catalogue over text
 internal/vault/        per-session masked→original mapping, encrypted at rest
 internal/telemetry/    recorder, on-disk buffer, reporting loop
@@ -57,6 +58,9 @@ make score            # gate per-category accuracy against score-baseline.json
 make score-update     # rewrite that floor from the current run — explain the delta
 make bench-accuracy   # the per-category accuracy report
 make e2e-claude       # real CLI, real provider, through the agent (spends quota)
+make extension        # typecheck, test and build the browser extension
+make extension-e2e    # drive it through a real Chrome against a real agent
+make contract-update  # re-record the extension/agent exchanges — explain the delta
 
 go test ./internal/detector/ -run TestAccuracyCorpus -v   # one suite, verbose
 ```
@@ -82,9 +86,9 @@ These are not style preferences. Each one is a failure that already happened, mo
   exception and it assembles nothing — see [Distribution](operations/distribution.md).
 - **The environment is read in one place per setting.** `detector.FromEnv` owns the
   detection settings, `internal/proxy/env.go` owns the proxy's. A command in `cmd/`
-  reads **no** environment variable (`internal/detector/config.go:15-27`).
+  reads **no** environment variable (`internal/detector/config.go:18-31`).
 - **Fail closed.** A body the agent cannot read is a 415, never a pass-through
-  (`internal/proxy/proxy.go:190-200`, `readBody` at `:273`).
+  (`internal/proxy/proxy.go:327`, `readBody` at `:457`).
 - **The layer direction is one-way.** `pkg/pii` is the catalogue; `internal/detector` is
   the engine. The catalogue knows nothing about the engine.
 - **`pkg/telemetry` is public and the backend imports it — never the reverse.**

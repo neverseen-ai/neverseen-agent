@@ -8,9 +8,12 @@ problem, which this repo has already had.
 
 1. **One entry in `categoryRegistry`** (`pkg/pii/category.go`) carrying the token prefix,
    the score, the checksum if there is one, whether it is a credential, **its group and its
-   label**. `validateCatalogue` panics at package initialisation on a missing group or
-   label, on a group that is not registered, and on a label another category already uses —
-   so none of the six can be forgotten.
+   label**, and `NoisyInCode` where source code satisfies the shape (a date does), so a value
+   found inside code is not reported — never on a credential, and its entry says why. `validateCatalogue` panics at package
+   initialisation on a prefix that does not make a token, a score outside 1-100, a missing
+   group or label, a group that is not registered, and a label another category already
+   uses. It cannot check the checksum or the credential flag — nothing in the entry says
+   whether one was meant — so those two are what the corpus case is for.
 2. **Its pattern in the right set** — `patterns_fr.go`, `patterns_gb.go`, `patterns_us.go`,
    `patterns_intl.go` or `patterns_secret.go`. Mind the ordering rule: the first pattern to
    claim a literal wins, so a specific shape must precede a broader one.
@@ -64,8 +67,10 @@ on `localeRegistry` records it).
 ## Adding a provider
 
 1. **An entry in `DefaultProviders`** (`internal/proxy/provider.go:34`) — a code and a base
-   URL. The code must not collide with `reservedRoutes` (`healthz`, `test`); `New` refuses it
-   if it does.
+   URL. The code must not collide with `reservedRoutes` (`healthz`, `test`, `policy`, `mask`,
+   `unmask`); `New` refuses it if it does (`TestReservedRoutesCannotBeProviders`). The
+   block in `.env.example` names every known code and counts them, so it changes in the
+   same commit.
 2. **Only add it to `shellTools`** (`internal/proxy/shellenv.go:51`) **if you can verify the
    pair.** A guessed variable name is an instruction that does nothing, and a guessed command
    name is worse — it fails with "command not found" after somebody has already pasted it and

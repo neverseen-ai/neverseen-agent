@@ -162,6 +162,7 @@ stand-in, so it only ever travels as a bracket token.
 ./install.sh --shell      # …and add the shell line, if you want it
 ./install.sh --status     # is it running, and what is it applying
 ./install.sh --restart    # after editing ~/.cloakfleet/.env
+./install.sh --logs       # follow its log
 ./install.sh --uninstall  # stop it, remove the service, undo the shell line
 ```
 
@@ -255,8 +256,10 @@ address. Either half alone passes over a page that was never touched.
 Optional, and the agent is a complete product without it. Set
 `CLOAKFLEET_BACKEND_URL` and an enrolment token and it reports every five
 minutes: how many requests it proxied, how many values it masked in which
-categories, how many tokens went to which model, and what configuration it is
-actually applying.
+categories, how many tokens went to which model, how many conversations ran and
+what the model asked the workstation to do, and what configuration it is
+actually applying. What each figure answers, and what the heartbeat deliberately
+does not say, is in [docs/telemetry-for-ai-governance.md](docs/telemetry-for-ai-governance.md).
 
 **Never any content.** Not a prompt, not a response, not a detected value, not a
 file name, not a URL. That is structural rather than promised: the contract lives
@@ -286,6 +289,10 @@ understate it. The agent reports raw counts and the backend prices them, because
 prices change and an agent that computed money would need redeploying to every
 workstation each time one did.
 
+`cloakfleet replay <dir>` rebuilds that batch from a directory of `-v` traces and
+prints it, to check the counters against real traffic rather than fixtures. It
+sends nothing.
+
 Enrolment works the way Wazuh's does: the operator's token is presented once and
 traded for a per-agent key, so one workstation can be revoked without touching
 the others.
@@ -297,10 +304,12 @@ Go 1.26 or later, no other dependencies for the build.
 ```bash
 make build            # bin/cloakfleet
 make test             # the whole suite, with the race detector
+make test-cover       # the same, with coverage; the CI gate is 80%
 make lint             # golangci-lint
 make score            # gate detection accuracy against the committed floor
 make bench-accuracy   # the per-category accuracy report
 make e2e-claude       # the end-to-end test: real CLI, real provider (spends quota)
+make extension-e2e    # the browser extension through a real Chrome against a real agent
 ```
 
 `make e2e-claude` is the one that proves the product rather than its parts. It
@@ -312,7 +321,7 @@ is why it is opt-in.
 
 ## Configuration
 
-Two environment variables, both documented in
+Ten environment variables, all documented in
 [.env.example](.env.example) — which a test keeps honest, in both directions: a
 variable the code reads and the file does not mention fails the build, and so
 does one the file documents and no code reads.
@@ -323,9 +332,17 @@ deliberate — scanning one country's data with another country's patterns is
 worse than scanning none of it, and an operator who never set the variable has
 not chosen that.
 
+`CLOAKFLEET_PII_SUBSTITUTION` picks what a masked value becomes, a token or a
+stand-in; `CLOAKFLEET_PII_ALLOWLIST` names the values never to mask; and
+`CLOAKFLEET_SECRET_LEVEL` says how far down the strength scale a named secret is
+masked. All three are starting values: `cloakfleet mask`, the menu bar and
+`PUT /policy` move them while the agent runs, and what they change survives a
+restart. The rest — the address, the provider overrides, the session key and
+the three supervision settings — are in the file.
+
 Some things are found whatever the locale says, because they mean the same
 everywhere: email addresses, payment cards, IBANs (every issuing country), IP
-addresses, ISO dates, and every credential — API keys for a dozen providers,
+addresses, MongoDB ids, ISO dates, and every credential — API keys for a dozen providers,
 AWS keys, private keys, JWTs, connection strings carrying a password.
 
 ## How the detection engine is held to account

@@ -4,8 +4,8 @@
 
 **Each setting has exactly one owner in the code, and no command in `cmd/` reads an
 environment variable.** The detector's settings are read by `detector.FromEnv` from the
-constants in `internal/detector/config.go:18-27`; the proxy's by
-`internal/proxy/env.go:23-45`. Two readers of one setting are two chances to disagree about
+constants in `internal/detector/config.go:18-31`; the proxy's by
+`internal/proxy/env.go:16-38`. Two readers of one setting are two chances to disagree about
 it, which is how Agent Veil ended up applying a default on one path and not the other.
 
 | Variable | Owner | Default | Notes |
@@ -13,6 +13,7 @@ it, which is how Agent Veil ended up applying a default on one path and not the 
 | `CLOAKFLEET_PII_LOCALE` | `detector.EnvLocale` | unset = **none** | `fr`, `gb`, `us`, `none`, or a comma-separated mix |
 | `CLOAKFLEET_PII_ALLOWLIST` | `detector.EnvAllowList` | empty | values never to mask, comma-separated; compared ignoring case and spacing |
 | `CLOAKFLEET_PII_SUBSTITUTION` | `detector.EnvSubstitution` | `token` | `token` or `fake` |
+| `CLOAKFLEET_SECRET_LEVEL` | `detector.EnvSecretLevel` | `weak` | `weak`, `medium` or `strong`; grades the catch-all named-secret pattern only — see [the secret level](../architecture/detection-engine.md#the-secret-level) |
 | `CLOAKFLEET_LISTEN` | `proxy.EnvListen` | `127.0.0.1:8787` | loopback on purpose — see below |
 | `CLOAKFLEET_PROVIDERS` | `proxy.EnvProviders` | none | `code=url` pairs, applied as **overrides** onto the default set |
 | `CLOAKFLEET_ENCRYPTION_KEY` | `proxy.EnvEncryptionKey` | generated per process | 32 bytes, hex, for the session mapping |
@@ -24,14 +25,17 @@ Every one of these is documented in **`.env.example`**, and
 `TestDocumentedEnvironmentMatchesTheCode` (`cmd/cloakfleet/env_test.go:22`) fails in **both**
 directions: a variable the code reads and the file does not mention fails the build, and so
 does one the file documents and no code reads. `TestUsageNamesEverySetting` holds the usage
-text to the same standard — `printUsage` builds it from the constants and the locale
-registry, so nothing in it can go stale under a rename.
+text to a weaker standard — `printUsage` builds it from the constants and the locale
+registry, so a name cannot go stale under a rename, but the test lists the constants by
+hand and a constant it does not list is one the usage may omit. `CLOAKFLEET_SECRET_LEVEL`
+is that case today: read by the code, documented in `.env.example`, absent from both the
+usage text and the test's list (`cmd/cloakfleet/env_test.go:72-76`).
 
 **`CLOAKFLEET_PII_LOCALE` unset means none, deliberately.** Scanning one country's data with
 another country's patterns is worse than scanning none of it, and an operator who never set
 the variable has not chosen that.
 
-**`CLOAKFLEET_LISTEN` is not a default to override lightly** (`env.go:60-66`). The agent
+**`CLOAKFLEET_LISTEN` is not a default to override lightly** (`env.go:43-49`). The agent
 trusts whoever reaches it — it forwards their credentials and scopes the session mapping by a
 header they control — so it is built for one person on one workstation. Bound to a reachable
 interface it becomes a way to read another user's session.
@@ -53,22 +57,24 @@ cloakfleet proxy -v      also write every exchange to ./traces: both bodies and 
 cloakfleet scan [file]   report the sensitive values in a file, or in stdin
 cloakfleet status        report whether the agent is masking, and what
 cloakfleet mask          list what is masked, and switch a category or family off
+cloakfleet key           print the control key, for the browser extension
 cloakfleet env [--force] print the shell exports that point a tool at the agent
 cloakfleet replay <dir>  rebuild the heartbeat batch from the traces in a
                          directory and print it; nothing is sent or queued
 cloakfleet version       print the version
 ```
 
-`run` (`main.go:105`) is `main`'s body with its inputs and output passed in, so every command
+`run` (`main.go:115`) is `main`'s body with its inputs and output passed in, so every command
 is testable without a subprocess.
 
 ### `proxy`
 
-`serve` → `proxy.FromEnv(logger, opts)` → `serveAgent`. The graceful stop is not politeness:
+`runProxy` (`main.go:211`) → `proxy.FromEnv(logger, opts)` → `serveAgent`. The graceful stop is not politeness:
 a request cut off mid-flight has been masked and stored but never answered, so the caller
 loses the turn and the mapping keeps values nothing will ask for again. `serveAgent` is
-shared by `proxy` and `audit` so the two cannot come to differ about shutdown, supervision or
-the last heartbeat.
+a function of its own because it was once shared with the `audit` command, so the two could
+not come to differ about shutdown, supervision or the last heartbeat; `proxy` is its one
+caller today (see [what replacing the `audit` command cost](#what-replacing-the-audit-command-cost)).
 
 #### `-l`, and what leaves the loopback default behind
 
@@ -102,7 +108,7 @@ level=WARN msg="this agent is reachable beyond this workstation" address=0.0.0.0
 
 That is the whole cost, stated: `/healthz` and `/test` are unauthenticated **because**
 of the loopback default. Reachable, `/test` is a masking oracle for anybody on the
-network, and `sessionFrom` reads a header the caller controls — so naming somebody
+network, and `sessionOf` reads a header the caller controls — so naming somebody
 else's session is enough to be handed its replacements. `PUT /policy` is unaffected: it
 carries the control key whatever the interface.
 
@@ -111,23 +117,25 @@ ordinary start is one nobody reads by the time it matters.
 
 ### `status` — what is being *applied*, not that the process is up
 
-`runStatus` (`main.go:141`) calls `proxy.Query` and exits non-zero unless
+`runStatus` (`main.go:163`) calls `proxy.Query` and exits non-zero unless
 `Status.Level()` is `LevelFull`. **Answering is not enough, and neither is masking:** an agent with no locale selected is
 up, healthy and recognises almost nothing, and a check that called that healthy would be the
 check somebody trusted while their traffic went out in clear
 (`TestAnAgentWithNoLocaleIsNotMasking`) — and an agent with a category switched off is
 masking everything except the thing somebody switched off, which zero must not mean either.
-That state prints the names of what is in clear, not a count: a name is what tells somebody
-whether the category they care about is among them.
+That state's headline carries the count ("with 2 categories in clear") and the lines under
+it the names: a name is what tells somebody whether the category they care about is among
+them (`Status.Write`, `status.go:277-311`).
 
-The non-zero exit uses `errQuiet` (`main.go:88`) — exit 1 with no extra message — because the
+The non-zero exit uses `errQuiet` (`main.go:98`) — exit 1 with no extra message — because the
 command's whole job is to report a state, and printing the same diagnosis again on stderr
 prefixed as an error would make the ordinary case of a stopped agent read like a malfunction.
 
 ### `env` — prints nothing when the agent is stopped
 
 `proxy.ShellEnv` (`internal/proxy/shellenv.go:128`) asks the agent whether it is running and
-writes **nothing** if it is not (unless `--force`). That is the whole point: a login file
+exports **nothing** if it is not (unless `--force`) — three `#` comment lines saying so,
+which `eval` ignores (`shellenv.go:135-139`). That is the whole point: a login file
 evaluating `eval "$(cloakfleet env)"` has to be a no-op on a machine where the agent is
 stopped. See [Distribution](distribution.md#pointing-a-tool-at-the-agent) for the failure this
 avoids and the `shellTools` table it reads.
@@ -135,12 +143,13 @@ avoids and the `shellTools` table it reads.
 ### `mask` — see and change what is masked
 
 ```
-cloakfleet mask                       list what is applied: mode, countries, categories
+cloakfleet mask                       list what is applied: mode, secret level, countries, categories
 cloakfleet mask --off EMAIL,DOB       stop masking these
 cloakfleet mask --on DOB              mask them again
 cloakfleet mask --off personal        a whole family, by its name
 cloakfleet mask --reset               mask everything again
 cloakfleet mask --substitution fake   change what a masked value becomes
+cloakfleet mask --secret-level strong how far down the strength scale to mask
 cloakfleet mask --locales fr,gb       load these country pattern sets
 cloakfleet mask --locales none        load none of them
 ```
