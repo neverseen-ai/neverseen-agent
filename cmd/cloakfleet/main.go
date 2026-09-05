@@ -10,6 +10,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -52,6 +53,8 @@ Usage:
                            off for this run
   cloakfleet key           print the control key, for the browser extension
   cloakfleet env [--force] print the shell exports that point a tool at the agent
+  cloakfleet replay <dir>  rebuild the heartbeat batch from the traces in a
+                           directory and print it; nothing is sent or queued
   cloakfleet version       print the version
 
 Point a client at the agent by naming the provider in the path:
@@ -128,6 +131,8 @@ func run(args []string, stdin io.Reader, stdout io.Writer) error {
 		return runKey(stdout)
 	case "env":
 		return runEnv(args[1:], stdout)
+	case "replay":
+		return runReplay(args[1:], stdout)
 	case "version":
 		fmt.Fprintln(stdout, version)
 		return nil
@@ -457,7 +462,9 @@ func runScan(args []string, stdin io.Reader, stdout io.Writer) error {
 		return err
 	}
 
-	d, err := detector.FromEnv()
+	// The same assembly the agent runs, stored policy included, or this command
+	// reports a value as masked that the agent beside it forwards in clear.
+	d, err := proxy.DetectorFromEnv(nil, proxy.DefaultPolicyFile)
 	if err != nil {
 		return err
 	}
@@ -521,4 +528,33 @@ func report(w io.Writer, d *detector.Detector, matches []detector.Match) {
 	for _, cat := range cats {
 		fmt.Fprintf(w, "  %-24s %d\n", cat, counts[pii.Category(cat)])
 	}
+}
+
+// runReplay rebuilds the heartbeat batch from a directory of traces and prints it.
+//
+// Read-only on purpose — see proxy.Replay for why a rebuilt bucket must never be
+// queued beside the ones the agent filed live. The detector is the agent's own
+// assembly, stored policy included, so what the replay counts as masked is what
+// the agent beside it would mask today.
+func runReplay(args []string, stdout io.Writer) error {
+	fs := flag.NewFlagSet("replay", flag.ContinueOnError)
+	fs.SetOutput(stdout)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		return errors.New("replay takes one argument: the directory holding the traces")
+	}
+
+	d, err := proxy.DetectorFromEnv(nil, proxy.DefaultPolicyFile)
+	if err != nil {
+		return err
+	}
+	batch, err := proxy.Replay(fs.Arg(0), d, time.Now())
+	if err != nil {
+		return err
+	}
+	enc := json.NewEncoder(stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(batch)
 }
