@@ -21,6 +21,9 @@ func TestTheBannerPrintsTheCommandToRunElsewhere(t *testing.T) {
 	agent, err := proxy.FromEnv(nil, proxy.Options{
 		Audit:          io.Discard,
 		ControlKeyFile: filepath.Join(t.TempDir(), "control.key"),
+		// Never the operator's own stored policy: read, it would decide what this
+		// test's agent masks, and written it would outlive the run.
+		PolicyFile: proxy.NoFile,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -58,6 +61,9 @@ func TestTheBannerWarnsWhenNothingWouldBeMasked(t *testing.T) {
 	agent, err := proxy.FromEnv(nil, proxy.Options{
 		Audit:          io.Discard,
 		ControlKeyFile: filepath.Join(t.TempDir(), "control.key"),
+		// Never the operator's own stored policy: read, it would decide what this
+		// test's agent masks, and written it would outlive the run.
+		PolicyFile: proxy.NoFile,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -80,8 +86,9 @@ func TestTheBannerWarnsWhenNothingWouldBeMasked(t *testing.T) {
 func TestTheBannerSaysWhereTheBodiesAre(t *testing.T) {
 	t.Setenv("CLOAKFLEET_PII_LOCALE", "fr")
 	key := filepath.Join(t.TempDir(), "control.key")
+	const stored = proxy.NoFile
 
-	quiet, err := proxy.FromEnv(nil, proxy.Options{Audit: io.Discard, ControlKeyFile: key})
+	quiet, err := proxy.FromEnv(nil, proxy.Options{Audit: io.Discard, ControlKeyFile: key, PolicyFile: stored})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +100,7 @@ func TestTheBannerSaysWhereTheBodiesAre(t *testing.T) {
 
 	dir := filepath.Join(t.TempDir(), "traces")
 	tracing, err := proxy.FromEnv(nil, proxy.Options{
-		Audit: io.Discard, ControlKeyFile: key, TraceDir: dir,
+		Audit: io.Discard, ControlKeyFile: key, PolicyFile: stored, TraceDir: dir,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -131,7 +138,10 @@ func TestTheBannerPromisesLinesOnlyWithA(t *testing.T) {
 
 	agent, err := proxy.FromEnv(nil, proxy.Options{
 		ControlKeyFile: filepath.Join(t.TempDir(), "control.key"),
-		TraceDir:       filepath.Join(t.TempDir(), "traces"),
+		// Never the operator's own stored policy: read, it would decide what this
+		// test's agent masks, and written it would outlive the run.
+		PolicyFile: proxy.NoFile,
+		TraceDir:   filepath.Join(t.TempDir(), "traces"),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -157,6 +167,9 @@ func TestTheBannerWarnsAgainstAServiceDefinition(t *testing.T) {
 	agent, err := proxy.FromEnv(nil, proxy.Options{
 		Audit:          io.Discard,
 		ControlKeyFile: filepath.Join(t.TempDir(), "control.key"),
+		// Never the operator's own stored policy: read, it would decide what this
+		// test's agent masks, and written it would outlive the run.
+		PolicyFile: proxy.NoFile,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -176,9 +189,10 @@ func TestTheBannerWarnsAgainstAServiceDefinition(t *testing.T) {
 func TestTheBannerDoesNotDenyTheFileItIsWriting(t *testing.T) {
 	t.Setenv("CLOAKFLEET_PII_LOCALE", "fr")
 	key := filepath.Join(t.TempDir(), "control.key")
+	const stored = proxy.NoFile
 
 	tracing, err := proxy.FromEnv(nil, proxy.Options{
-		Audit: io.Discard, ControlKeyFile: key, TraceDir: filepath.Join(t.TempDir(), "traces"),
+		Audit: io.Discard, ControlKeyFile: key, PolicyFile: stored, TraceDir: filepath.Join(t.TempDir(), "traces"),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -191,7 +205,7 @@ func TestTheBannerDoesNotDenyTheFileItIsWriting(t *testing.T) {
 
 	// And without -v the claim is true, so it is still made: a stopped reveal that
 	// left no trace is worth telling somebody.
-	quiet, err := proxy.FromEnv(nil, proxy.Options{Audit: io.Discard, ControlKeyFile: key})
+	quiet, err := proxy.FromEnv(nil, proxy.Options{Audit: io.Discard, ControlKeyFile: key, PolicyFile: stored})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,6 +224,9 @@ func TestTheListenFlagOverridesTheEnvironment(t *testing.T) {
 	agent, err := proxy.FromEnv(nil, proxy.Options{
 		Listen:         "0.0.0.0:8801",
 		ControlKeyFile: filepath.Join(t.TempDir(), "control.key"),
+		// Never the operator's own stored policy: read, it would decide what this
+		// test's agent masks, and written it would outlive the run.
+		PolicyFile: proxy.NoFile,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -228,6 +245,9 @@ func TestTheListenFlagOverridesTheEnvironment(t *testing.T) {
 func TestTheDefaultAddressDoesNotWarn(t *testing.T) {
 	agent, err := proxy.FromEnv(nil, proxy.Options{
 		ControlKeyFile: filepath.Join(t.TempDir(), "control.key"),
+		// Never the operator's own stored policy: read, it would decide what this
+		// test's agent masks, and written it would outlive the run.
+		PolicyFile: proxy.NoFile,
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -94,6 +94,59 @@ type streamRehydrator struct {
 	// template is the last delta event seen, kept so a pending tail still has an
 	// event to travel in when the stream ends before the token completes.
 	template []byte
+
+	// name is the "event:" line whose data line has not arrived yet.
+	//
+	// An SSE event is a name line, a data line and a blank, and a client dispatches
+	// on the name. So the three travel together or not at all. Forwarded the moment
+	// it arrived, a name line whose data line is then held back reaches the caller
+	// alone — and a client reading a named event with no data parses the empty
+	// string: "JSON Parse error: Unexpected EOF", the whole exchange lost. Held
+	// here, it is emitted with its own data line, and after whatever the block
+	// before it was still holding.
+	name string
+
+	// argumentsName and templateName are the name lines those two held events
+	// arrived under, so an event synthesised from either is dispatched as what it
+	// is. Emitted with the copy rather than remembered globally: a bare data line
+	// is attached by the client to whichever name it saw last, which is the stop
+	// event that released the arguments in the first place.
+	argumentsName string
+	templateName  string
+
+	// onTool reports a tool call the model asked for, once its arguments are a whole
+	// document, and whether a masked value was put back into them. Always set by the
+	// agent, because the heartbeat counts every tool call; nil only in tests that
+	// build a rehydrator by hand.
+	onTool func(name, arguments string, restored bool)
+
+	// onDegraded reports that a tool call's fragments never formed a document and
+	// were expanded token by token — the second-best path, counted so a fleet view
+	// can see how often the control ran on it. Nil skips the report.
+	onDegraded func()
+
+	// toolName is what the block being read is a call to, taken from its start
+	// event. Held beside the arguments rather than in a map keyed by block, because
+	// exactly one block is being accumulated at a time — the same reason arguments
+	// is one builder — and reset by every start event, or a second, unnamed tool
+	// call would be reported under the first one's name.
+	toolName string
+
+	// observing records that a tool call's fragments are being collected for the
+	// console alone, on the path that rewrites nothing — see observe.
+	observing bool
+
+	// held records that the event just read emitted nothing, so its blank
+	// separator is dropped with it: an event that is held contributes none of its
+	// three lines, not two of them. A conformant client ignores a blank line with
+	// no fields before it, but a tool call arrives in hundreds of fragments and
+	// betting the answer on that is how this file earned its last fix. Any other
+	// field arriving before that blank ends the hold — see rewrite.
+	//
+	// TODO: SSE allows an `event:` line *after* its `data:` line, and this reads
+	// the name as belonging to the data line that follows it. No provider this
+	// agent proxies writes an event that way round.
+	held bool
 }
 
 // The concrete type is returned rather than io.ReadCloser so a caller that traces
@@ -169,32 +222,46 @@ func (r *streamRehydrator) reportUsage() {
 
 // rewrite expands the tokens in one line of the stream.
 func (r *streamRehydrator) rewrite(line string) string {
+	if len(r.known) == 0 {
+		return r.observe(line)
+	}
 	payload, ok := eventPayload(line)
 	if !ok {
-		// Not a data line: an event name, a comment, a blank separator. Nothing
-		// to expand, and nothing that may be reordered.
+		// An event's name travels with its data line — see the field. Anything
+		// else is a comment or a blank separator: nothing to expand, and nothing
+		// that may be reordered.
+		if strings.HasPrefix(line, "event:") {
+			r.name = line
+			return ""
+		}
+		if strings.TrimSpace(line) == "" {
+			if r.held {
+				r.held = false
+				return ""
+			}
+			return line
+		}
+		// A comment, an `id:` or a `retry:` between a held data line and its blank.
+		// Forwarded, and the hold ends with it: the blank that follows now closes
+		// *this* line rather than the held event, and swallowing it would merge the
+		// line into the next event's block — an `id:` attached to the wrong event
+		// is a client resuming from the wrong point. Alone before a blank it
+		// dispatches nothing and still sets what it sets, which is what it did in
+		// the provider's stream.
+		r.held = false
 		return line
 	}
+	r.held = false
 
 	event, err := decodeEvent(payload)
 	if err != nil {
 		// Not JSON — the "[DONE]" sentinel, or a shape we do not model. There is
 		// no structure to work with, so expand whole tokens in the raw text and
 		// hold nothing back.
-		return strings.Replace(line, payload, detector.UnmaskSeen(payload, r.known, r.seen), 1)
+		return r.takeName() + strings.Replace(line, payload, detector.UnmaskSeen(payload, r.known, r.seen), 1)
 	}
 
-	// The same decoded event answers what the exchange cost. Accumulated rather
-	// than reported here: the model and the counts arrive in different events.
-	if model, usage := usageFrom(event); model != "" || usage != (telemetry.TokenUsage{}) {
-		if r.usageModel == "" {
-			r.usageModel = model
-		}
-		r.usageTotals.Input += usage.Input
-		r.usageTotals.Output += usage.Output
-		r.usageTotals.CacheWrite += usage.CacheWrite
-		r.usageTotals.CacheRead += usage.CacheRead
-	}
+	r.noteUsage(event)
 
 	// Whatever the block before was holding is emitted before this event, and
 	// never after it: a block's own text has to reach the caller inside that
@@ -204,8 +271,22 @@ func (r *streamRehydrator) rewrite(line string) string {
 		prefix = r.closeBlock()
 		r.block = index
 	}
+	// After the prefix and before the line it belongs to: whatever the block was
+	// holding is a whole event of its own, carrying its own name.
+	name := r.takeName()
+
 	if eventType(event) == "content_block_stop" {
-		return prefix + r.closeBlock() + line
+		return prefix + r.closeBlock() + name + line
+	}
+
+	// A start event says what the block is, and for a tool call which tool. Read
+	// here rather than in the audit console, which never sees an event: this is the
+	// only place that knows a name and the arguments belong together.
+	if start, ok := objectAt(event, "content_block"); ok {
+		r.toolName = ""
+		if name, ok := toolCallName(start); ok {
+			r.toolName = name
+		}
 	}
 
 	// A tool call's arguments are held rather than rewritten — see the field.
@@ -216,9 +297,10 @@ func (r *streamRehydrator) rewrite(line string) string {
 			// The first fragment's own event carries the whole document later, so
 			// the shape emitted is the shape that arrived and the encoder does the
 			// escaping.
-			r.argumentsIn, r.argumentsSet = event, set
+			r.argumentsIn, r.argumentsSet, r.argumentsName = event, set, name
 		}
 		r.arguments.WriteString(fragment)
+		r.held = true
 		return prefix
 	}
 
@@ -233,9 +315,9 @@ func (r *streamRehydrator) rewrite(line string) string {
 		// usage report. Already expanded above; nothing to hold back.
 		encoded, err := encodeJSONBody(event)
 		if err != nil {
-			return prefix + line
+			return prefix + name + line
 		}
-		return prefix + "data: " + string(encoded) + "\n\n"
+		return prefix + name + "data: " + string(encoded) + "\n\n"
 	}
 
 	combined := expand(r.pending + text)
@@ -250,11 +332,97 @@ func (r *streamRehydrator) rewrite(line string) string {
 	if err != nil {
 		// Unreachable for a value that just came out of a decoder, but the
 		// original line is the safe answer rather than a panic.
-		return prefix + line
+		return prefix + name + line
 	}
 
-	r.template = encoded
-	return prefix + "data: " + string(encoded) + "\n\n"
+	r.template, r.templateName = encoded, name
+	return prefix + name + "data: " + string(encoded) + "\n\n"
+}
+
+// observe reads one line of a stream for a session that minted nothing, and
+// forwards it exactly as it arrived.
+//
+// An answer says three things and only one of them depends on the mapping: what to
+// put back, what the exchange cost, and what tool the model asked to run. With
+// nothing to put back the rewrite is the identity, and it is still not free of
+// consequence: every event is decoded and re-encoded — a lone surrogate comes out as
+// U+FFFD — a text ending on `[` is held back for a token that cannot arrive, and a
+// tool call's arguments are released as one document under a synthesised event
+// rather than as the fragments the provider sent. So the stream goes through
+// untouched, and the two questions that do not depend on the mapping are answered
+// by reading it: the counts are accumulated as they are on the rewriting path, and
+// the console is told each tool call once its fragments are whole, at the stop that
+// completes them.
+func (r *streamRehydrator) observe(line string) string {
+	payload, ok := eventPayload(line)
+	if !ok {
+		return line
+	}
+	event, err := decodeEvent(payload)
+	if err != nil {
+		return line
+	}
+	r.noteUsage(event)
+
+	if r.onTool == nil {
+		return line
+	}
+	if index, ok := blockIndex(event); ok && index != r.block {
+		r.reportArguments()
+		r.block = index
+	}
+	if eventType(event) == "content_block_stop" {
+		r.reportArguments()
+		return line
+	}
+	if start, ok := objectAt(event, "content_block"); ok {
+		r.toolName = ""
+		if name, ok := toolCallName(start); ok {
+			r.toolName = name
+		}
+	}
+	if fragment, _, ok := jsonFragment(event); ok {
+		r.arguments.WriteString(fragment)
+		r.observing = true
+	}
+	return line
+}
+
+// reportArguments hands the console the tool call whose fragments have all arrived,
+// on the observing path, where nothing is expanded and the document is the
+// concatenation as the provider sent it.
+func (r *streamRehydrator) reportArguments() {
+	if !r.observing {
+		return
+	}
+	r.observing = false
+	raw := r.arguments.String()
+	r.arguments.Reset()
+	// Nothing was restored: this is the path for a session that minted nothing.
+	r.onTool(r.toolName, raw, false)
+	r.toolName = ""
+}
+
+// noteUsage accumulates what the exchange cost from one decoded event. Accumulated
+// rather than reported: the model and the counts arrive in different events.
+func (r *streamRehydrator) noteUsage(event jsonObject) {
+	if model, usage := usageFrom(event); model != "" || usage != (telemetry.TokenUsage{}) {
+		if r.usageModel == "" {
+			r.usageModel = model
+		}
+		r.usageTotals.Input += usage.Input
+		r.usageTotals.Output += usage.Output
+		r.usageTotals.CacheWrite += usage.CacheWrite
+		r.usageTotals.CacheRead += usage.CacheRead
+	}
+}
+
+// takeName returns the withheld event-name line and clears it, so it is emitted
+// with exactly one data line.
+func (r *streamRehydrator) takeName() string {
+	name := r.name
+	r.name = ""
+	return name
 }
 
 // closeBlock emits whatever the block being left behind was holding.
@@ -265,7 +433,12 @@ func (r *streamRehydrator) rewrite(line string) string {
 // as it stands.
 func (r *streamRehydrator) closeBlock() string {
 	out := ""
-	if r.arguments.Len() > 0 {
+	// On the event being held, not on the fragments' length: Anthropic opens every
+	// tool call's arguments with an empty fragment, and a tool that takes none sends
+	// nothing after it. Released on length, that block kept its hold, and the next
+	// tool call's restored arguments went out in *this* block's event — after its
+	// stop, under its index, so the client attached one tool's arguments to another.
+	if r.argumentsIn != nil {
 		out += r.expandedArguments()
 	}
 	if r.pending != "" {
@@ -281,13 +454,23 @@ func (r *streamRehydrator) expandedArguments() string {
 	raw := r.arguments.String()
 	r.arguments.Reset()
 
-	event, set := r.argumentsIn, r.argumentsSet
-	r.argumentsIn, r.argumentsSet = nil, nil
+	event, set, name := r.argumentsIn, r.argumentsSet, r.argumentsName
+	r.argumentsIn, r.argumentsSet, r.argumentsName = nil, nil, ""
 	if event == nil || set == nil {
 		return ""
 	}
 
-	expand := func(text string) string { return detector.UnmaskSeen(text, r.known, r.seen) }
+	// restored is what the heartbeat counts: a tool about to act on a value the
+	// model never saw. Read off the expansion itself rather than off the mapping,
+	// because a session with a mapping still makes tool calls that touch none of it.
+	restored := false
+	expand := func(text string) string {
+		out := detector.UnmaskSeen(text, r.known, r.seen)
+		if out != text {
+			restored = true
+		}
+		return out
+	}
 
 	out := ""
 	if doc, err := decodeJSONBody([]byte(raw)); err == nil {
@@ -301,14 +484,26 @@ func (r *streamRehydrator) expandedArguments() string {
 		// before this held anything back — never worse than it was, and a client
 		// that cannot parse the arguments could not have used them either way.
 		out = expand(raw)
+		if r.onDegraded != nil {
+			r.onDegraded()
+		}
 	}
+
+	// Reported here because here is where both halves exist at once: the tool's
+	// name from its start event, and the arguments as one restored document. Before
+	// the event is re-encoded, so the console shows what the client will act on
+	// rather than the framing around it.
+	if r.onTool != nil {
+		r.onTool(r.toolName, out, restored)
+	}
+	r.toolName = ""
 
 	set(out)
 	encoded, err := encodeJSONBody(event)
 	if err != nil {
 		return ""
 	}
-	return "data: " + string(encoded) + "\n\n"
+	return name + "data: " + string(encoded) + "\n\n"
 }
 
 // tailEvent puts a held-back tail into a copy of the last delta event.
@@ -332,7 +527,7 @@ func (r *streamRehydrator) tailEvent(tail string) string {
 	if err != nil {
 		return ""
 	}
-	return "data: " + string(encoded) + "\n\n"
+	return r.templateName + "data: " + string(encoded) + "\n\n"
 }
 
 // eventType reports the "type" an event declares, or "" for one that declares none.
@@ -386,6 +581,11 @@ func jsonFragment(event jsonObject) (fragment string, set func(string), found bo
 // token, but the alternative is losing characters the caller wrote; the arguments
 // case is a tool call the caller would otherwise never receive at all.
 func (r *streamRehydrator) flush() {
+	if r.observing {
+		// A stream cut short of its stop: the console is still told what had
+		// arrived, as the rewriting path releases what it held.
+		r.reportArguments()
+	}
 	r.out.WriteString(r.closeBlock())
 }
 

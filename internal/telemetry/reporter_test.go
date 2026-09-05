@@ -167,11 +167,11 @@ func TestReporterEnrolsOnceThenReports(t *testing.T) {
 	r := NewRecorder(epoch)
 	rep, identity := newTestReporter(t, b, r)
 
-	r.Request()
-	r.Masked(map[pii.Category]int{pii.CatEmail: 2})
+	r.Request("default", "", "")
+	r.Masked("default", map[pii.Category]int{pii.CatEmail: 2})
 	rep.report(t.Context())
 
-	r.Request()
+	r.Request("default", "", "")
 	rep.report(t.Context())
 
 	got, signatures, enrolments := b.received()
@@ -263,8 +263,8 @@ func TestRefusedBucketsKeepTheirOwnWindows(t *testing.T) {
 	rep, _ := reporterInHome(t, b, r, t.TempDir(), func() time.Time { return now })
 
 	b.setFailing(true)
-	r.Request()
-	r.Masked(map[pii.Category]int{pii.CatEmail: 3})
+	r.Request("default", "", "")
+	r.Masked("default", map[pii.Category]int{pii.CatEmail: 3})
 	now = epoch.Add(5 * time.Minute)
 	rep.report(t.Context())
 
@@ -272,7 +272,7 @@ func TestRefusedBucketsKeepTheirOwnWindows(t *testing.T) {
 		t.Fatalf("the backend accepted a heartbeat it was meant to refuse: %v", got)
 	}
 
-	r.Request() // the next five minutes, still with the backend down
+	r.Request("default", "", "") // the next five minutes, still with the backend down
 	now = epoch.Add(10 * time.Minute)
 	rep.report(t.Context())
 
@@ -332,7 +332,7 @@ func TestBucketsTooOldAreDroppedAndCounted(t *testing.T) {
 	now := epoch
 	rep, _ := reporterInHome(t, b, r, t.TempDir(), func() time.Time { return now })
 
-	r.Request()
+	r.Request("default", "", "")
 	b.setFailing(true)
 	now = epoch.Add(5 * time.Minute)
 	rep.report(t.Context()) // queued, refused
@@ -376,7 +376,7 @@ func TestAnUnreachableBackendIsSurvivable(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r.Request()
+	r.Request("default", "", "")
 	rep.report(t.Context()) // must not panic and must not block
 
 	// And the bucket is still queued, on disk, to send when the backend comes back.
@@ -405,7 +405,7 @@ func TestRunReportsAtStartAndOnShutdown(t *testing.T) {
 	r := NewRecorder(epoch)
 	rep, _ := newTestReporter(t, b, r)
 
-	r.Request()
+	r.Request("default", "", "")
 
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
@@ -421,7 +421,7 @@ func TestRunReportsAtStartAndOnShutdown(t *testing.T) {
 	// "exactly one heartbeat" held — on scheduling luck, not behaviour.
 	waitForHeartbeats(t, b, 1)
 
-	r.Request()
+	r.Request("default", "", "")
 	cancel()
 	select {
 	case <-done:
@@ -510,7 +510,7 @@ func TestNoTokenMeansNoReportAndNoLoss(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r.Request()
+	r.Request("default", "", "")
 	rep.report(t.Context())
 
 	if _, _, enrolments := b.received(); enrolments != 0 {
@@ -573,7 +573,7 @@ func TestRunRetriesQuicklyAndSendsTheBufferedWindow(t *testing.T) {
 	r := NewRecorder(epoch)
 	rep, _ := newTestReporter(t, b, r) // interval: one hour
 
-	r.Request()
+	r.Request("default", "", "")
 
 	ctx, cancel := context.WithCancel(t.Context())
 	// Waited for, not just cancelled: Run writes the buffer file on its way out, and
@@ -678,7 +678,7 @@ func TestAnOutageSurvivesARestartAndIsFiledOnRecovery(t *testing.T) {
 	first := NewRecorder(epoch)
 	before, _ := reporterInHome(t, b, first, home, clock)
 	for i := range 3 {
-		first.Request()
+		first.Request("default", "", "")
 		now = epoch.Add(time.Duration(i+1) * 5 * time.Minute)
 		before.report(t.Context())
 	}
@@ -695,7 +695,7 @@ func TestAnOutageSurvivesARestartAndIsFiledOnRecovery(t *testing.T) {
 		t.Fatalf("%d buckets survived the restart, want 3", after.queue.pending())
 	}
 
-	second.Request()
+	second.Request("default", "", "")
 	now = now.Add(5 * time.Minute)
 	b.setFailing(false)
 	after.report(t.Context())
@@ -767,7 +767,17 @@ func TestRunDrainsABacklogWithoutWaitingAnInterval(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rep, _ := reporterInHome(t, b, r, home, time.Now) // interval: one hour
+	// A pinned clock, like every other test here, and this one is the reason the
+	// convention exists. Against time.Now the buckets above are fixed calendar
+	// dates: seven days after epoch the age bound starts discarding them, one every
+	// five minutes of wall time, and the count below fell to 62, then 61. The test
+	// was green the day it was written and rotted on a schedule — the same failure
+	// DOBCheck's injectable clock exists to prevent, in the opposite direction.
+	//
+	// Six hours after epoch leaves the oldest bucket well inside the bound and the
+	// newest still in the recent past, whatever today's date is.
+	clock := func() time.Time { return epoch.Add(6 * time.Hour) }
+	rep, _ := reporterInHome(t, b, r, home, clock) // interval: one hour
 	ctx, cancel := context.WithCancel(t.Context())
 	// Waited for, not just cancelled: Run writes the buffer file on its way out, and
 	// a test whose temporary directory is removed underneath it fails on cleanup
@@ -778,6 +788,20 @@ func TestRunDrainsABacklogWithoutWaitingAnInterval(t *testing.T) {
 	// All of them, plus the bucket Run closes at start. With the interval set to an
 	// hour, a second pass can only be the backlog rule.
 	waitForHeartbeats(t, b, maxBucketsPerRequest+4)
+
+	// And none of them went missing to the age bound rather than being delivered.
+	// Asserted separately because the count above cannot tell the two apart: a
+	// bucket pruned before the first request and a bucket never sent both read as
+	// one heartbeat short, and it was the pruning — for five months nobody would
+	// have guessed which.
+	delivered, err := loadBuffer(filepath.Join(home, "buffer.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if delivered.dropped != 0 {
+		t.Errorf("%d bucket(s) were discarded by a bound, not delivered — the "+
+			"fixtures are being measured against the wrong clock", delivered.dropped)
+	}
 }
 
 // A kill this process cannot handle — SIGKILL, a power cut, a battery at zero —
@@ -796,8 +820,8 @@ func TestAKilledProcessLosesOnlyWhatWasNotSnapshotted(t *testing.T) {
 	before.collect() // the bucket carrying the process start, delivered below
 
 	// Three minutes into the next bucket, with work done and no interval reached.
-	killed.Request()
-	killed.Masked(map[pii.Category]int{pii.CatEmail: 5})
+	killed.Request("default", "", "")
+	killed.Masked("default", map[pii.Category]int{pii.CatEmail: 5})
 	now = epoch.Add(3 * time.Minute)
 	before.snapshot()
 
@@ -850,7 +874,7 @@ func TestClosingABucketClearsTheLiveEntry(t *testing.T) {
 	r := NewRecorder(epoch)
 	rep, _ := reporterInHome(t, b, r, home, func() time.Time { return now })
 
-	r.Request()
+	r.Request("default", "", "")
 	now = epoch.Add(30 * time.Second)
 	rep.snapshot()
 

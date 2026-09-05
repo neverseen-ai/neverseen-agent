@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/cloakfleet/cloakfleet/internal/detector"
-	"github.com/cloakfleet/cloakfleet/pkg/pii"
 )
 
 // The one route on this agent that changes what it does, and the only one that is
@@ -126,74 +125,43 @@ func (s *Server) handlePolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The whole state, every time, and a request missing part of it is refused
-	// rather than completed from what happens to be current.
+	// One writer at a time. The detector's own state is atomic, but this handler is
+	// a read-modify-write of the *file* — apply, then read the detector back, then
+	// store — and two surfaces on one agent interleave the halves of it, which is
+	// the hazard this route already names for the mapping.
+	s.policyMu.Lock()
+	defer s.policyMu.Unlock()
+
+	changed, applied, err := applyPolicy(s.det, req)
+	// Counted whatever the outcome, refusals included: State says what is switched
+	// off, and this is what lets a fleet view see that somebody keeps trying.
+	s.recorder.Policy(err == nil)
+	if errors.Is(err, errPartialPolicy) {
+		// A malformed request rather than a refused state: nothing was applied, and
+		// there is nothing to persist or to log as a change.
+		http.Error(w, "cloakfleet: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Recorded whatever the outcome below, and from the detector rather than from
+	// this request. The route is not a transaction — a good locale selection with a
+	// bad category leaves the locales applied and returns an error — so what has to
+	// go to disk is what the agent *is* when this handler returns, or a restart
+	// would undo half a change nobody could see had been half applied.
 	//
-	// The alternative — "absent means unchanged" — cannot be written honestly here.
-	// An empty locale list is a *valid* state, the one an agent starts in when
-	// nothing is configured, so absence cannot mean "leave them alone" without
-	// making "load none" unsayable. And a caller that sent only "off" would silently
-	// wipe the locale selection, which is the request that turns an agent into one
-	// masking almost nothing while reporting success.
-	if req.Substitution == "" {
-		http.Error(w, "cloakfleet: this route replaces the whole state, so \"substitution\" "+
-			"is required — send what the agent currently reports on /healthz, with your change applied",
-			http.StatusBadRequest)
-		return
+	// Only when something was applied, though. A request refused before the first
+	// change — a misspelled mode — is one the agent was never told, and writing over
+	// it created the file for the first time and took the agent off its environment
+	// configuration permanently, over a request that changed nothing. The file's
+	// absence has to keep meaning "nobody has".
+	if applied {
+		s.persistPolicy()
 	}
 
-	if req.SecretLevel == "" {
-		http.Error(w, "cloakfleet: this route replaces the whole state, so \"secret_level\" "+
-			"is required — send what the agent currently reports on /healthz, with your change applied",
-			http.StatusBadRequest)
-		return
-	}
-
-	mode, err := detector.ParseSubstitution(req.Substitution)
 	if err != nil {
 		http.Error(w, "cloakfleet: "+err.Error(), http.StatusUnprocessableEntity)
 		return
 	}
-
-	level, err := detector.ParseSecretLevel(req.SecretLevel)
-	if err != nil {
-		http.Error(w, "cloakfleet: "+err.Error(), http.StatusUnprocessableEntity)
-		return
-	}
-
-	cats := make([]pii.Category, 0, len(req.Off))
-	for _, code := range req.Off {
-		cats = append(cats, pii.Category(code))
-	}
-
-	// Locales first, because it decides which categories exist to be switched off
-	// at all, and because it is the change that can fail on a typo. Applied in the
-	// order a reader would expect the state to settle in.
-	//
-	// Each step refuses on its own and the earlier ones stay applied, which is worth
-	// naming: this is not a transaction. A caller that sent a good locale selection
-	// and a bad category gets the locales changed and an error, and its next poll
-	// shows exactly that — which is why every surface here redraws from the reply
-	// rather than from its own request.
-	if err := s.det.SetLocales(req.Locales); err != nil {
-		http.Error(w, "cloakfleet: "+err.Error(), http.StatusUnprocessableEntity)
-		return
-	}
-
-	// The detector is the one that refuses a credential, so it cannot be switched
-	// off by anything — not by this route, not by a second surface written later.
-	// The rule lives with the catalogue rather than with the transport.
-	if err := s.det.Disable(cats); err != nil {
-		http.Error(w, "cloakfleet: "+err.Error(), http.StatusUnprocessableEntity)
-		return
-	}
-
-	// Read before the change so the purge below can tell a real change from a
-	// request that resent the mode it was already in — which every surface does on
-	// every click, because this route replaces the whole state.
-	changed := s.det.Substitution() != mode
-	s.det.SetSubstitution(mode)
-	s.det.SetSecretLevel(level)
 
 	// The mapping is what the mode is read against, and it is read first: a value
 	// the session has already seen keeps the shape it was first given, whatever the
@@ -217,8 +185,8 @@ func (s *Server) handlePolicy(w http.ResponseWriter, r *http.Request) {
 	s.log.Warn("what this agent masks was changed",
 		"off", req.Off,
 		"locales", req.Locales,
-		"substitution", mode.String(),
-		"secret_level", level.String(),
+		"substitution", s.det.Substitution().String(),
+		"secret_level", s.det.SecretLevel().String(),
 		"masking", s.det.Masking().String(),
 		// Said out loud because it is the one part of this request that discards
 		// state, and an unexpanded token in an answer is otherwise unexplainable.

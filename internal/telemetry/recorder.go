@@ -10,18 +10,33 @@
 // package can reach a caller's request.
 //
 // And nothing counted here is content. The counters hold integers, category
-// names from the agent's own catalogue, and model ids the provider reported.
-// There is nowhere in this package to put a prompt even by accident, which is
-// the property pkg/telemetry's contract test exists to keep.
+// names from the agent's own catalogue, model ids the provider reported, and
+// words from the closed vocabularies the contract carries. There is nowhere in
+// this package to put a prompt even by accident, which is the property
+// pkg/telemetry's contract test exists to keep. The one place text arrives — a
+// tool call's arguments, in Tool — is reduced to those vocabularies before the
+// lock is even taken, and the text is dropped.
 package telemetry
 
 import (
+	"maps"
 	"sync"
 	"time"
 
 	"github.com/cloakfleet/cloakfleet/pkg/pii"
 	"github.com/cloakfleet/cloakfleet/pkg/telemetry"
 )
+
+// SessionIdle is how long a session outlives its last request before it is
+// counted as closed.
+//
+// The same thirty minutes as vault.DefaultTTL, and it has to be: a session here
+// is the conversation the mapping is scoped by, and closing one while its mapping
+// still lives — or keeping one after its mapping has gone — would have the
+// heartbeat describing conversations the agent no longer recognises. Not imported
+// from the vault, because this package must not reach into the request path;
+// TestSessionIdleMatchesTheVault holds the two together.
+const SessionIdle = 30 * time.Minute
 
 // Recorder accumulates one window's counters.
 //
@@ -33,16 +48,34 @@ type Recorder struct {
 	mu sync.Mutex
 
 	start    time.Time
-	requests int
-	masked   map[string]int
-	models   map[string]telemetry.TokenUsage
-	dropped  int
-	restarts int
+	counters telemetry.Counters
+
+	// sessions are the conversations still alive, by the identity the request path
+	// scopes them by. Never reported: the identity stays here and the counts leave.
+	// Swept on every Take and Snapshot, so an entry lives SessionIdle past its last
+	// request and the map is bounded by how many conversations half an hour holds.
+	sessions map[string]*session
+
+	// seen names the sessions that sent a request in the open window, for Active.
+	seen map[string]struct{}
+
+	// clock dates a session's requests. time.Now outside the tests, which pin it
+	// for the reason every reporter test pins Config.Now: a session that ages out
+	// under a real clock turns a test green or red with the wall time.
+	clock func() time.Time
 
 	// changes counts what has been recorded into the open window, so a caller can
 	// tell whether it is worth writing to disk again without comparing two sets of
 	// maps. Reset with the counters, so zero means "nothing to snapshot".
 	changes uint64
+}
+
+// session is one conversation's running totals, folded into the histograms when
+// it closes.
+type session struct {
+	first, last time.Time
+
+	requests, input, output, toolCalls, masked int
 }
 
 // NewRecorder starts a window at now.
@@ -52,25 +85,112 @@ type Recorder struct {
 // separate call anybody can forget to make, and no way for the count to disagree
 // with the number of processes there actually were.
 func NewRecorder(now time.Time) *Recorder {
-	return &Recorder{
+	r := &Recorder{
 		start:    now,
-		masked:   make(map[string]int),
-		models:   make(map[string]telemetry.TokenUsage),
-		restarts: 1,
+		sessions: make(map[string]*session),
+		clock:    time.Now,
+	}
+	r.reset(now)
+	r.counters.Restarts = 1
+	return r
+}
+
+// WithClock dates the recorder's sessions from clock rather than from the wall.
+//
+// For a replay: exchanges read back from trace files happened at the time the
+// file says, and a session's idle bound has to be measured against that time or
+// every conversation in the traces closes at once, at the first sweep. Not a
+// setting of the running agent, which has no reason to date anything but now.
+func (r *Recorder) WithClock(clock func() time.Time) *Recorder {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.clock = clock
+	return r
+}
+
+// reset opens a new window at now. Called under the lock.
+func (r *Recorder) reset(now time.Time) {
+	r.start = now
+	r.counters = telemetry.Counters{}
+	r.seen = make(map[string]struct{})
+	r.changes = 0
+}
+
+// Request counts one proxied exchange: which conversation it belongs to, which
+// client family sent it, and which provider it was for.
+//
+// client is a word from telemetry.KnownClients — see ClientFamily — and provider a
+// route code; either may be empty. Anything outside the vocabulary is counted as
+// Other here rather than trusted from the caller, so the invariant does not
+// depend on every call site reducing correctly.
+func (r *Recorder) Request(session, client, provider string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.counters.Requests++
+	r.changes++
+	if client != "" {
+		count(&r.counters.Clients, inVocabulary(client, telemetry.KnownClients))
+	}
+	if provider != "" {
+		count(&r.counters.Providers, provider)
+	}
+
+	s := r.session(session)
+	s.requests++
+}
+
+// Refused counts a request the agent would not forward — the fail-closed 415.
+func (r *Recorder) Refused() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.counters.Refused++
+	r.changes++
+}
+
+// Upstream counts how a provider answered. Zero is no answer at all.
+func (r *Recorder) Upstream(status int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.changes++
+	switch {
+	case status == 0:
+		r.counters.Upstream.Unreachable++
+	case status == 429:
+		r.counters.Upstream.RateLimited++
+	case status >= 500:
+		r.counters.Upstream.Failed++
+	case status >= 400:
+		r.counters.Upstream.Rejected++
+	default:
+		r.counters.Upstream.OK++
 	}
 }
 
-// Request counts one proxied exchange.
-func (r *Recorder) Request() {
+// Policy counts one request to change what the agent masks.
+func (r *Recorder) Policy(applied bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.requests++
+	r.changes++
+	if applied {
+		r.counters.Policy.Applied++
+	} else {
+		r.counters.Policy.Refused++
+	}
+}
+
+// Degraded counts an answer whose tool-call arguments never formed a document and
+// were expanded token by token — see the contract field.
+func (r *Recorder) Degraded() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.counters.Degraded++
 	r.changes++
 }
 
 // Masked counts values replaced, by category. Repeats included: a value masked
 // three times in one body is three values that did not leave the machine.
-func (r *Recorder) Masked(counts map[pii.Category]int) {
+func (r *Recorder) Masked(session string, counts map[pii.Category]int) {
 	if len(counts) == 0 {
 		return
 	}
@@ -78,9 +198,12 @@ func (r *Recorder) Masked(counts map[pii.Category]int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.changes++
+	total := 0
 	for cat, n := range counts {
-		r.masked[string(cat)] += n
+		count(&r.counters.Masked, string(cat), n)
+		total += n
 	}
+	r.session(session).masked += total
 }
 
 // Usage counts tokens spent on a model.
@@ -88,7 +211,7 @@ func (r *Recorder) Masked(counts map[pii.Category]int) {
 // Raw counts, never a cost. The price table belongs to the backend: prices change,
 // and an agent that computed money would have to be redeployed to every
 // workstation each time one did.
-func (r *Recorder) Usage(model string, usage telemetry.TokenUsage) {
+func (r *Recorder) Usage(session, model string, usage telemetry.TokenUsage) {
 	if model == "" || usage == (telemetry.TokenUsage{}) {
 		return
 	}
@@ -97,12 +220,88 @@ func (r *Recorder) Usage(model string, usage telemetry.TokenUsage) {
 	defer r.mu.Unlock()
 
 	r.changes++
-	seen := r.models[model]
+	if r.counters.Models == nil {
+		r.counters.Models = make(map[string]telemetry.TokenUsage)
+	}
+	seen := r.counters.Models[model]
 	seen.Input += usage.Input
 	seen.Output += usage.Output
 	seen.CacheWrite += usage.CacheWrite
 	seen.CacheRead += usage.CacheRead
-	r.models[model] = seen
+	r.counters.Models[model] = seen
+
+	s := r.session(session)
+	s.input += usage.Input + usage.CacheWrite + usage.CacheRead
+	s.output += usage.Output
+}
+
+// Tool counts one tool call the model made.
+//
+// The arguments are read for the programs a shell command names and the classes
+// they fall into, reduced to the contract's vocabularies before the lock is taken,
+// and then dropped — see tools.go. Nothing of the text survives the call.
+func (r *Recorder) Tool(session string, call ToolCall) {
+	name, programs, classes := classify(call)
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.changes++
+	r.counters.Tools.Calls++
+	if call.Restored {
+		r.counters.Tools.Restored++
+	}
+	count(&r.counters.Tools.Names, name)
+	for _, p := range programs {
+		count(&r.counters.Tools.Programs, p)
+	}
+	for _, c := range classes {
+		count(&r.counters.Tools.Classes, c)
+	}
+	r.session(session).toolCalls++
+}
+
+// session finds or opens the conversation's tally, and marks it active in this
+// window. Called under the lock.
+func (r *Recorder) session(id string) *session {
+	now := r.clock()
+	s, ok := r.sessions[id]
+	if !ok {
+		s = &session{first: now}
+		r.sessions[id] = s
+		r.counters.Sessions.Opened++
+	}
+	s.last = now
+	if _, active := r.seen[id]; !active {
+		r.seen[id] = struct{}{}
+		r.counters.Sessions.Active++
+	}
+	return s
+}
+
+// sweep closes every session idle for SessionIdle at now, folding its totals into
+// the open window's histograms. Called under the lock.
+//
+// From Take and Snapshot rather than from a timer of its own, because those are
+// the two moments the recorder is read on the reporter's goroutine with a clock,
+// and a session that closed between two of them lands in the window being filed
+// either way.
+func (r *Recorder) sweep(now time.Time) {
+	for id, s := range r.sessions {
+		if now.Sub(s.last) < SessionIdle {
+			continue
+		}
+		delete(r.sessions, id)
+		r.changes++
+		sessions := &r.counters.Sessions
+		sessions.Closed++
+		sessions.Duration.Add(int(s.last.Sub(s.first) / time.Second))
+		sessions.Requests.Add(s.requests)
+		sessions.Input.Add(s.input)
+		sessions.Output.Add(s.output)
+		sessions.ToolCalls.Add(s.toolCalls)
+		sessions.Masked.Add(s.masked)
+	}
 }
 
 // Take returns the window's counters and starts a new window.
@@ -114,25 +313,10 @@ func (r *Recorder) Take(now time.Time) (telemetry.Counters, telemetry.Window) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	counters := telemetry.Counters{
-		Requests: r.requests,
-		Dropped:  r.dropped,
-		Restarts: r.restarts,
-	}
-	if len(r.masked) > 0 {
-		counters.Masked = r.masked
-	}
-	if len(r.models) > 0 {
-		counters.Models = r.models
-	}
+	r.sweep(now)
+	counters := r.counters
 	window := telemetry.Window{Start: r.start, End: now}
-
-	r.start = now
-	r.requests, r.dropped, r.restarts = 0, 0, 0
-	r.changes = 0
-	r.masked = make(map[string]int)
-	r.models = make(map[string]telemetry.TokenUsage)
-
+	r.reset(now)
 	return counters, window
 }
 
@@ -154,24 +338,31 @@ func (r *Recorder) Snapshot(now time.Time) (telemetry.Counters, telemetry.Window
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	counters := telemetry.Counters{
-		Requests: r.requests,
-		Dropped:  r.dropped,
-		Restarts: r.restarts,
-	}
-	if len(r.masked) > 0 {
-		counters.Masked = make(map[string]int, len(r.masked))
-		for cat, n := range r.masked {
-			counters.Masked[cat] = n
-		}
-	}
-	if len(r.models) > 0 {
-		counters.Models = make(map[string]telemetry.TokenUsage, len(r.models))
-		for model, usage := range r.models {
-			counters.Models[model] = usage
-		}
-	}
+	r.sweep(now)
+	counters := r.counters
+	counters.Masked = maps.Clone(counters.Masked)
+	counters.Models = maps.Clone(counters.Models)
+	counters.Providers = maps.Clone(counters.Providers)
+	counters.Clients = maps.Clone(counters.Clients)
+	counters.Tools.Names = maps.Clone(counters.Tools.Names)
+	counters.Tools.Programs = maps.Clone(counters.Tools.Programs)
+	counters.Tools.Classes = maps.Clone(counters.Tools.Classes)
+	counters.Sessions.Duration = cloneHistogram(counters.Sessions.Duration)
+	counters.Sessions.Requests = cloneHistogram(counters.Sessions.Requests)
+	counters.Sessions.Input = cloneHistogram(counters.Sessions.Input)
+	counters.Sessions.Output = cloneHistogram(counters.Sessions.Output)
+	counters.Sessions.ToolCalls = cloneHistogram(counters.Sessions.ToolCalls)
+	counters.Sessions.Masked = cloneHistogram(counters.Sessions.Masked)
 	return counters, telemetry.Window{Start: r.start, End: now}, r.changes
+}
+
+func cloneHistogram(h telemetry.Histogram) telemetry.Histogram {
+	if h == nil {
+		return nil
+	}
+	out := make(telemetry.Histogram, len(h))
+	copy(out, h)
+	return out
 }
 
 // Drop records that n buckets were abandoned without being delivered.
@@ -191,6 +382,29 @@ func (r *Recorder) Drop(n int) {
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.dropped += n
+	r.counters.Dropped += n
 	r.changes++
+}
+
+// count adds to a map that may not exist yet. Maps stay nil until the first
+// entry so an empty one is omitted from the wire rather than sent as {}.
+func count(m *map[string]int, key string, n ...int) {
+	if *m == nil {
+		*m = make(map[string]int)
+	}
+	if len(n) == 0 {
+		(*m)[key]++
+		return
+	}
+	(*m)[key] += n[0]
+}
+
+// inVocabulary returns word if the vocabulary lists it, and Other if not.
+func inVocabulary(word string, vocabulary []string) string {
+	for _, known := range vocabulary {
+		if word == known {
+			return word
+		}
+	}
+	return telemetry.Other
 }

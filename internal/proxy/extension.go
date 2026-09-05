@@ -102,9 +102,9 @@ func (s *Server) handleMask(w http.ResponseWriter, r *http.Request) {
 	// Counted like any other masking this agent did. An extension exchange is values
 	// that did not leave the workstation, and leaving it out would show a fleet view
 	// a machine doing nothing while every browser chat on it was being masked.
-	s.recorder.Request()
+	s.recorder.Request(session, "extension", "")
 	if count > 0 {
-		s.recorder.Masked(pass.Counts())
+		s.recorder.Masked(session, pass.Counts())
 
 		// Counts, never content — the rule holds on this route as on every other.
 		s.log.Info("text masked", "session", session, "values", count, "minted", len(pass.Minted()))

@@ -1041,3 +1041,205 @@ func TestATraceFilesTheAnswerOnce(t *testing.T) {
 		t.Errorf("the answer's size appears %d times, want once", n)
 	}
 }
+
+// A tool call is the one part of an answer that is an instruction rather than
+// prose, so the console names the tool and prints the arguments the model asked
+// for it with — restored, which is what the tool on this workstation will act on.
+//
+// The arguments are split mid-value here, which is the case that makes the point:
+// the console must print the whole document, once, not a fragment per event.
+func TestAuditPrintsTheToolCallTheModelAskedFor(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		token := mintedToken(t, string(body))
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		arguments := `{"to":"` + token + `"}`
+		cut := len(arguments) / 2
+		events := []string{
+			`{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","name":"SendMail"}}`,
+			`{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":` + jsonString(arguments[:cut]) + `}}`,
+			`{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":` + jsonString(arguments[cut:]) + `}}`,
+			`{"type":"content_block_stop","index":0}`,
+		}
+		for _, e := range events {
+			fmt.Fprintf(w, "event: x\ndata: %s\n\n", e)
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+	})
+	agent, console := newAuditingAgent(t, up, []string{"fr"})
+
+	const email = "pierre.paul@example.fr"
+	post(t, agent, "/anthropic/v1/messages", "tool-stream",
+		fmt.Sprintf(`{"prompt":%q}`, "write to "+email))
+
+	want := `TOOL SendMail {"to":"` + email + `"}`
+	printed := stripANSI(console.String())
+	if n := strings.Count(printed, want); n != 1 {
+		t.Errorf("the console printed the tool call %d times, want once:\n%s", n, printed)
+	}
+}
+
+// A buffered answer has no blocks, and its tool calls sit in the content array.
+// Without this half the console would show a streaming client's tool calls and
+// nothing for a buffered one — a silence an operator would read as an answer that
+// asked for no tools.
+func TestAuditPrintsAToolCallFromABufferedAnswer(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		token := mintedToken(t, string(body))
+
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"content":[{"type":"text","text":"On it."},`+
+			`{"type":"tool_use","name":"SendMail","input":{"to":%q}}]}`, token)
+	})
+	agent, console := newAuditingAgent(t, up, []string{"fr"})
+
+	const email = "pierre.paul@example.fr"
+	post(t, agent, "/anthropic/v1/messages", "tool-buffered",
+		fmt.Sprintf(`{"prompt":%q}`, "write to "+email))
+
+	want := `TOOL SendMail {"to":"` + email + `"}`
+	if printed := stripANSI(console.String()); !strings.Contains(printed, want) {
+		t.Errorf("the console does not carry %q:\n%s", want, printed)
+	}
+}
+
+// An exchange whose session minted nothing still carries tool calls, and the
+// console still shows them. Gated on the mapping instead, the line would be there
+// for a prompt holding an address and silently absent for one that did not —
+// which is the console lying about what the model asked for.
+func TestAuditPrintsAToolCallWhenNothingWasMasked(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		events := []string{
+			`{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","name":"Bash"}}`,
+			`{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"cmd\":\"ls\"}"}}`,
+			`{"type":"content_block_stop","index":0}`,
+		}
+		for _, e := range events {
+			fmt.Fprintf(w, "event: x\ndata: %s\n\n", e)
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+	})
+	agent, console := newAuditingAgent(t, up, []string{"fr"})
+
+	got := post(t, agent, "/anthropic/v1/messages", "nothing-masked",
+		`{"prompt":"list the files"}`)
+	if !strings.Contains(got.body, `{\"cmd\":\"ls\"}`) {
+		t.Fatalf("the tool call did not reach the caller: %s", got.body)
+	}
+
+	want := `TOOL Bash {"cmd":"ls"}`
+	if printed := stripANSI(console.String()); !strings.Contains(printed, want) {
+		t.Errorf("the console does not carry %q:\n%s", want, printed)
+	}
+}
+
+// mintedToken returns the replacement the agent put into a body it forwarded, so a
+// fake provider can answer with the token this exchange actually minted.
+func mintedToken(t *testing.T, body string) string {
+	t.Helper()
+
+	i := strings.Index(body, "[EMAIL_")
+	if i < 0 {
+		t.Fatalf("the forwarded body holds no replacement: %s", body)
+	}
+	j := strings.Index(body[i:], "]")
+	if j < 0 {
+		t.Fatalf("the replacement is not closed: %s", body)
+	}
+	return body[i : i+j+1]
+}
+
+// jsonString renders text as a JSON string, so a fragment carrying a quote is
+// escaped rather than spliced.
+func jsonString(text string) string {
+	encoded, err := json.Marshal(text)
+	if err != nil {
+		panic(err)
+	}
+	return string(encoded)
+}
+
+// A tool the provider runs itself arrives as server_tool_use, and a connector's as
+// mcp_tool_use — same name, same input document, same input_json_delta fragments.
+// Matched on tool_use alone, a real web_search printed as "TOOL unnamed" while its
+// name sat unread in the start event, which is the console failing at the one thing
+// the line exists for: saying which tool is about to act.
+func TestAuditNamesEveryFlavourOfToolCall(t *testing.T) {
+	blocks := []string{
+		`{"type":"server_tool_use","id":"srvtoolu_1","name":"web_search","input":{}}`,
+		`{"type":"mcp_tool_use","id":"mcptoolu_1","name":"jira_search","input":{}}`,
+	}
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		for i, block := range blocks {
+			events := []string{
+				fmt.Sprintf(`{"type":"content_block_start","index":%d,"content_block":%s}`, i, block),
+				fmt.Sprintf(`{"type":"content_block_delta","index":%d,"delta":{"type":"input_json_delta","partial_json":"{\"query\":\"mcp\"}"}}`, i),
+				fmt.Sprintf(`{"type":"content_block_stop","index":%d}`, i),
+			}
+			for _, e := range events {
+				fmt.Fprintf(w, "event: x\ndata: %s\n\n", e)
+				if flusher != nil {
+					flusher.Flush()
+				}
+			}
+		}
+	})
+	agent, console := newAuditingAgent(t, up, []string{"fr"})
+
+	post(t, agent, "/anthropic/v1/messages", "tool-flavours", `{"prompt":"search it"}`)
+
+	printed := stripANSI(console.String())
+	for _, want := range []string{
+		`TOOL web_search {"query":"mcp"}`,
+		`TOOL jira_search {"query":"mcp"}`,
+	} {
+		if !strings.Contains(printed, want) {
+			t.Errorf("the console does not carry %q:\n%s", want, printed)
+		}
+	}
+	if strings.Contains(printed, "TOOL unnamed") {
+		t.Errorf("a named tool call was printed unnamed:\n%s", printed)
+	}
+}
+
+// The same three flavours in a buffered answer, where the tool calls sit in the
+// content array rather than in blocks. Fixed in one place and not the other, half
+// the clients would still see the silence.
+func TestAuditNamesEveryFlavourOfToolCallWhenBuffered(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"content":[`+
+			`{"type":"server_tool_use","name":"web_search","input":{"query":"mcp"}},`+
+			`{"type":"web_search_tool_result","tool_use_id":"srvtoolu_1","content":[]},`+
+			`{"type":"mcp_tool_use","name":"jira_search","input":{"query":"mcp"}}]}`)
+	})
+	agent, console := newAuditingAgent(t, up, []string{"fr"})
+
+	post(t, agent, "/anthropic/v1/messages", "tool-flavours-buffered", `{"prompt":"search it"}`)
+
+	printed := stripANSI(console.String())
+	for _, want := range []string{
+		`TOOL web_search {"query":"mcp"}`,
+		`TOOL jira_search {"query":"mcp"}`,
+	} {
+		if !strings.Contains(printed, want) {
+			t.Errorf("the console does not carry %q:\n%s", want, printed)
+		}
+	}
+	// A result is not a call: its type ends on tool_result, and reported it would
+	// put a line on the console for a tool nobody asked to run.
+	if n := strings.Count(printed, "TOOL "); n != 2 {
+		t.Errorf("the console printed %d tool lines, want 2:\n%s", n, printed)
+	}
+}

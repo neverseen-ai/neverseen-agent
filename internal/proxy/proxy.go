@@ -23,6 +23,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cloakfleet/cloakfleet/internal/detector"
@@ -62,6 +63,18 @@ type Config struct {
 	// that route refuses everything, which is what an agent that could not read
 	// its key must do.
 	ControlKey string
+
+	// Listen is the address the agent will be served on, so State can say whether
+	// it is reachable beyond loopback. The server does not listen itself — the
+	// command does — so this is told rather than known. Empty reads as loopback.
+	Listen string
+
+	// PolicyFile is where a change made through PUT /policy is stored, so it
+	// survives a restart. Empty stores nothing, which is what every test that
+	// builds a server by hand wants: the default path belongs to FromEnv, as the
+	// control key's does, so a unit test cannot write into the operator's own
+	// state.
+	PolicyFile string
 }
 
 // Server is the agent's HTTP front.
@@ -78,6 +91,11 @@ type Server struct {
 	providers []Provider
 	routes    map[string]*httputil.ReverseProxy
 
+	// hosts is where each route actually goes, by code, because one decision on
+	// the request path is about the destination and not the name — see
+	// identifierHost.
+	hosts map[string]string
+
 	// startedAt is when this process began serving, so a supervision backend can
 	// show uptime and spot an agent restarting in a loop.
 	startedAt time.Time
@@ -86,6 +104,19 @@ type Server struct {
 	// Empty means that route refuses everything, which is the safe direction — see
 	// policy.go.
 	controlKey string
+
+	// policyFile is where that route stores what it applied, so the next start
+	// finds it. Empty stores nothing — see policyfile.go.
+	policyFile string
+
+	// exposed records that the agent was told it would listen beyond loopback —
+	// see State.Exposed.
+	exposed bool
+
+	// policyMu serialises PUT /policy, which is a read-modify-write of the file
+	// above: apply, read the detector back, store. Two surfaces click at once and
+	// the halves interleave.
+	policyMu sync.Mutex
 }
 
 // New builds the server.
@@ -115,8 +146,11 @@ func New(cfg Config, det *detector.Detector, v *vault.Vault) (*Server, error) {
 		audit:      newAuditor(cfg.Audit, cfg.Traces),
 		providers:  providers,
 		routes:     make(map[string]*httputil.ReverseProxy, len(providers)),
+		hosts:      make(map[string]string, len(providers)),
 		startedAt:  time.Now(),
 		controlKey: cfg.ControlKey,
+		policyFile: cfg.PolicyFile,
+		exposed:    cfg.Listen != "" && BeyondLoopback(cfg.Listen),
 	}
 
 	for _, p := range providers {
@@ -133,6 +167,7 @@ func New(cfg Config, det *detector.Detector, v *vault.Vault) (*Server, error) {
 			return nil, fmt.Errorf("provider %q: %q is not an absolute URL", p.Code, p.BaseURL)
 		}
 		s.routes[p.Code] = s.reverseProxy(base)
+		s.hosts[p.Code] = base.Hostname()
 	}
 	return s, nil
 }
@@ -153,6 +188,7 @@ func (s *Server) reverseProxy(base *url.URL) *httputil.ReverseProxy {
 		},
 		ModifyResponse: s.unmask,
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			s.recorder.Upstream(0)
 			s.log.Error("upstream failed", "path", r.URL.Path, "error", err)
 			http.Error(w, "cloakfleet: the provider could not be reached", http.StatusBadGateway)
 		},
@@ -204,6 +240,7 @@ func (s *Server) healthNow() Health {
 		// offering a choice has to draw.
 		AvailableLocales: pii.LocaleCodes(),
 		Groups:           s.catalogue(),
+		Off:              switchedOffCodes(s.det.Disabled()),
 	}
 }
 
@@ -280,42 +317,64 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request) {
 	}
 
 	session := sessionOf(r)
-	ref, err := s.maskRequest(session, code, r)
+	ref, conversation, err := s.maskRequest(session, code, r)
 	if err != nil {
 		// Fail closed. Forwarding a body this could not read is exactly the
 		// leak the agent exists to prevent, so an unreadable body is an error
 		// rather than a pass-through.
+		s.recorder.Refused()
 		s.log.Error("masking failed, refusing to forward", "session", session, "error", err)
 		http.Error(w, "cloakfleet: the request body could not be masked", http.StatusUnsupportedMediaType)
 		return
 	}
 
-	s.recorder.Request()
+	s.recorder.Request(conversation, telemetry.ClientFamily(r.UserAgent()), code)
 
 	r.URL.Path = rest
 	r.Host = ""
 	if ref != nil {
 		ref.sent = time.Now()
 	}
-	route.ServeHTTP(w, r.WithContext(withTrace(withSession(r.Context(), session), ref)))
+	ctx := withConversation(withSession(r.Context(), session), conversation)
+	route.ServeHTTP(w, r.WithContext(withTrace(ctx, ref)))
 }
 
 // maskRequest replaces the sensitive values in the body and records what it
 // replaced, in the session's vault, before the request goes anywhere.
 //
+// It also returns the conversation the exchange belongs to, for the heartbeat's
+// session counts — see conversationOf. The vault keeps its own session, because
+// changing what scopes the mapping is a change to what the agent does, and this
+// is a change to what it counts.
+//
 // It returns the exchange's trace, or nil when nothing is being recorded, so the
 // answer can be appended to the file this half has just written.
-func (s *Server) maskRequest(session, provider string, r *http.Request) (*traceRef, error) {
+func (s *Server) maskRequest(session, provider string, r *http.Request) (*traceRef, string, error) {
 	if r.Body == nil || r.ContentLength == 0 {
-		return nil, nil
+		return nil, session, nil
 	}
 
 	body, err := readBody(r)
 	if err != nil {
-		return nil, err
+		return nil, session, err
 	}
 
 	pass := s.det.NewPass(s.vault.Load(session))
+
+	// Decoded once, here, because two things read the document: the exemption
+	// below, from one member of it, and the masking, over every string in it.
+	// A body that is not JSON is masked as flat text further down.
+	doc, decodeErr := decodeJSONBody(body)
+
+	// The identifiers naming this client to the provider that issued them are not
+	// the caller's data, and a token in their place is a cost with no protection
+	// bought — see identifiers.go. Decided on where the route goes, not what it is
+	// called: the same code can be pointed at any host by CLOAKFLEET_PROVIDERS.
+	conversation := session
+	if decodeErr == nil {
+		pass.Exempt = exemptIdentifiers(s.hosts[provider], doc)
+		conversation = conversationOf(session, s.hosts[provider], doc)
+	}
 
 	// Collected rather than printed as they are found, so the console can write
 	// the whole outbound half of one exchange in a single block: what arrived,
@@ -349,8 +408,8 @@ func (s *Server) maskRequest(session, provider string, r *http.Request) (*traceR
 	// somebody asked for a trace.
 	scanned := time.Now()
 	masked := ""
-	if out, ok := mapJSONStrings(body, mask); ok {
-		masked = string(out)
+	if encoded, err := encodeMasked(doc, decodeErr, mask); err == nil {
+		masked = string(encoded)
 	} else {
 		masked = mask(string(body))
 	}
@@ -367,7 +426,7 @@ func (s *Server) maskRequest(session, provider string, r *http.Request) (*traceR
 		// storing would send the provider tokens the response path can never
 		// expand, so the caller would read the agent's bookkeeping instead of
 		// its own data.
-		return nil, fmt.Errorf("store the session mapping: %w", err)
+		return nil, session, fmt.Errorf("store the session mapping: %w", err)
 	}
 
 	r.Body = io.NopCloser(strings.NewReader(masked))
@@ -376,7 +435,7 @@ func (s *Server) maskRequest(session, provider string, r *http.Request) (*traceR
 	r.Header.Del("Content-Encoding") // readBody has decompressed it
 
 	if count > 0 {
-		s.recorder.Masked(pass.Counts())
+		s.recorder.Masked(conversation, pass.Counts())
 
 		// Counts, never content: the log is the one place a masked value could
 		// come back into the clear by accident.
@@ -384,9 +443,9 @@ func (s *Server) maskRequest(session, provider string, r *http.Request) (*traceR
 	}
 
 	if path == "" {
-		return nil, nil
+		return nil, conversation, nil
 	}
-	return &traceRef{path: path, provider: provider, masking: masking}, nil
+	return &traceRef{path: path, provider: provider, masking: masking}, conversation, nil
 }
 
 // readBody returns the request body as text, decompressing it when it arrived
@@ -424,14 +483,29 @@ func (s *Server) unmask(resp *http.Response) error {
 	// request the file already holds — and an exchange whose outbound half is on
 	// disk with no inbound half reads as one that never came back.
 	ref := s.recordResponse(resp)
+	s.recorder.Upstream(resp.StatusCode)
 
 	known := s.vault.Load(sessionFromResponse(resp))
-	if len(known) == 0 || !isTextual(resp.Header.Get("Content-Type")) {
+	conversation := conversationFromResponse(resp)
+	if !isTextual(resp.Header.Get("Content-Type")) {
 		return nil
 	}
+	// Every textual answer goes through, whatever the session minted and whoever is
+	// watching. An answer says three things, and only the first depends on the
+	// mapping: what has to be put back, what the exchange cost, and what tool the
+	// model asked to run.
+	//
+	// This used to return early on an empty mapping, so an exchange that replaced
+	// nothing was never read for its token counts and never reached the heartbeat.
+	// Gating it on `-a` instead would have been worse: two agents on identical
+	// traffic would report different totals depending on whether a console was
+	// attached, and a trace's `unmask` duration would appear and vanish with the
+	// flag. What the flags reveal must never change what the agent does.
 
 	if isEventStream(resp.Header.Get("Content-Type")) {
-		stream := newStreamRehydrator(resp.Body, known, s.usageSink(ref), s.audit.unmaskedSeen())
+		stream := newStreamRehydrator(resp.Body, known, s.usageSink(ref, conversation), s.audit.unmaskedSeen())
+		stream.onTool = s.toolSink(conversation)
+		stream.onDegraded = s.recorder.Degraded
 		if ref != nil {
 			stream.onExpanded = func(spent time.Duration) { ref.expanding = spent }
 		}
@@ -461,19 +535,30 @@ func (s *Server) unmask(resp *http.Response) error {
 	}
 
 	expanded := time.Now()
-	out := ""
+	out := string(body)
 	if doc, err := decodeJSONBody(body); err == nil {
 		// The same decode answers both questions, so the body is parsed once:
 		// what the tokens cost, and what has to be put back into it.
 		if model, usage := usageFrom(doc); model != "" {
-			s.usageSink(ref)(model, usage)
+			s.usageSink(ref, conversation)(model, usage)
 		}
-		if encoded, err := encodeJSONBody(mapStrings(doc, expand)); err == nil {
-			out = string(encoded)
-		} else {
-			out = expand(string(body))
+		// The buffered half of the tool-call console and the heartbeat's tool
+		// counts — see reportToolCalls, and why it runs before the pass below.
+		reportToolCalls(doc, known, s.audit.unmaskedSeen(), s.toolSink(conversation))
+		// Expanded and re-encoded only when there is something to put back. The
+		// round trip is not byte-preserving — a lone surrogate becomes U+FFFD,
+		// pretty-printing is compacted — and an answer the agent has no reason to
+		// touch must reach the caller as the provider sent it. The decode above
+		// still happens for every answer, because the counts and the tool calls do
+		// not depend on the mapping; only the rewrite does.
+		if len(known) > 0 {
+			if encoded, err := encodeJSONBody(mapStrings(doc, expand)); err == nil {
+				out = string(encoded)
+			} else {
+				out = expand(string(body))
+			}
 		}
-	} else {
+	} else if len(known) > 0 {
 		out = expand(string(body))
 	}
 	if ref != nil {
@@ -517,15 +602,30 @@ func (s *Server) recordResponse(resp *http.Response) *traceRef {
 //
 // Always the recorder, which is what the heartbeat is built from; also the trace,
 // when there is one. Handed over as one function so neither caller has to remember
-// both, and so an untraced agent still passes the recorder's own method rather than
-// a closure wrapping it.
-func (s *Server) usageSink(ref *traceRef) func(string, pkgtelemetry.TokenUsage) {
-	if ref == nil {
-		return s.recorder.Usage
-	}
+// both.
+func (s *Server) usageSink(ref *traceRef, conversation string) func(string, pkgtelemetry.TokenUsage) {
 	return func(model string, usage pkgtelemetry.TokenUsage) {
-		ref.model, ref.usage = model, usage
-		s.recorder.Usage(model, usage)
+		if ref != nil {
+			ref.model, ref.usage = model, usage
+		}
+		s.recorder.Usage(conversation, model, usage)
+	}
+}
+
+// toolSink is where a response reports the tool calls in it: always the recorder,
+// which counts every one, and the console when there is one.
+//
+// The console used to be the only consumer, and the callback was nil without it so
+// that an agent not auditing paid nothing per tool call. The heartbeat now wants
+// each call, so every agent pays the reduction in Recorder.Tool — a JSON decode of
+// a shell command's arguments and a split on its operators, on the response path,
+// once per tool call.
+func (s *Server) toolSink(conversation string) func(name, arguments string, restored bool) {
+	return func(name, arguments string, restored bool) {
+		s.recorder.Tool(conversation, telemetry.ToolCall{Name: name, Arguments: arguments, Restored: restored})
+		if s.audit.writes() {
+			s.audit.tool(name, arguments)
+		}
 	}
 }
 
@@ -637,4 +737,23 @@ func sessionFromResponse(resp *http.Response) string {
 		return session
 	}
 	return "default"
+}
+
+type conversationKey struct{}
+
+func withConversation(ctx context.Context, conversation string) context.Context {
+	return context.WithValue(ctx, conversationKey{}, conversation)
+}
+
+// conversationFromResponse recovers the conversation the heartbeat counts an
+// exchange under, on the response path. Falls back to the session, which is what
+// the conversation is whenever nothing narrower was read.
+func conversationFromResponse(resp *http.Response) string {
+	if resp.Request == nil {
+		return "default"
+	}
+	if conversation, ok := resp.Request.Context().Value(conversationKey{}).(string); ok {
+		return conversation
+	}
+	return sessionFromResponse(resp)
 }

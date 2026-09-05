@@ -37,15 +37,17 @@ import (
 // as text.
 func mapJSONStrings(raw []byte, f func(string) string) ([]byte, bool) {
 	doc, err := decodeJSONBody(raw)
-	if err != nil {
-		return nil, false
-	}
+	encoded, err := encodeMasked(doc, err, f)
+	return encoded, err == nil
+}
 
-	encoded, err := encodeJSONBody(mapStrings(doc, f))
-	if err != nil {
-		return nil, false
+// encodeMasked is the second half of mapJSONStrings for a caller that has already
+// decoded the body, and reads the decode error so that caller keeps one branch.
+func encodeMasked(doc any, decodeErr error, f func(string) string) ([]byte, error) {
+	if decodeErr != nil {
+		return nil, decodeErr
 	}
-	return encoded, true
+	return encodeJSONBody(mapStrings(doc, f))
 }
 
 // mapStrings walks a decoded document and applies f to every string it holds.

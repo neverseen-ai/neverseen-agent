@@ -63,6 +63,17 @@ type Health struct {
 	// menu built from its own copy would go on offering a category after a rebuilt
 	// agent stopped having it, and the picture would disagree with the traffic.
 	Groups []HealthGroup `json:"groups,omitempty"`
+
+	// Off is the whole switched-off set as codes — the intent, including categories
+	// no loaded locale can emit — and it is what a surface sends back.
+	//
+	// Groups carries only what the detector can find, on purpose (see catalogue),
+	// so a surface that rebuilt the set from Groups sent back the reachable half:
+	// with SSN off and `us` unloaded, the next click on anything at all put
+	// `off: []` and the stored file made the loss permanent — loading `us` later
+	// found SSN on, which is the regression the stored intent exists to prevent.
+	// Displayed from Groups, resent from here.
+	Off []string `json:"off,omitempty"`
 }
 
 // HealthGroup is one family of categories, as a surface needs to draw it.
@@ -145,14 +156,22 @@ func (s Status) Level() detector.Level {
 // the catalogue lists them. For a person reading a report.
 func (s Status) SwitchedOff() []string { return s.switchedOff(false) }
 
-// SwitchedOffCodes is the same list as the codes a request carries. For anything
-// that has to send the set back.
+// SwitchedOffCodes is the set as the codes a request carries — the whole intent,
+// unreachable categories included. For anything that has to send the set back.
 //
 // Two methods rather than one returning both, because the two are for different
 // readers and a caller that mixed them would print "EMAIL" at somebody or send
 // "Email address" to the agent — and the second fails with "no category named",
-// which reads as a bug in the agent.
-func (s Status) SwitchedOffCodes() []string { return s.switchedOff(true) }
+// which reads as a bug in the agent. And two sources: the labels come from Groups,
+// which lists what the agent can find; the codes from Off, which is what it
+// remembers. Derived from Groups only for an agent that did not send Off — an
+// older build, whose set could not hold more than Groups shows.
+func (s Status) SwitchedOffCodes() []string {
+	if s.Off != nil {
+		return s.Off
+	}
+	return s.switchedOff(true)
+}
 
 func (s Status) switchedOff(codes bool) []string {
 	var out []string
@@ -170,6 +189,15 @@ func (s Status) switchedOff(codes bool) []string {
 	}
 	return out
 }
+
+// healthMaxBytes bounds what Query reads from /healthz.
+//
+// The payload is the whole catalogue listed by group, so it grows every time a
+// category is added — roughly eighty bytes each. Sixty-four kibibytes is eight
+// times what the catalogue needs today, which is headroom for the next batch
+// rather than a number that has to be revisited with each one, and it still
+// bounds a route that is called on every new shell.
+const healthMaxBytes = 64 * 1024
 
 // Query asks the agent about itself.
 //
@@ -198,7 +226,15 @@ func Query(ctx context.Context, addr string, timeout time.Duration) Status {
 	// Bounded, and read to the end either way: this runs on every new shell when
 	// `cloakfleet env` is wired into a profile, and a connection left half open on
 	// a machine that opens a shell every few seconds is a socket nobody reclaims.
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 8*1024))
+	//
+	// healthMaxBytes, not a literal, because the payload carries the whole
+	// catalogue by group and so grows with it. At 8 KiB it already did not fit:
+	// the second tier of vendor prefixes took the body past the cap, the read
+	// truncated, the parse below failed and every field stayed empty — so
+	// `cloakfleet status` printed nothing, the menu bar drew nothing and the exit
+	// code said something was wrong, over an agent that was answering perfectly.
+	// TestHealthPayloadFitsTheQueryBound is what makes the next overrun loud.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, healthMaxBytes))
 	if err != nil || resp.StatusCode != http.StatusOK {
 		return status
 	}

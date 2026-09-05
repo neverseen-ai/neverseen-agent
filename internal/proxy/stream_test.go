@@ -273,3 +273,37 @@ func chars(s string) []string {
 	}
 	return out
 }
+
+// An answer to a session that minted nothing reaches the caller exactly as the
+// provider sent it, streamed or buffered.
+//
+// The rewrite is not byte-preserving — a lone surrogate comes out as U+FFFD, a
+// pretty-printed body is compacted, a text ending on `[` is held back for a token
+// that cannot arrive, and a tool call's fragments are released as one document — and
+// with nothing to put back there is no reason to pay any of that. The counts and the
+// tool calls are still read (TestAuditPrintsAToolCallWhenNothingWasMasked), which is
+// why this is not the early return that once skipped both.
+func TestAnAnswerToAnEmptySessionIsForwardedVerbatim(t *testing.T) {
+	stream := "event: content_block_start\n" +
+		`data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","name":"Bash"}}` + "\n\n" +
+		"event: content_block_delta\n" +
+		`data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"cmd\":\"ls ["}}` + "\n\n" +
+		"event: content_block_delta\n" +
+		`data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"a \ud83d ["}}` + "\n\n" +
+		": keepalive\n\n" +
+		"event: content_block_stop\n" +
+		`data: {"type":"content_block_stop","index":0}` + "\n\n"
+	if got := rehydrate(t, stream, nil); got != stream {
+		t.Errorf("a stream for an empty session was rewritten:\n got: %q\nwant: %q", got, stream)
+	}
+
+	body := "{\n  \"content\": [{\"type\": \"text\", \"text\": \"a \\ud83d [\"}]\n}"
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, body)
+	})
+	agent := newAgent(t, up, []string{"fr"})
+	if got := post(t, agent, "/anthropic/v1/messages", "empty", `{"prompt":"list the files"}`); got.body != body {
+		t.Errorf("a buffered answer for an empty session was rewritten:\n got: %q\nwant: %q", got.body, body)
+	}
+}

@@ -90,6 +90,9 @@ func TestRun(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("CLOAKFLEET_PII_LOCALE", tt.locale)
 			t.Setenv("CLOAKFLEET_PII_ALLOWLIST", "")
+			// scan reads the stored policy as the agent does, and this workstation
+			// may have one.
+			t.Setenv("HOME", t.TempDir())
 
 			var out bytes.Buffer
 			err := run(tt.args, strings.NewReader(tt.stdin), &out)
@@ -109,7 +112,37 @@ func TestRun(t *testing.T) {
 	}
 }
 
+// scan and the agent are one binary and must read the same state, or the one
+// reports a value as masked that the other forwards in clear. Before scan read the
+// stored policy, a category unticked in the menu bar was still reported by scan.
+func TestRunScanFollowsTheStoredPolicy(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CLOAKFLEET_PII_LOCALE", "fr")
+	t.Setenv("CLOAKFLEET_PII_ALLOWLIST", "")
+
+	if err := os.MkdirAll(filepath.Join(home, ".cloakfleet"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	stored := `{"off":["EMAIL"],"substitution":"token","locales":["gb"],"secret_level":"weak"}`
+	if err := os.WriteFile(filepath.Join(home, ".cloakfleet", "policy.json"), []byte(stored), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	if err := run([]string{"scan"}, strings.NewReader("write to claire@example.fr about it"), &out); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if strings.Contains(out.String(), "claire@example.fr") {
+		t.Errorf("scan reported a category the stored policy switched off:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "locales: gb") {
+		t.Errorf("scan read the environment's locale over the stored one:\n%s", out.String())
+	}
+}
+
 func TestRunScanReadsAFile(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	t.Setenv("CLOAKFLEET_PII_LOCALE", "fr")
 	t.Setenv("CLOAKFLEET_PII_ALLOWLIST", "")
 

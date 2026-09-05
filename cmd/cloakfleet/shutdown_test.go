@@ -65,6 +65,16 @@ func TestTheLastWindowIsFiledBeforeTheCommandReturns(t *testing.T) {
 	}))
 	defer provider.Close()
 
+	// The only test that goes through runProxy, which passes no PolicyFile and no
+	// ControlKeyFile — so both fall back to ~/.cloakfleet, and this test read the
+	// policy of whichever workstation ran it. On a machine with the agent installed
+	// and EMAIL switched off, the file wins over CLOAKFLEET_PII_LOCALE below, the
+	// address goes out in clear and the assertion at the end fails over a rule that
+	// is working exactly as written. Every other test names a temp file in Options;
+	// this one has nowhere to name it, so the home directory itself is moved, which
+	// keeps the control key out of the developer's ~/.cloakfleet as well.
+	t.Setenv("HOME", t.TempDir())
+
 	addr := freePort(t)
 	t.Setenv("CLOAKFLEET_LISTEN", addr)
 	t.Setenv("CLOAKFLEET_PROVIDERS", "anthropic="+provider.URL)

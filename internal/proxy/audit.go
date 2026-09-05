@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 	"sync"
+
+	"github.com/cloakfleet/cloakfleet/internal/detector"
 )
 
 // The audit console is the one place in this agent where a real value is written
@@ -211,6 +213,113 @@ func (a *auditor) unmasked(replacement, original string) {
 		a.paint(ansiRed, replacement), a.paint(ansiBlue, original)))
 }
 
+// tool reports an execution the model asked for: which tool, and the arguments it
+// asked for it with.
+//
+// This is the one thing on the console that is neither a value nor a replacement,
+// and it earns its place because it is the only part of an answer an operator has
+// to read: the rest of a reply is prose for a human, while a tool call is an
+// instruction the tool on this workstation is about to carry out. Watching an
+// exchange go past, "the model asked to run Bash on this path" is the line that
+// says whether the masking held all the way to the thing that acts.
+//
+// The arguments are printed **after restoration**, in clear, on purpose and at a
+// cost that is recorded rather than hidden: they carry the caller's own paths,
+// commands and addresses, so under the installer's service definition -a puts every
+// tool call of every exchange into ~/.cloakfleet/agent.log for as long as the
+// service runs. That is the exposure the banner already warns about for the MASK
+// lines; this widens it from single values to a whole arguments document.
+//
+// One line, whatever the arguments' size: a Write of several kilobytes will scroll
+// the MASK lines away, which is the reason bodies were taken off this console in the
+// first place.
+// TODO: no ceiling on the arguments printed. The upgrade is a width the operator
+// sets, once anybody has read this on a real session and said where it hurts.
+func (a *auditor) tool(name, arguments string) {
+	if !a.writes() {
+		return
+	}
+	if name == "" {
+		// A tool call whose start event named no tool: the arguments are still the
+		// instruction, and a blank where the name goes reads as a missing line.
+		name = "unnamed"
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	// Green because a tool call comes back from the provider, the direction UNMASK
+	// already uses; the arguments blue, because after restoration that is what they
+	// are — a value in clear.
+	fmt.Fprintf(a.w, "%s %s %s\n",
+		a.paint(ansiBold+ansiGreen, "TOOL"),
+		a.paint(ansiBold, name),
+		a.paint(ansiBlue, arguments))
+}
+
+// reportToolCalls walks a buffered answer and reports the tool calls in it, each
+// with its arguments restored and whether restoring changed anything.
+//
+// The streaming path finds them in the block machinery it already has; a buffered
+// answer has no blocks, and its tool calls sit in the message's content array as
+// {"type":"tool_use","name":...,"input":{...}}. Without this half the console would
+// show tool calls for a streaming client and nothing at all for a buffered one,
+// which is worse than not having the line: an operator would read the silence as an
+// answer that asked for no tools — and the heartbeat would count tool calls for
+// one kind of client and none for the other.
+//
+// The inputs are expanded here, before the pass over the whole document, and in
+// place: what the heartbeat counts is whether *this* call acted on a restored
+// value, and that is only knowable by expanding its own arguments and seeing them
+// change. mapStrings rewrites the document it is given, so run after the whole
+// pass this would find every input already expanded and count nothing. The whole
+// pass then finds these inputs already expanded and changes nothing in them — one
+// expansion, and one console line per value, through the seen callback handed in.
+//
+// Anthropic's shape only. The OpenAI-compatible families put theirs in
+// choices[].message.tool_calls, and this agent does not yet read their streaming
+// arguments either — see the TODO on jsonFragment. Guessing the shape here would put
+// a name and a document on screen that no provider ever sent.
+func reportToolCalls(doc any, known map[string]string, seen func(masked, original string),
+	report func(name, arguments string, restored bool)) {
+	obj, ok := doc.(jsonObject)
+	if !ok {
+		return
+	}
+	raw, ok := obj.value("content")
+	if !ok {
+		return
+	}
+	items, ok := raw.([]any)
+	if !ok {
+		return
+	}
+	for _, item := range items {
+		entry, ok := item.(jsonObject)
+		if !ok {
+			continue
+		}
+		name, ok := toolCallName(entry)
+		if !ok {
+			continue
+		}
+		arguments, restored := "", false
+		if input, ok := entry.value("input"); ok {
+			expanded := mapStrings(input, func(text string) string {
+				out := detector.UnmaskSeen(text, known, seen)
+				if out != text {
+					restored = true
+				}
+				return out
+			})
+			// Re-encoded rather than printed as a Go value: the console has to show
+			// the document the tool will parse, not fmt's rendering of a decoded one.
+			if encoded, err := encodeJSONBody(expanded); err == nil {
+				arguments = string(encoded)
+			}
+		}
+		report(name, arguments, restored)
+	}
+}
+
 // line is one MASK or UNMASK.
 //
 // The two halves arrive painted, by the caller that knows which is which. Sniffed
@@ -289,4 +398,25 @@ func (a *auditor) unmaskedSeen() func(replacement, original string) {
 			a.unmasked(replacement, original)
 		}
 	}
+}
+
+// toolCallName returns the tool a content block is a call to, and whether it is one
+// at all.
+//
+// Anthropic has three flavours of tool call, differing only in who runs the tool:
+// tool_use for this workstation's, server_tool_use for one the provider runs itself
+// (web_search), mcp_tool_use for a connector's. All three carry a name and a JSON
+// input document, and all three stream their arguments as input_json_delta — so
+// matching the first alone reported the other two with the name sitting unread in
+// the start event, and a real web_search printed as "TOOL unnamed". Matched on the
+// suffix rather than a list of the three, because the list is the half that falls
+// behind: a fourth flavour would arrive nameless, and naming the tool about to act
+// is the whole of what this line is for.
+func toolCallName(block jsonObject) (string, bool) {
+	kind, _ := stringAt(block, "type")
+	if !strings.HasSuffix(kind, "tool_use") {
+		return "", false
+	}
+	name, _ := stringAt(block, "name")
+	return name, true
 }

@@ -78,9 +78,12 @@ func newAgent(t *testing.T, up *upstream, locales []string) *httptest.Server {
 		t.Fatal(err)
 	}
 
+	// The same upstream under two hosts, because the one thing the request path
+	// decides on the destination — identifierHost — has to be able to tell the
+	// two routes apart. `anthropicIs` points that decision at the first.
 	srv, err := New(Config{Providers: []Provider{
 		{Code: "anthropic", BaseURL: up.server.URL},
-		{Code: "openai", BaseURL: up.server.URL},
+		{Code: "openai", BaseURL: strings.Replace(up.server.URL, "127.0.0.1", "localhost", 1)},
 	}}, det, v)
 	if err != nil {
 		t.Fatal(err)
@@ -89,6 +92,21 @@ func newAgent(t *testing.T, up *upstream, locales []string) *httptest.Server {
 	agent := httptest.NewServer(srv.Handler())
 	t.Cleanup(agent.Close)
 	return agent
+}
+
+// anthropicIs makes the test upstream count as Anthropic for the exemption
+// identifiers.go grants, for the length of one test. The rule is keyed on the
+// resolved host rather than on the route's code, and the test upstream is not
+// api.anthropic.com — so a test asserting that Anthropic's own identifiers reach
+// it in clear has to say which host Anthropic is.
+func anthropicIs(t *testing.T, up *upstream) {
+	t.Helper()
+	was := identifierHost
+	identifierHost = "127.0.0.1"
+	t.Cleanup(func() { identifierHost = was })
+	if !strings.Contains(up.server.URL, identifierHost) {
+		t.Fatalf("the test upstream is at %s, not on %s", up.server.URL, identifierHost)
+	}
 }
 
 // reply is what a test needs from an exchange: the status, the headers, and the

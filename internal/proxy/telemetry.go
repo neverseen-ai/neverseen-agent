@@ -1,8 +1,10 @@
 package proxy
 
 import (
+	"net/url"
 	"runtime"
 
+	"github.com/cloakfleet/cloakfleet/internal/detector"
 	"github.com/cloakfleet/cloakfleet/pkg/pii"
 	contract "github.com/cloakfleet/cloakfleet/pkg/telemetry"
 )
@@ -22,28 +24,74 @@ import (
 // told to do" but "what is it doing" — and an agent running with no locale
 // selected masks almost nothing while looking perfectly healthy.
 func (s *Server) State() contract.State {
+	state := detectorState(s.det)
+	state.StartedAt = s.startedAt
+	state.Providers = providerCodes(s.providers)
+
+	// Read at each heartbeat rather than cached at start-up: a laptop moves
+	// between networks and a cached address would name where the machine was
+	// when it booted.
+	state.Addresses = localAddresses()
+
+	// How the agent itself is exposed — the console printing values in clear,
+	// the traces on disk, an address beyond loopback, a route pointed at a
+	// party that is not the vendor. Fixed for the life of the process, all
+	// four, but read here with the rest so one function says what the agent is.
+	state.Console = s.audit.writes()
+	state.Tracing = s.audit.traceDir() != ""
+	state.Exposed = s.exposed
+	state.Rerouted = s.rerouted()
+	return state
+}
+
+// detectorState is the half of State that is the detector's: the build, and what
+// it is masking. Shared with the replay, which has a detector and no server.
+//
+// Read at each heartbeat rather than cached at start-up, because the policy
+// changes while the process runs, which nothing else in State does. Cached at
+// start-up, a supervision backend would show every agent as applying its whole
+// catalogue no matter what anybody switched off — and Masking is the one field
+// whose whole purpose is to say otherwise.
+func detectorState(det *detector.Detector) contract.State {
 	return contract.State{
 		Version:      Version,
 		Platform:     runtime.GOOS + "/" + runtime.GOARCH,
-		StartedAt:    s.startedAt,
-		Locales:      s.det.Locales(),
-		Substitution: s.det.Substitution().String(),
-		Providers:    providerCodes(s.providers),
-
-		// Read at each heartbeat rather than cached at start-up: a laptop moves
-		// between networks and a cached address would name where the machine was
-		// when it booted.
-		Addresses: localAddresses(),
-
-		// Read at each heartbeat for a stronger version of the same reason: this
-		// changes while the process runs, which nothing else in State does. Cached
-		// at start-up, a supervision backend would show every agent as applying its
-		// whole catalogue no matter what anybody switched off — and it is the one
-		// field here whose whole purpose is to say otherwise.
-		Masking:     s.det.Masking().String(),
-		SwitchedOff: switchedOffCodes(s.det.Disabled()),
-		SecretLevel: s.det.SecretLevel().String(),
+		Locales:      det.Locales(),
+		Substitution: det.Substitution().String(),
+		Masking:      det.Masking().String(),
+		SwitchedOff:  switchedOffCodes(det.Disabled()),
+		SecretLevel:  det.SecretLevel().String(),
+		Allowlisted:  det.Allowlisted(),
 	}
+}
+
+// rerouted names the provider codes whose route does not go to the vendor's own
+// host: a default code pointed elsewhere by CLOAKFLEET_PROVIDERS, or a code the
+// agent does not know by default at all. Nil when every route is where the
+// catalogue says it is, so the field stays absent rather than empty.
+func (s *Server) rerouted() []string {
+	var out []string
+	for _, p := range s.providers {
+		if s.hosts[p.Code] != defaultHost(p.Code) {
+			out = append(out, p.Code)
+		}
+	}
+	return out
+}
+
+// defaultHost is where the agent sends a provider's code without configuration,
+// or "" for a code it does not know.
+func defaultHost(code string) string {
+	for _, p := range DefaultProviders {
+		if p.Code == code {
+			base, err := url.Parse(p.BaseURL)
+			if err != nil {
+				return ""
+			}
+			return base.Hostname()
+		}
+	}
+	return ""
 }
 
 // switchedOffCodes is the disabled set as the contract carries it.

@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/cloakfleet/cloakfleet/internal/detector"
 	"github.com/cloakfleet/cloakfleet/internal/vault"
+	"github.com/cloakfleet/cloakfleet/pkg/pii"
 )
 
 // The route and its reader are one type in one package, so the only way to check
@@ -186,4 +188,52 @@ func TestTheOfferedNamesAreOnesTheAgentTakes(t *testing.T) {
 			t.Errorf("this build offers the level %q and refuses it: %v", level, err)
 		}
 	}
+}
+
+// The health payload carries the whole catalogue by group, so it grows with the
+// catalogue while the bound Query reads it under does not. At 8 KiB the two had
+// already crossed: the second tier of vendor prefixes took the body past the
+// cap, the read truncated, and Query's deliberately quiet parse left every field
+// empty — an agent answering perfectly, reported by every surface as one that
+// was not. The failure is silent by design, which is exactly why it needs a test
+// rather than a comment.
+func TestHealthPayloadFitsTheQueryBound(t *testing.T) {
+	// Every locale at once: the payload lists a category per loaded locale, so
+	// the largest selection is the one the bound has to hold.
+	det := detector.New(detector.Config{Locales: pii.LocaleCodes()})
+	v, err := vault.New(vault.NewMemory(), nil, vault.DefaultTTL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv, err := New(Config{}, det, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	agent := httptest.NewServer(srv.Handler())
+	t.Cleanup(agent.Close)
+
+	resp, err := http.Get(agent.URL + "/healthz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(body) >= healthMaxBytes {
+		t.Fatalf("the health payload is %d bytes and Query reads at most %d: it would be "+
+			"truncated, the parse would fail and every surface would report an empty status "+
+			"over a healthy agent", len(body), healthMaxBytes)
+	}
+	// Half the bound is the line worth failing on rather than the bound itself:
+	// crossing it means the next batch of categories is the one that breaks the
+	// field, and this is the commit that can still choose the number.
+	if len(body) > healthMaxBytes/2 {
+		t.Errorf("the health payload is %d bytes, over half of the %d Query reads — raise "+
+			"healthMaxBytes in the same commit as the categories that did it", len(body), healthMaxBytes)
+	}
+	t.Logf("health payload %d bytes against a bound of %d", len(body), healthMaxBytes)
 }
