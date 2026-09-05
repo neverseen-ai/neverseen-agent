@@ -86,9 +86,67 @@ area: the reasoning is what stops a tempting simplification being reintroduced.
   stop that completes them, and exactly once. Fragments that do not make a document —
   a stream cut short — fall back to whole-token expansion, which is what the agent did
   before: never worse, and dropping them is the one outcome that would be.
+- **An SSE event is a name line and a data line, and holding one back means holding
+  both.** A client dispatches on `event: <name>`, so the name and its `data:` travel
+  together or not at all. Rewritten a line at a time, the name went out the moment it
+  arrived and every held-back fragment left it behind with nothing under it: the caller
+  parsed the empty string and reported `JSON Parse error: Unexpected EOF`, killing the whole
+  answer on the first tool call of every exchange. The reverse too — a synthesised event
+  emitted as a bare `data:` line is attached by the client to whichever name came last,
+  which was the stop that released it. So `rewrite` withholds the name (`takeName`) and
+  emits it with its own data line, after whatever the previous block was holding; the two
+  synthesised events carry the name their original arrived under (`argumentsName`,
+  `templateName`); and a held event's blank separator goes with it (`held`), because an
+  event that emits nothing emits none of its three lines. **A test stream with no names in
+  it cannot exhibit a name that lost its data** — which is how the suite stayed green over
+  an agent no client could talk to, and why `namedEvents` exists beside `events`.
 - **Overlap arbitration, in order**: credential, then confidence, then the longer
   span, then the leftmost. Each rule is there because its absence leaked.
 - **The agent holds no API keys.** The caller's credential is forwarded untouched.
+- **What `-a` and `-v` reveal never changes what the agent does.** `unmask` returned
+  early on a session that had minted nothing, so an exchange with no personal data in
+  it — most of them — was never read for its token counts and never reached the
+  heartbeat; gating that on a console being attached instead would have had two
+  agents on identical traffic report different totals, and a trace's `unmask`
+  duration appear and vanish with a flag. Every textual answer goes through, because
+  an answer says three things and only one of them depends on the mapping: what to
+  put back, what the exchange cost, and what tool the model asked to run. **Read for
+  all three, rewritten only for the first**: the decode-and-encode round trip is not
+  byte-preserving — a lone surrogate becomes U+FFFD, pretty-printing is compacted, a
+  text ending on `[` is held back for a token that cannot arrive — so a session that
+  minted nothing has its answer forwarded verbatim (`streamRehydrator.observe`, and
+  the `len(known) > 0` guard in `unmask`) while the counts and the tool calls are
+  still read out of it. `TestAnAnswerToAnEmptySessionIsForwardedVerbatim` and
+  `TestAuditPrintsAToolCallWhenNothingWasMasked` are the two halves.
+- **The identifiers a client uses to name itself to Anthropic reach Anthropic in
+  clear** (`identifiers.go`). Claude Code writes `metadata.user_id` as a JSON
+  document of its own — `device_id`, `account_uuid`, `session_id` — and
+  `SESSION_ID` is in `genericSecretNames`, so the agent replaced the session id
+  with `[SECRET_1]` in the field Anthropic defined for the client's own
+  bookkeeping, holding an identifier Anthropic itself issued. Masking it protects
+  nothing and costs the thing rate limiting and abuse tracking key on: a client
+  reporting a new identity every time this agent restarts. **Read from that field,
+  applied by value**: the same session id also travels in the arguments a tool was
+  called with, so exempting the field alone sends one identifier in clear in
+  `metadata` and as `[SECRET_1]` three lines above it, one exchange, two
+  identities — while reading the three *names* anywhere in the body exempts a
+  `SESSION_ID=` line somebody pasted out of their own `.env`, which is their
+  credential and not Anthropic's identifier. **The anchor is the path
+  `metadata.user_id` in the decoded document, not the field name**: a regex for
+  `"user_id"` over the raw bytes also matched the `input` of a tool call in the
+  history, and a tool once called with a `user_id` of its own exempted whatever hex
+  sat inside it body-wide. **The shape is the
+  second**: only a lower-case UUID or hex blob, so `session_id: sk-ant-…` inside
+  that document is still a credential. **Anthropic only, and Anthropic is the host
+  the route resolves to** (`identifierHost`), not the route's code: the same
+  `session_id` on the way to another vendor is a value that vendor has no business
+  seeing, and `CLOAKFLEET_PROVIDERS=anthropic=https://gateway.internal` — the
+  override `.env.example` documents — makes the route named "anthropic" another
+  vendor. Keyed on the code, every request through that gateway carried the three
+  identifiers in clear.
+  `Pass.Exempt` is per request rather than on the detector, because what goes in
+  it is read out of the body being masked; `Detector.allowed` is the
+  deployment-wide half of the same idea.
 - **The environment is read in one place per setting** — `detector.FromEnv`, or
   `internal/proxy/env.go`. **Never read an environment variable in `cmd/`**; a
   command that has to differ passes `proxy.Options`.
@@ -125,7 +183,26 @@ area: the reasoning is what stops a tempting simplification being reintroduced.
   installer sends this agent's output to `~/.cloakfleet/agent.log`, so `-a`
   there keeps every prompt in clear for as long as the service runs. The banner
   says so on every start, because documentation is not where somebody reads it.
-- **The console carries no body**, and that is why nothing marks one any more:
+- **A tool call is the one thing on the console that is neither a value nor a
+  replacement**, and it is printed with its arguments in clear (`auditor.tool`). The
+  rest of an answer is prose for a person; a tool call is an instruction the tool on
+  this workstation is about to carry out, so "the model asked to run `Bash` on this
+  path" is the line that says whether the masking held all the way to the thing that
+  acts. Both halves or nothing: the streaming path reports at
+  `expandedArguments`, where the tool's name and the whole restored document exist at
+  once, and `reportToolCalls` walks a buffered answer's `content[]` — shown for a
+  streaming client alone, the silence would read as an answer that asked for no tools.
+  Reported **even when the session minted nothing**, which is why `unmask` no longer
+  returns early on an empty mapping while a console is attached: gated on the mapping,
+  the line would appear for a prompt holding an address and vanish for one that did
+  not. **Anthropic's shape only** — the OpenAI-compatible families are not read, the
+  same gap `jsonFragment` already records, because a guessed shape prints a name no
+  provider sent. What it costs is real and knowingly paid: the arguments carry the
+  caller's own paths and commands, so under the installer's service `-a` files every
+  tool call of every exchange in `~/.cloakfleet/agent.log`, and a `Write` of several
+  kilobytes scrolls the MASK lines away — the reason bodies came off this console in
+  the first place. A `TODO:` names the missing ceiling.
+- **The console carries no other body**, and that is why nothing marks one any more:
   on screen the bodies scroll the MASK lines away, and a file must carry no
   escape sequences — they make it unsearchable for the value itself. The
   body-marking apparatus went with them rather than being left as a painter
@@ -229,7 +306,11 @@ area: the reasoning is what stops a tempting simplification being reintroduced.
   pretend otherwise.** `pickFromCluster` ranks on `IsSecret` first, so the two never
   reach the tie-break that load order feeds. Measured as well as argued: reversing
   the two sets across the whole corpus and the sample — 199 texts — changed nothing.
-- **`PUT /policy` replaces the whole state, and refuses a partial request.** Not
+- **`PUT /policy` replaces the whole state, and refuses a partial request — in
+  `applyPolicy`, so the stored file is refused the same way.** Guarded at the route
+  alone, `{"off":["EMAIL"]}` got a 400 when sent and was applied on restart: both
+  parsers accept `""` and `SetLocales(nil)` unloads every locale, so a hand-edited
+  file took the agent off its environment and left it masking almost nothing. Not
   "absent means unchanged": an empty locale list is a *valid* state — the one an
   agent starts in — so absence cannot mean "leave them alone" without making "load
   none" unsayable. And a caller sending only `off` would silently wipe the locale
@@ -255,6 +336,41 @@ area: the reasoning is what stops a tempting simplification being reintroduced.
   when somebody merely switched off a category. A credential is tokenized in either
   mode. `TestPolicyChangingTheModeClearsWhatWasAlreadyMinted` and
   `TestPolicyResendingTheSameModeKeepsTheMapping` are the two halves.
+- **`scan` and the agent assemble the detector through one function**
+  (`proxy.DetectorFromEnv`: the environment, then the stored policy). `scan` built
+  its own from the environment alone, so a category unticked in the menu bar was
+  reported as masked by `scan` and forwarded in clear by the agent beside it — the
+  "two entrypoints drifted" failure, between two commands of one binary.
+- **What a surface changed survives the restart, and the file is the state**
+  (`~/.cloakfleet/policy.json`). Everything the menu bar could do lasted as long as
+  the process: somebody unticked a category, restarted, and the agent came back
+  masking it while the menu they set said otherwise on the next click. The file holds
+  the four fields `PUT /policy` carries, in the same shape, because it *is* that
+  request; one applier (`applyPolicy`) serves the route and the start-up read, or a
+  category switched off through a menu comes back on through a restart. It is written
+  from the **detector** and on the refusal as well as the success, because the route
+  is not a transaction and what must survive is what the agent *is*; `off` is stored
+  as the **intent**, unreachable categories included, for the reason `disabledInPlay`
+  exists. **It wins over the environment** — the environment configures an agent
+  nobody has said anything to yet — so with the file present `CLOAKFLEET_PII_LOCALE`
+  does nothing and deleting it hands the agent back; the start-up line says which of
+  the two was read. A file that cannot be read leaves the environment's configuration
+  alone rather than stopping the agent, and nothing is written until something changes
+  one, because the file's absence has to keep meaning "nobody has" — and that
+  includes a request the applier refused **before** it changed anything. Written from
+  a `defer` above the applier, a misspelled mode created the file on a 422 and took
+  the agent off its environment permanently, over a request that changed nothing, so
+  `applyPolicy` reports `applied` and the two kinds of refusal are told apart —
+  and `applied` is the locale list having *differed*, not `SetLocales` having
+  returned nil: every surface resends the whole state, so a category refused over
+  the loaded locales created the file the same way. **A surface resends
+  `Health.Off`, not the switches it draws**: `Groups` lists only what the loaded
+  locales can find, so a set rebuilt from it dropped the unreachable half and the
+  next click on anything wrote that loss to disk — SSN off, `us` unloaded, one click
+  on "fake", and loading `us` later found SSN on. `SwitchedOffCodes` reads `Off`. The
+  handler is serialised (`policyMu`) and the file goes through a temporary name of
+  its own: storing it is a read-modify-write, and two surfaces interleave the halves
+  of one.
 - **A category can be switched off, and `PUT /policy` is the only way.** It is the
   one route that changes what the agent does and the only authenticated one: a
   secret in `~/.cloakfleet/control.key` (0600), in a custom header, which is what a
@@ -346,6 +462,16 @@ area: the reasoning is what stops a tempting simplification being reintroduced.
 - **Two bounds** (seven days of age, measured from where a bucket *ends*; 2016
   buckets), and **whichever bites, the loss is counted** — into the bucket being
   closed right then, and onto disk with them.
+- **A test whose buckets are fixed calendar dates pins the reporter's clock too.**
+  `Config.Now` exists for this and every reporter test uses it but one, which passed
+  `time.Now`: seven days after `epoch` the age bound began discarding its fixtures,
+  one every five minutes of wall time, and
+  `TestRunDrainsABacklogWithoutWaitingAnInterval` went from green to 62 heartbeats
+  to 61 without a line of code changing. It is the failure `DOBCheck`'s injectable
+  clock is documented against, in the opposite direction — red rather than silently
+  green — and the same fix. It now also asserts `dropped == 0`, because the count
+  alone cannot tell a bucket pruned from a bucket never sent: both read as one
+  heartbeat short.
 - **The backlog goes 60 buckets per request, oldest first, retried a second apart
   while any remains**, on a ladder capped at the interval and reset by one
   success.
@@ -354,6 +480,33 @@ area: the reasoning is what stops a tempting simplification being reintroduced.
 - **`NewRecorder` counts the restart**, because a process builds exactly one.
 - **The OpenAI cached-token breakdown is deliberately not read** — it is a subset
   of the input, and reading both would bill the same tokens twice.
+- **A map keyed on something the agent observes is keyed on a closed vocabulary, and
+  the rest is `Other`** (`pkg/telemetry/vocabulary.go`). Client families, tool names,
+  programs and command classes are the words a heartbeat could smuggle text through;
+  the word "python3" in a heartbeat comes from `KnownPrograms`, not from the prompt.
+  The recorder re-checks every key (`inVocabulary`), so the rule does not depend on
+  the call site. Widening a list is a contract change.
+- **The agent computes no average.** A session's totals fall into power-of-two
+  `Histogram`s when it closes and the backend reads the median — a mean over a
+  five-minute window is wrong for a conversation that lasts hours, and the agent
+  would be choosing the statistic. The same rule as prices.
+- **A session is the conversation the mapping is scoped by**: the header, else the
+  id Claude Code writes in `metadata.user_id` on the way to Anthropic
+  (`conversationOf`), else the shared default. `SessionIdle` equals
+  `vault.DefaultTTL` and a test holds them together. The identity never leaves the
+  recorder.
+- **`Tools.Restored` is read off the expansion, not off the mapping**, and on the
+  buffered path `reportToolCalls` runs *before* the whole-document pass:
+  `mapStrings` rewrites in place, so run after, it found every input already
+  expanded and counted nothing.
+- **`State` says how the agent itself is exposed** — `Console`, `Tracing`,
+  `Exposed`, `Rerouted`, `Allowlisted`. An agent applying its whole catalogue is
+  still a risk if `-a` is filing the day's prompts under the installer's service.
+- **`cloakfleet replay` is read-only.** A bucket rebuilt from traces shares no
+  window boundary with one filed live, so the backend's `(agent, window)` key would
+  not recognise a retry and every count would double. The mapping it decides
+  `Restored` against is the trace's own (`recoverMapping`), because token indices
+  are a detector counter and a replay renumbers.
 
 ### Distribution — `openwiki/operations/distribution.md`
 
@@ -466,6 +619,19 @@ The catalogue, the locales and the substitution modes in full:
   the boundary cases age out one by one and the suite goes green over a rule it
   has stopped exercising. For the same reason a corpus negative uses a year far
   out (2099) rather than a near one.
+- **A commune is not a month.** The French postcode pattern takes the commune with
+  the code, because five bare digits are not identifiable — so any capitalised word
+  after five digits is a commune, and `ls -l` puts one there on every line:
+  `13469 Mar`, `11175 Mar`, `87617 Aug` were masked as postcodes. `13469 Mar` and
+  `13290 Aix` are written identically, so only the word can decide, which is why
+  `PostcodeCheck` is a `Verify` and not a narrower expression. **The three-letter
+  abbreviations only, as whole words**: the full names would drop `PE15 8NF` (March,
+  Cambridgeshire) and `42750 Mars` (a commune in the Loire), and a prefix match would
+  drop `14320 May-sur-Orne` — a guessed list here forwards a real address in clear.
+- **A token prefix is not a category code, and `CatDOB` is where they differ.** The
+  code stays `DOB` — the corpus, the counters and `cloakfleet mask --off` all name it
+  — while the prefix is `DATE`, because the token is read by a model and `[DATE_1]`
+  says what the value was where `[DOB_1]` is an acronym it has to guess at.
 - **`NAME=value` is evidence in configuration and noise in source code.**
   `genericSecretRe` treats the name as the proof, which holds for a `.env` line and
   collapses in a repository, where `password:` is a *field* name and the right side
@@ -473,12 +639,127 @@ The catalogue, the locales and the substitution modes in full:
   `newPassword`, `req.cookies.token`, `process.env.LLM_API_KEY` and
   `CreationOptional<string` — and the model received a review of code whose
   identifiers had been replaced by `[SECRET_n]`. `GenericSecretCheck` is the guard,
-  and both its rules are narrower than they look, because the tree already held a
-  case against each over-reach: **opening** brackets only (a quoted
-  `password="hunter2)"` is a real credential ending on a closer), and identifier-shaped **plus no digit**
-  (`Sup3rS3cr3tValue123` is a name by shape and a password in fact). The slash and
-  the plus are not code punctuation — base64 is made of them. What still leaks is
-  recorded as a `TODO`: a credential of nothing but letters.
+  and each of its rules is narrower than it looks, because the tree already held a
+  case against every over-reach. The slash and the plus are not code punctuation —
+  base64 is made of them.
+- **What makes a bracket code is that it is *unclosed*, not that it is there.** The
+  span was cut out of the surrounding text, so an opener with no closer inside it
+  says the expression carries on past where the value stopped:
+  `security.authorize(plainUser`, `generateSecret(`, `CreationOptional<string`.
+  Presence alone was the rule, and it refused a password for holding a matched pair
+  — `password="pa(ren)th1s"` and `password="[brackets]1"` went out in clear. A stray
+  *closer* stays allowed, as it always was: `password="hunter2)"` is a real
+  credential ending on one, and no expression begins that way. **The rule hangs off
+  the bare patterns, not the category** (`Pattern.Verify`, `UnclosedBracketCheck`):
+  a quoted value ends where its quote does, so `password="Ab(12cd"` is somebody's
+  "one special character" password, and under the category it was refused as code
+  and forwarded in clear — `GenericSecretCheck` is handed the value and not the
+  quotes, so it cannot tell the two apart. `;` and `,` left the
+  rule entirely — no case in `TestGenericSecretCheckRejectsSourceCode` carries
+  either, while `password="a;b;c1234x"` and `API_TOKENS=abc12345,def67890` were
+  refused for it. A `?` is only code as `?.`: `user?.token2` is optional chaining,
+  `password="Wh4t?Really"` is punctuation somebody typed.
+- **A variable reference is where a credential is read from, not one**
+  (`interpolationRe`). Once the bracket rule moved onto the bare spans alone, the
+  quoted `password: "${DB_PASSWORD}"` was a credential while the bare
+  `POSTGRES_PASSWORD=${DB_PASSWORD}` stayed refused — one value, two answers,
+  decided by the quotes — and a pasted `docker-compose.yml` came back with its
+  references replaced by `[SECRET_n]`. A closed set of four syntaxes, matched
+  whole: `${…}`, `{{…}}`, `$(…)`, `%(…)s`.
+- **A name is written in words joined by case; a password is not — and the join is
+  a capital after a lowercase letter, not any interior capital.** Read as any
+  capital, `PASSWORD=HUNTER` was refused as a code identifier while
+  `PASSWORD=Hunter` was masked, the same SCREAMING-case misread the name side had
+  already fixed. The rule before that was
+  "identifier-shaped and carrying no digit", and the digit cannot do that job:
+  `PASSWORD=correcthorse`, `PASSWORD=changeme` and `password="correcthorse"` are
+  real credentials of nothing but lowercase letters and all three were forwarded in
+  clear — the whole of the gap this catalogue was measured against betterleaks on.
+  What separates them from `newPassword` is the case: every dotless digitless code
+  case asserted in the tree is camelCase (`publicKey`, `totpToken`,
+  `newPasswordInString`), because that is how code joins words into a name. An
+  **interior** capital, because `MyPassword123!` and `Sup3rS3cr3tValue123` open on
+  one and must stay credentials. The floor came down with it, from seven characters
+  to six: `PASSWORD=mcjrx4` is a bad password, not an absent one.
+- **A word the language reserved is not a password**, and this is the cost of the
+  rule above rather than a separate idea. Once a lowercase word counted as a
+  credential, `secret_level: string` in this repository's own TypeScript claimed the
+  *type* and `'X-Session-Id': 'default'` in its extension claimed the session name.
+  `TestOurOwnSourceGrowsNoCredentials` is where both appeared, which is the measure
+  that matters — it is what a code review through this agent would have seen.
+  `reservedWords` is a closed set of tokens some language spells exactly that way,
+  so it can be checked rather than argued about.
+- **A dotted identifier chain is a property path, whatever digits it carries.** The
+  digit rule above reads a digit as evidence of a credential, and a member access
+  gets one for free from a service name: `c.S3.SecretAccessKey` was masked as
+  `[SECRET_1]`, so the model reviewed Go code with a field access replaced by a
+  token. `s3`, `ec2`, `oauth2`, `sha256`, `v1`, `utf8` — every cloud SDK is spelled
+  this way, and each satisfies both halves of the digit rule at once. `readsACredential` refuses
+  them, and it is narrower than it looks in the one way that matters: the dot has to
+  be **interior**. `password="hunter2."` hands the
+  check the value `hunter2.` — a quoted value ends where its quote does, so that dot
+  is the credential's own — and reading a trailing dot as a member access stopped a
+  real secret being masked, which is the only direction this rule must never move
+  in. `identifierOnlyRe` admits `masked...` for the same reason.
+- **A segment of a property path is the size and shape of a name, and without that
+  bound the dot did all the work alone.** `WARP_READ_TOKEN=yrqUJ…Vhq8.37Zim…XlF` was
+  forwarded in clear: a hundred and eighty-two characters of base64url carrying one
+  interior dot, which bought it the promise the rule above writes for
+  `c.S3.SecretAccessKey`. `propertyPathRe` is that bound — every dot-separated
+  segment must be letter-led and at most forty characters — and the observed token
+  fails **both** halves, because no field access is a hundred and sixty-one
+  characters long and no language names a member `37Zim…`. The cap is loose on
+  purpose: tightening it past what code really writes would stop masking nothing and
+  would only start claiming member accesses again, which is the direction rule three
+  exists to prevent, so `security.authenticatedUsers.tokenOfTheCurrentSession` is
+  asserted beside the token. **A threshold on the mix of character classes cannot do
+  this job** — measured on this tree's own values, `opts.Sha256Digest` is 17.6% digits
+  and the observed token 17.0%, so any floor puts a real member access and a live
+  credential on the same side; and by class *count* the corpus's own 32-hex session
+  token has two where `c.S3.SecretAccessKey` has four. What used to be given up is a password
+  whose every dot-separated run is short and letter-led: `secret=abcdef.ghijkl`.
+- **What a dotted chain *says* is what settles it, because no shape can.**
+  `query.current` is two lowercase segments of ordinary length naming nothing, and so
+  is `abcdef.ghijkl`; measured against every case in
+  `TestGenericSecretCheckRejectsSourceCode` there is no length, segment count or
+  character mix that separates them. `readsACredential` reads the chain instead, and
+  either mark is enough: **the last segment names the credential** —
+  `secret = config.password` is code fetching a password rather than a password, and
+  so are `req.cookies.token`, `c.S3.SecretAccessKey`, `aws.Config.Credentials`,
+  `headers.authorization` — or **the chain carries an interior capital**, which is
+  what keeps `opts.Sha256Digest`, `utf8.RuneCountInString` and both long chains
+  refused. The first mark is the sentence `slugNamingItselfRe` already writes for
+  `reset-password`: a passphrase names neither what it unlocks nor where it was read
+  from. **The price is asserted, not buried**: six member accesses flipped to masked
+  — `query.current`, `query.new`, `query.repeat`, `body.new`, `body.repeat`, `a.b2`
+  — and `TestGenericSecretCheckOverMasksLowercaseMemberAccess` holds them, so a later
+  rule that recovers them fails loudly instead of looking like a bug. The trade goes
+  this way because the halves are unequal: a property access masked in a review is
+  over-masking somebody can see and undo, and `secret=abcdef.ghijkl` in clear is a
+  password delivered to a model.
+- **A short word at the end of a chain needs a boundary in front of it, or an English
+  word reads as a field holding a credential.** `credentialNameTailRe` carried bare
+  `key` and `auth` with nothing before them, so `password: monkey.donkey` had its
+  last segment matched on the "key" of "donkey", `readsACredential` called the chain
+  code, and a real password went to the model in clear — the one direction that rule
+  must never move in. The long keywords keep the bare suffix match, because no
+  English word ends on `password` or `authorization` by accident; the two short ones
+  need the start of the segment, a separator, or the lowercase letter that makes a
+  camelCase join.
+- **The leading `*` is stripped above every rule that reads the value as a word, not
+  below them.** Placed after `reservedWords` and `slugNamingItselfRe`, neither ever
+  saw the stripped value: `SECRET=*string` was masked as a credential while
+  `SECRET=string` was correctly refused, and a YAML alias — `password:
+  *default_secret` — was one for the same reason. What the star points at is what
+  decides, so the rules that decide have to be handed it.
+- **These twelve shapes were qualified by a person, one at a time.**
+  `docs/secret-shapes-to-label.md` is the working file and the corpus block
+  `sec-qualified-*` is where the answers landed. Each was a rule refusing a real
+  credential on evidence that turned out to be about the *form* of the value rather
+  than about code: punctuation, length, the absence of a digit. A rule of that kind
+  is worth putting to somebody rather than reasoning about alone — the answers went
+  against the code in twelve cases out of forty-four, and the other thirty-two
+  confirmed it.
 - **Quoting decides whether trailing punctuation belongs to a named secret, and
   length never did.** Two expressions, `genericSecretQuotedRe` and
   `genericSecretBareRe`. A quoted value ends where its quote does, so the
@@ -498,6 +779,97 @@ The catalogue, the locales and the substitution modes in full:
   — after the separator the group must start on a non-quote, and `\s*` cannot step
   over the opening quote. Four corpus cases hold the rule and none is meaningful
   alone.
+- **A keyword may fall anywhere in the name, and need not be spelled exactly.** The
+  separator had to follow the keyword immediately, so a prefix was free and a suffix
+  was fatal: `VERY_SECRET=` was masked while `VERY_SECRET_TOO=`,
+  `SUPER_SECRET_VALUE=`, `accessTokenValue=` and `STRIPE_SECRET_KEY=` went out in
+  clear — the last of them the ordinary way to name a Stripe or an AWS key, missed by
+  nothing but where the word fell in the name. `genericSecretName` reads the rest of
+  the name and it must **open on a new word**, or it runs on through `secretary_id`
+  and `tokenised_at`, whose values a credential would then claim ahead of the
+  category that owns them. `genericSecretFiller` tolerates the two ways a name
+  carries a keyword without spelling it: a **repeated letter**
+  (`SUPER_SEECRET_VALUE`, a typo and the shape somebody reaches for to dodge a
+  scanner) and **one separator** between letters (`S_E_C_R_E_T`) — which is why
+  `genericSecretKeywordNames` carries no separators, `APIKEY` covering `API_KEY`,
+  `api-key` and `apikey` at once. **Insertions only, never omissions**: a missing
+  letter would put `TKN` and `SCRT` in the list, and those are initialisms.
+- **What opens a new word depends on the case the name is written in, and reading a
+  capital as a boundary unconditionally made the guard a no-op.** Every letter of a
+  SCREAMING_SNAKE name is a capital, so the tail opened on the `A` of `SECRETARY` and
+  `SECRETARY_ID=`, `TOKENISED_AT=` and `SESSION_IDLE_TIMEOUT=` were masked while
+  their lowercase twins were clean — one rule, two answers, decided by nothing but
+  the case somebody typed. `SECRETARIAT_EMAIL=bureau@example.fr` is what it cost: a
+  credential wins every overlap, so the address was replaced by `[SECRET_1]` rather
+  than by a stand-in address. So a **separator** always opens a word, and a
+  **capital** only where the keyword's own last letter is lowercase, which is what a
+  camelCase join is — `accessTokenValue` yes, `SECRETARY_ID` no. A **plural goes with
+  the keyword** and then ends the word itself: `API_TOKENS=` and `accessTokensValue=`
+  are both names, and the first of them was a corpus case that the case rule alone
+  would have dropped.
+- **The tolerance is one optional class per gap, not `+` on every letter, and the
+  difference is the credential scan's dominant cost.** Go's regexp is an NFA
+  simulation with no DFA behind it, so a scan costs what the program has states:
+  `S+E+C+R+E+T+` across twenty-three branches took the three expressions built from
+  it to 38ms each over 88KB — 72% of the whole secret catalogue, against 0.56ms for
+  the entire second vendor tier the same commit hand-optimised. As a filler class the
+  same three cost 26ms and match the same names. What is given up is a letter
+  repeated *twice*, which is neither a typo nor a shape anybody writes.
+- **It is deliberately not a sub-sequence match**, which is the obvious reading of that
+  shape. Measured against random base64: a sixty-character blob carries one of these
+  keywords as a sub-sequence 7% of the time, an eighty-character one 20%, and at a
+  hundred and eighty-two characters — the `WARP_READ_TOKEN` above — 94%. A free
+  sub-sequence makes every long hash and integrity field in a lockfile a *name*, and it
+  is then whatever follows it that gets masked. Bounded to repeats and separators the
+  same measure is 0.00% at every length: a generated blob has no separators and its
+  letters do not queue up.
+- **A leading `*` or `&` is stripped, not refused.** `want.SecretLevel = *secretLevel`,
+  a line in this agent's own mask command, was claimed the moment a keyword stopped
+  having to end the name: a star is not an identifier character, so the digit rule
+  never looked at the name behind it. Refusing outright would drop
+  `PASSWORD=*Hunter2*`, a real password — stripping hands the rest to the other rules,
+  so it is dropped only when what it points at is *also* code-shaped by them, and
+  `*secret123` keeps its digit.
+- **The scheme in an `Authorization` header is the evidence, and nothing read it.**
+  `Authorization: Bearer <token>` is how a credential travels in a log line, a curl
+  paste, a header dump and every API page ever written, and the whole of it went to
+  the model in clear — the name is not a field name and no `NAME=value` shape
+  reaches it. `authHeaderRe` anchors on the header and takes what follows `Bearer`,
+  `Basic` or `token`; `Digest` is deliberately absent, because its value is a
+  parameter list and masking it whole would replace the realm and the nonce with
+  the response. It reports **`SECRET_GENERIC` on purpose**, which hands it
+  `GenericSecretCheck`: that guard is worth more than the precision a category of
+  its own would buy, because "Bearer authentication" in a sentence has the shape of
+  a header and the digitless-identifier rule is exactly what refuses it.
+- **A name is evidence in an element as well as in an assignment**
+  (`xmlSecretRe`). `<apiKey>…</apiKey>` is where every Spring, .NET and Maven
+  configuration keeps its credentials, and none of them was read. It is a pattern
+  of its own rather than `>` added to the separator, because the value has to stop
+  where the closing tag opens: under the shared bare expression the span ran on
+  into `</apiKey` and the mask ate the tag. **The closing `</` is the guard** — it
+  is what keeps this off `if (secret > threshold)`, which has the name, the
+  separator and a value of the right size and no tag anywhere after it.
+- **`=>` and `->` are separators too, and they come first in the alternation.**
+  `'token' => 'ory_pat_…'` is a PHP or Perl hash and `api_key -> value` is a pasted
+  note; both were forwarded for want of two characters. Go's regexp is
+  leftmost-first, so with `[=:]` in front `=>` matched on its `=` and the value
+  began on the `>`. What this risks claiming is a dereference, and
+  `GenericSecretCheck` is what refuses it: `$secret->getValue()` ends on a call,
+  `$token->id` is under the value floor, `$password->hashedValue` is camelCase without a digit.
+- **A quoted value may be padded, and the padding is not the value.** `quoteChars`
+  holds `\s`, so one space behind the opening quote ended the expression before it
+  began: `API_KEY=" hunter2-correct-horse "` went out in clear while the same line
+  without the spaces was masked. Horizontal whitespace only, for the reason every
+  other span here uses it — with `\s` the quote could sit on one line and the value
+  on the next.
+- **`CREDENTIAL` is a keyword and `KEY` is not.** A bare key is what half the
+  configuration languages there are call the left-hand side of a pair — `key: value`
+  in YAML, `key=` in an INI section — so it names a credential no more often than it
+  names nothing at all, and the value behind it is whatever the document happened to
+  hold. What `CREDENTIAL` costs is a path: `GOOGLE_APPLICATION_CREDENTIALS=/etc/gcp/key.json`
+  is masked, because a path is not identifier-shaped and the check lets it through.
+  That is the cost `SECRET_FILE=` already carried, it is over-masking rather than a
+  leak, and it is reversible.
 - **Where shape runs out, the keyword decides.** `reset-password` behind `password:`
   has the *same shape* as `troisieme-valeur-longue`, the corpus's own credential —
   lowercase words joined by hyphens, both of them — so no rule about form could
@@ -523,6 +895,67 @@ The catalogue, the locales and the substitution modes in full:
 - **Beware `(?i)` over a long repetition.** It let the IBAN expression walk
   through a sentence claiming lowercase words as groups; requiring groups of
   exactly four fixed the whole class.
+- **A prefix pattern is free only while Go can scan for its leading literal, and
+  three habits destroy that.** A leading `\b`, a `(?i)` in front of the prefix, and
+  an alternation of prefixes. Importing the second tier of vendor credentials
+  (`vendorPrefixes`, 109 vendors, 150 patterns) measured all three over
+  `docs/testCorpus.txt`: 62ms as written, 28ms without the `\b`, 17ms without the
+  `(?i)` as well, and 0.56ms once each alternation became one pattern per branch —
+  `(?:EAAA|sq0atp-)` alone cost 465us where the two split patterns cost 6.8us and
+  6.6us together. The `(?i)` is also simply wrong: Figma issues `figd_`, never
+  `FIGD_`. **Two patterns of one category is the shape to reach for**, as Slack's
+  already were, and `Label` is what makes a report say which fired.
+- **A trailing group that consumes a character makes the span eat the sentence.**
+  An imported rule closes on `(?:[^\w-]|$)` because RE2 has no free lookahead, and
+  five arrived that way: `pscale_pw_…Dc6.` came out a character long and Fly.io's
+  took the following comma. The fix is `genericSecretBareRe`'s own shape — a
+  permissive body one shorter, then a final class excluding `noSentenceTail`. Fly.io
+  carried the other classic in the same line, `\s` where a hundred-character span
+  needs `[ \t]`.
+- **Where one vendor prefix ends on another, the fix is an equal score, not a
+  boundary.** Cerebras issues `csk-<48>`; `openAILegacyRe` is `sk-<20,>` with no left
+  boundary, so it took the key from offset 1 and masked it as an OpenAI key with the
+  leading `c` in clear. Arbitration is credential, then confidence, then the longer
+  span — so **equal** scores hand the decision to the span and the longer prefix
+  wins. `CatAnthropicKey` and `CatOpenAIKey` were already both 98 for this exact
+  reason (`sk-ant-` contains `sk-`); the whole second tier is 98 so it holds for every
+  containment in it (`ops_eyJ` over `eyJ`, `mercury_production_` over `ion_`). A left
+  boundary would be direct and is unaffordable: it took `openAILegacyRe` from 6us to
+  654us. A `TODO` records what still leaks — a run shorter than a vendor's floor.
+- **Where a vendor prefix is short enough to occur inside a hash, the length is the
+  whole of the evidence and both ends have to be bounded.** ClickHouse issues
+  `4b1d<38>`, and four hex characters occur inside any long hash: `sha512-4b1d0123…`
+  in a lockfile had forty-two characters cut out of the middle of it and masked, so a
+  pasted `package-lock.json` came back with fragments of its integrity fields
+  replaced by tokens. Nothing else claims that span, so no equal-score tie-break ever
+  runs — the arbitration above cannot save this class. RE2 has no lookaround, so both
+  boundaries are consumed and `Group` points at the value, which is why this one rule
+  sits outside `vendorPrefixes`: that table has no `Group`. The leading-literal scan
+  is what it costs, knowingly.
+- **Every alternation of prefixes in the second tier is split, and two were not.**
+  Buildkite spelled seven prefixes in one expression and Sourcegraph two, three lines
+  above the comment that says the rule and measures it. A comment documenting
+  something the table does not do is worse than no comment.
+- **An XML attribute pair has two orders and both are written.** `nugetPasswordRe`
+  read `key` first and matched `Password` case-sensitively, so a `NuGet.config` with
+  a private feed in it — the file somebody pastes whole to ask why a restore fails —
+  leaked its password whenever the writer had put `value` first or spelled the
+  attribute in lower case. Two patterns rather than one alternation, because `Group`
+  is a single index and the value sits in a different place in each.
+- **Only the value-only half of an imported catalogue is worth taking.** Around 40%
+  of gitleaks' rules name a credential by the field beside it, which
+  `genericSecretQuotedRe` already reads; a second reading competes for the same span
+  with no more evidence. And 28 of the rest were left out for being *identifiers* —
+  a tenant id, a client id, a storage account name, an instance hostname — which are
+  also, not coincidentally, the 28 with no literal prefix and 16.6ms of the cost.
+- **A payload that carries the catalogue grows with the catalogue, and something
+  downstream is reading it under a bound.** `Query` read `/healthz` under 8KiB; the
+  second tier took the body to 10.7KiB, the read truncated, and the parse — quiet by
+  design, "a body that will not parse still means something answered" — left every
+  field empty. `cloakfleet status` printed nothing, the icon drew nothing and the exit
+  code said something was wrong, over an agent answering perfectly.
+  `TestHealthPayloadFitsTheQueryBound` fails at *half* the bound, so the batch that
+  would break it is the one that still gets to choose the number.
 
 ## Lessons not to reimport
 

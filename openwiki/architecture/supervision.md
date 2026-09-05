@@ -26,7 +26,10 @@ and a slice of `Bucket` — each bucket a `Window` (start, end) plus `Counters`.
 `Windows()` (`contract.go:101`) expands a batch into the single-window `Heartbeat` shape.
 
 `Counters` holds `Requests`, `Masked map[string]int` (per category name), `Models
-map[string]TokenUsage`, `Restarts` and `Dropped`. `TokenUsage` is **four numbers, not two** —
+map[string]TokenUsage`, `Restarts` and `Dropped` — and, since the heartbeat started
+answering the questions a technical director and a security officer ask about AI usage,
+`Refused`, `Providers`, `Upstream`, `Clients`, `Policy`, `Degraded`, `Sessions` and
+`Tools`. Each is described in its own section below. `TokenUsage` is **four numbers, not two** —
 `Input`, `Output`, `CacheWrite`, `CacheRead` — because a coding agent re-sends its whole
 context every turn and almost all of its input is a cache read, an order of magnitude
 cheaper and far more numerous. Folding them together overstates the bill; leaving them out
@@ -58,6 +61,114 @@ field being absent or wrong costs nothing that matters. `localAddresses`
 and caps the count at 4 — a list that reshuffled between heartbeats would read as a machine
 whose addresses kept changing, indistinguishable on the dashboard from a laptop moving
 networks (`TestLocalAddressesAreStablyOrdered`).
+
+### Closed vocabularies (`pkg/telemetry/vocabulary.go`)
+
+Three of the new maps are keyed on words the agent chooses at run time — a client
+family, a tool name, a program name — and that is exactly the kind of string the rule
+above exists to keep off the wire. What makes them admissible is that **every key comes
+from a list the contract carries** (`KnownClients`, `KnownTools`, `KnownPrograms`,
+`CommandClasses`) and everything else is counted as `Other`. The word "python3" in a
+heartbeat comes from the list, not from the prompt. The lists are in the contract rather
+than in the agent because both sides need them: the agent reduces to them, the backend
+renders and validates against them, and widening one is a contract change made in one
+commit. The recorder re-checks every key against the list before counting it
+(`inVocabulary`), so the invariant does not depend on each call site reducing correctly.
+
+### Sessions
+
+A session is the identity the request path already scopes its mapping by — the session
+header — and, where a client sends none, the conversation id Claude Code writes into
+`metadata.user_id`, read at that path and under the same host rule as the identifier
+exemption (`conversationOf`, `internal/proxy/identifiers.go`): it is Anthropic's
+identifier, so it is trusted on the way to Anthropic and nowhere else. Everything left is
+the shared default session. The identity never leaves the recorder; the counts do.
+
+Per window: `Active` (distinct sessions that sent a request), `Opened` (first seen),
+`Closed` (idle for `SessionIdle`, thirty minutes — `TestSessionIdleMatchesTheVault` holds
+it equal to `vault.DefaultTTL`, because a session here *is* the conversation the mapping
+lives for). **The averages a dashboard wants are deliberately not computed by the agent.**
+A mean over a five-minute window is wrong for conversations that last hours, and the
+agent would be choosing the statistic. When a session closes, its totals — duration,
+requests, input tokens (cache included), output tokens, tool calls, values masked — fall
+into `Histogram`s with fixed power-of-two edges, and the backend reads a median or a p95
+from those. Fixed edges rather than a map keyed by a range label, so the contract gains no
+string. Sessions are swept on `Take` and `Snapshot`, the two moments the recorder is read
+with a clock; `Recorder.clock` is injectable for the same reason `Config.Now` is.
+
+### Tools
+
+A tool call is the one part of an answer that is neither prose nor a value: an
+instruction the tool on the workstation is about to carry out. `Tools` counts how many
+(`Calls`), how many acted on a value the agent had masked on the way out (`Restored` —
+personal data reaching a local action), and which tools (`Names`), programs (`Programs`)
+and kinds of command (`Classes`) they named, each reduced to the vocabularies. The
+reduction happens in `internal/telemetry/tools.go` before the recorder's lock is taken,
+and the text is dropped: the first word of each shell command after the operators split
+it, assignments and wrappers stepped over, then matched against `KnownPrograms`; the
+classes — network, privilege, destructive, install, secrets, pipe-to-shell — decided from
+the program and its first flags. The split is deliberately not quote-aware (a `TODO` names
+the ceiling): what it can cost is a word from a quoted string counted as a program *when it
+is on the list*; what it never costs is a word outside the list reaching the wire.
+
+`Restored` is read off the expansion itself — the arguments changed — not off the mapping
+being non-empty, because a session with a mapping still makes tool calls that touch none
+of it. On the buffered path `reportToolCalls` therefore runs **before** the pass over the
+whole document and expands each tool's input in place: `mapStrings` rewrites the document
+it is given, so run after, it found every input already expanded and counted nothing. The
+console and the recorder share one sink (`Server.toolSink`), always set: the callback used
+to be nil without a console so that an agent not auditing paid nothing per tool call, and
+every agent now pays the reduction — a JSON decode and a split, once per tool call.
+Anthropic's shape only, the gap `jsonFragment` already records.
+
+### The agent's own exposure, and the health of the control
+
+`State` gained the four facts about the agent itself that the rest of it cannot say:
+`Console` (`-a`, values printed in clear — under the installer's service, a file),
+`Tracing` (`-v`, bodies on disk), `Exposed` (listening beyond loopback, where `/test` is a
+masking oracle), `Rerouted` (provider codes whose route does not go to the vendor's own
+host — a gateway the masked traffic reaches that the dashboard would otherwise not know
+about), and `Allowlisted` (how many values are exempted — a count, never the values). An
+agent applying its whole catalogue is still a risk if it is keeping the day's prompts in
+`~/.cloakfleet/agent.log`, and a security officer has to see that from the row.
+
+`Counters` gained the control's own health: `Refused` (the fail-closed 415 — a steady rate
+is a tool that will end up pointed around the agent), `Upstream` (how the providers
+answered, five integers by class rather than a map keyed by status, so no new string),
+`Policy` (how often `PUT /policy` was applied or refused — `State` says *what* is off, this
+says *when*, and how often somebody keeps trying; an unauthenticated attempt is not
+counted, or anybody on the network could write to the counter), `Degraded` (tool-call
+arguments that never formed a document and were expanded token by token — how often the
+second-best path ran), `Providers` (requests per route, including the ones never answered)
+and `Clients` (the User-Agent reduced to `KnownClients` — the inventory of AI tools in use
+that nobody has another way to take).
+
+A full batch of sixty of these buckets is several times the size it was;
+`TestAFullBatchFitsTheBackendsBodyBound` holds it at half the backend's 1 MiB body bound,
+the `/healthz` lesson applied to the other payload.
+
+### Rebuilding the heartbeat from traces (`cloakfleet replay`)
+
+A trace holds almost everything a heartbeat is made of, one exchange per file, and
+`internal/proxy/replay.go` reads them back through the same recorder the agent uses:
+the conversation from `metadata.user_id`, the categories by **masking the IN body again
+with today's detector** (the trace holds a count; the replay answers what the current
+catalogue makes of the traffic), the model and tokens from the header the tracer wrote,
+the tool calls from the answer as it arrived. Windows are aligned on the interval and
+dated by the file name. The mapping a tool call's `Restored` is decided against is **the
+trace's own, recovered from its two bodies** (`recoverMapping`): token indices are a
+counter on the detector, so a replay numbers the same address `[EMAIL_2]` where the trace
+said `[EMAIL_1]`, and an answer carries the trace's number. Token mode only; a `TODO` names
+fake mode.
+
+**Read-only, and deliberately so.** The batch is printed, never queued in `buffer.json`
+and never sent: a bucket rebuilt from traces and one the agent filed live share no window
+boundary, so the backend's `(agent, window)` key would not recognise the one as a retry of
+the other, and every count for the period would double. Two things a trace does not hold,
+so a replay never reports them: the client's User-Agent and how the provider answered.
+`Restarts` is zero — no process started. The parser is tested against the tracer itself
+(`TestReplayRebuildsTheHeartbeatFromTraces` writes its fixture with `tracer.write` and
+`appendResponse`), so a format change on either side fails there.
 
 ### The golden must exercise the new field
 
@@ -201,7 +312,11 @@ every workstation is a fleet nobody can audit.
 ## Where to start on a change here
 
 - Adding or changing a contract field ⇒ read `../cloakfleet-cloud` first, then update
-  `contract.go`, `allowedStrings`, and regenerate the golden in the same commit.
+  `contract.go`, `allowedStrings`, and regenerate the golden in the same commit. A map
+  keyed on something the agent observes needs a vocabulary in `vocabulary.go` and
+  `Other` for the rest.
+- Adding a tool class or a program ⇒ `vocabulary.go` and `internal/telemetry/tools.go`,
+  with a case in `TestReadCommandNamesProgramsAndClasses`.
 - Changing cadence or persistence ⇒ `reporter.go` + `buffer.go`, and expect
   `TestClosingABucketClearsTheLiveEntry` and the outage/restart tests to be the gate.
 - Never introduce an error return from here into the request path.

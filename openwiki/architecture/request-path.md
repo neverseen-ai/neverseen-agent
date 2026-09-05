@@ -108,6 +108,62 @@ reuses the mask minted on turn one (`TestMaskReusesASessionsExistingTokens`).
 **includes repeats**, because a value masked three times is three values that did not leave
 the machine.
 
+## A client's own identifiers are not masked back to their issuer
+
+`Pass.Exempt` holds values this pass must leave in clear whatever a pattern says, and
+`internal/proxy/identifiers.go` is its only filler.
+
+Claude Code writes `metadata.user_id` as a JSON document of its own:
+
+```json
+{"device_id":"5a1c…","account_uuid":"841a…","session_id":"18af…"}
+```
+
+`SESSION_ID` is one of `genericSecretNames`, so the value behind it is a named secret by
+shape and the agent replaced it with `[SECRET_1]` — in a field Anthropic defined for the
+client's own bookkeeping, holding an identifier Anthropic itself issued. Masking it
+protects nothing: the recipient is the party the value already belongs to. What it costs is
+real, because that field is what rate limiting and abuse tracking key on, so a token there
+is a client reporting a different identity on every restart of this agent.
+
+Four rules hold it narrow:
+
+- **Anthropic only, and Anthropic is a host.** These are Anthropic's identifiers. The same
+  `session_id` on the way to another vendor is a value that vendor has no business seeing,
+  and it stays masked (`TestAnotherProviderStillMasksTheSameIdentifiers`). The decision is
+  keyed on the host the route resolves to (`identifierHost`), not on the route's code:
+  `CLOAKFLEET_PROVIDERS=anthropic=https://gateway.internal` makes the route named
+  "anthropic" another vendor, and keyed on the name it sent the identifiers there in clear
+  (`TestARouteNamedAnthropicPointedElsewhereEarnsNoExemption`).
+- **Read from that field, applied by value.** The same session id also arrives inside the
+  arguments a tool was called with, so exempting the field alone would send it in clear in
+  `metadata` and as `[SECRET_1]` three lines above — one exchange, two identities. But the
+  values are read out of `metadata.user_id` and nowhere else — the path in the decoded
+  document, not a regex for the field name: read over the whole body, the rule exempted a
+  `SESSION_ID=…` line pasted out of a `.env` or a log excerpt, which is the caller's own
+  credential and is masked today (`TestAPastedSessionIdIsNotTheClientsIdentifier`); read
+  by name, it exempted a `user_id` inside a tool call's `input`
+  (`TestAUserIDInAToolCallEarnsNoExemption`).
+- **The shape is the second guard.** Only a lower-case UUID or a long hex blob is
+  eligible, because an exemption is a promise never to mask and a field name alone cannot
+  earn one:
+  `session_id: sk-ant-api03-…` is a shape somebody can write, and a rule reading the name
+  would forward that key (`TestAnIdentifierFieldDoesNotExemptACredential`). A format
+  Anthropic changes later stops matching and the value goes back to being masked — the safe
+  direction.
+- **Per pass, not on the detector.** What goes in it is read out of the body being masked.
+  `Detector.allowed` is the deployment-wide half of the same idea and is precomputed once;
+  this half cannot be.
+
+An exempt value is written back exactly as it arrived and is neither counted nor minted: it
+is not a replacement that failed to happen, it is a value that was never sensitive on this
+route. Nothing lands in the mapping, so the response path has nothing to expand.
+
+`device_id` and `account_uuid` are in the set although no pattern claims either today — the
+rule being asserted is "these three name the client to its own provider", not "these three
+currently leak". A credential pattern widened later must not silently start rewriting the
+field this exists to protect.
+
 ## The session vault
 
 `internal/vault` holds one mapping per session, **masked → original** — the direction the
@@ -202,6 +258,29 @@ half a JSON document. Released before the stop that completes them and exactly o
 (`TestArgumentsAreReleasedBeforeTheirStop`); fragments that do not make a document fall
 back to whole-token expansion rather than being dropped
 (`TestIncompleteArgumentsAreStillDelivered`).
+
+**An event is a name line and a data line, and holding one back means holding both.**
+An SSE event is `event: <name>`, `data: <json>`, blank — and a client dispatches on the
+name. Rewriting the stream a line at a time, the name line was forwarded the moment it
+arrived, so every fragment held back above left its name behind with nothing under it: the
+caller read a named `content_block_delta` carrying the empty string, parsed it, and
+reported `JSON Parse error: Unexpected EOF` — the whole answer lost, on the first tool call
+of every exchange. The reverse half was there too: `expandedArguments` and `tailEvent`
+synthesise an event, and emitted as a bare data line it is attached by the client to
+whichever name it saw last, which is the `content_block_stop` that released it.
+
+So `rewrite` withholds the name line (`streamRehydrator.name`, taken by `takeName`) and
+emits it with the one data line it belongs to, *after* whatever the previous block was still
+holding; the two synthesised events carry the name their original arrived under
+(`argumentsName`, `templateName`); and a held event's blank separator is dropped with it
+(`held`), because an event that emits nothing emits none of its three lines. A conformant
+client ignores a stray blank, but a tool call arrives in hundreds of fragments and that is
+not a bet worth taking.
+
+`TestEveryNamedEventCarriesItsData` asserts both directions over every event in the stream.
+It needed a second framing helper — `namedEvents` — because `events` emits data lines only,
+and **a stream with no names in it cannot exhibit a name that lost its data**: that is how
+the whole suite stayed green over an agent no client could talk to.
 
 The known gap is recorded as a `TODO` on `jsonFragment`: the OpenAI family streams tool
 call arguments under `choices[].delta.tool_calls[].function.arguments`, which has no

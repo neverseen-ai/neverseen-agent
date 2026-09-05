@@ -37,7 +37,12 @@ header they control — so it is built for one person on one workstation. Bound 
 interface it becomes a way to read another user's session.
 
 `~/.cloakfleet/` holds the operator's config, the identity a backend knows the machine by,
-and any buckets not yet delivered. `install.sh --uninstall` deliberately leaves it alone.
+the policy a surface last applied, and any buckets not yet delivered. `install.sh
+--uninstall` deliberately leaves it alone.
+
+**The stored policy wins over every setting in the table above** that it covers — the
+locales, the substitution mode, the secret level — see *What a surface changed survives
+the restart* below. The environment configures an agent nobody has said anything to yet.
 
 ## Commands (`cmd/cloakfleet`)
 
@@ -49,6 +54,8 @@ cloakfleet scan [file]   report the sensitive values in a file, or in stdin
 cloakfleet status        report whether the agent is masking, and what
 cloakfleet mask          list what is masked, and switch a category or family off
 cloakfleet env [--force] print the shell exports that point a tool at the agent
+cloakfleet replay <dir>  rebuild the heartbeat batch from the traces in a
+                         directory and print it; nothing is sent or queued
 cloakfleet version       print the version
 ```
 
@@ -208,9 +215,78 @@ unexpandable. `TestPolicyChangingTheModeClearsWhatWasAlreadyMinted` and
 `TestPolicyResendingTheSameModeKeepsTheMapping` are the two halves, and the second
 fails on a purge that is not guarded.
 
+#### What a surface changed survives the restart
+
+`internal/proxy/policyfile.go`.
+
+Everything the menu bar, `cloakfleet mask` and the test page can change went through
+`PUT /policy` and lasted exactly as long as the process. A person unticked a category,
+restarted the workstation, and the agent came back masking it again while the menu they
+had set said otherwise on the next click — a control whose settings are forgotten is one
+nobody can rely on having set.
+
+So the route stores what it applied in **`~/.cloakfleet/policy.json`**, and `FromEnv`
+reads it at start-up. The file holds the same four fields the route carries, in the same
+shape, because it *is* that request: what the agent would have to be sent to arrive where
+it is. One document rather than a field per setting, for the reason the route replaces the
+whole state rather than patching it — a half-applied selection is a state nobody asked
+for.
+
+- **It is written from the detector, not from the request.** The route is not a
+  transaction: a request whose locales were accepted and whose category was refused
+  leaves the locales applied. What has to survive the restart is what the agent *is*, so
+  `persistPolicy` runs on the refusal as well as on the success —
+  `TestAPartlyRefusedChangeIsStoredAsItLanded`.
+- **But only when something was applied.** Written from a `defer` above the applier, a
+  request refused before the first change — a misspelled `substitution`, refused with 422
+  — created the file for the first time, and from then on the agent read its own empty
+  policy in preference to the environment: `CLOAKFLEET_PII_LOCALE` in the operator's
+  profile did nothing, permanently, over a request that changed nothing. The file's
+  absence has to keep meaning "nobody has", so `applyPolicy` reports `applied` and the two
+  kinds of refusal are told apart. `TestARequestRefusedBeforeAnythingAppliedStoresNothing`
+  is the counterpart of the case above and neither is meaningful alone.
+- **One writer at a time, and a temporary name of its own.** Storing the file is a
+  read-modify-write — apply, read the detector back, store — and the menu bar and
+  `cloakfleet mask` interleave the halves of one, which is the hazard the route already
+  names for the mapping. The handler takes `policyMu`, and the write goes through
+  `os.CreateTemp` rather than a fixed `.tmp`: sharing one temporary path, two writers
+  truncated and filled it under each other and what landed under the rename was one
+  writer's document inside the other's call, or the two torn together — which parses to
+  nothing and hands the agent back to the environment at the next start, silently.
+  `TestConcurrentChangesLeaveAWholeFile`, under `-race`.
+- **`off` is the intent, not the effect.** The whole switched-off set goes to disk,
+  including categories no loaded locale can emit, because that is what the policy
+  remembers — dropping the unreachable ones would silently switch a category back on the
+  day its locale was loaded again. It is the same distinction `disabledInPlay` draws for
+  the level.
+- **It wins over the environment, and that is the point.** Once a surface has written a
+  policy, that policy is the state; otherwise the click does not survive the restart and
+  the file has no purpose. The cost is real: with the file present, changing
+  `CLOAKFLEET_PII_LOCALE` in a profile does nothing. **Deleting the file hands the agent
+  back to the environment**, and the agent says on every start which of the two it read.
+  `TestAChangeSurvivesARestartAndBeatsTheEnvironment` asserts it through the two real
+  halves — the route, then `FromEnv` — because a file written correctly and never read
+  would pass a test and change nothing about the agent.
+- **A file that cannot be read leaves the environment alone rather than stopping the
+  agent.** Masking configured by a profile is a working agent; a state read from half a
+  document is not. `TestAnUnreadableStoredPolicyLeavesTheEnvironmentAlone`.
+- **One applier for the two callers.** `applyPolicy` is what the route and the stored file
+  both go through, so an agent restarted into its saved state applies it exactly as the
+  click did — two appliers is how a category comes to be switched off through a menu and
+  back on through a restart.
+- **Directory `0700`, file `0600`, written by rename** — the treatment the control key
+  gets, for a weaker reason than a secret but a real one: it says which categories this
+  workstation stopped masking, which describes what its user handles. Rename because a
+  torn file reads as unparseable on the next start, and a crash mid-write would silently
+  undo the change it was recording.
+- **Nothing is written until something changes one.** The absence of the file has to keep
+  meaning "nobody has said anything", which is what makes the environment's turn honest.
+
 ### `scan` — the offline check
 
-Reads a file or stdin, runs `detector.FromEnv`, and prints every value that would be masked
+Reads a file or stdin, assembles the detector exactly as the agent does —
+`proxy.DetectorFromEnv`: the environment, then the stored policy, which wins — and prints
+every value that would be masked
 with its category, label, byte offsets and confidence, then a **per-category tally**. That
 tally is the line that matters to an operator checking their own data is covered: a value they
 expected to see named, missing from it, is a gap in the catalogue for their data shape.
@@ -303,6 +379,34 @@ what somebody setting it would be doing.
 system prompt every turn and they scroll the MASK lines away — and those lines are what
 an operator is watching. The body-marking that used to make them readable went with
 them rather than being left as a painter nothing calls.
+
+**A tool call is the exception, and the only one.** When the model asks for an
+execution, the console names the tool and prints the arguments it asked for it with,
+restored — which is what the tool on this workstation will act on:
+
+```
+TOOL SendMail {"to":"pierre.paul@example.com"}
+```
+
+The rest of an answer is prose for a person to read; a tool call is an instruction
+about to be carried out, so this is the line that says whether the masking held all
+the way to the thing that acts. Green because it comes back from the provider, the
+direction `UNMASK` already uses; the arguments blue, because after restoration that is
+what they are.
+
+One line per call, whatever the document's size, and printed once: the streaming path
+reports at the moment the fragments become a whole document (`expandedArguments`), so
+a value split across two events is shown restored rather than in halves. A buffered
+answer is walked for the same calls (`reportToolCalls`), because shown for a streaming
+client alone the silence would read as an answer that asked for no tools. Anthropic's
+shape only — the OpenAI-compatible families put theirs in `tool_calls`, which this
+agent does not yet read on either path.
+
+**What it costs.** These arguments are the caller's own paths, commands and addresses,
+in clear, one document at a time — so under the installer's service definition `-a`
+files every tool call of every exchange in `~/.cloakfleet/agent.log` for as long as it
+runs, and a `Write` call of several kilobytes will scroll the MASK lines away. There is
+no ceiling on the width yet; the `TODO:` in `audit.go` says so.
 
 A value is named **once as it is minted** and once per response as it is restored, not
 once per occurrence: a system prompt resent every turn would bury the exchange being
