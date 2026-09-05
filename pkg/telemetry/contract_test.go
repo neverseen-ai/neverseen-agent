@@ -3,6 +3,7 @@ package telemetry
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -22,18 +23,24 @@ import (
 // argues for it in a diff a reviewer can see — which is the only point at which
 // "should the backend know this?" gets asked out loud.
 var allowedStrings = map[string]string{
-	"agent_id":                    "an identity the backend itself issued",
-	"state.version":               "the agent build, which is the point of reporting state",
-	"state.platform":              "the operating system and architecture",
-	"state.substitution":          "which of two modes is running: token or fake",
-	"state.locales[]":             "country codes from the agent's own registry",
-	"state.providers[]":           "upstream codes from the agent's own list",
-	"state.addresses[]":           "the machine's own IP addresses — personal data, and the one field here that is; see the field's comment",
-	"state.masking":               "how much of the catalogue is applied: full, partial or none",
-	"state.switched_off[]":        "category names from the agent's own catalogue, never a value — the same strings counters.masked already keys on",
-	"state.secret_level":          "one of three fixed words — weak, medium, strong — chosen from a closed set the agent itself parses, never a value",
-	"buckets[].counters.masked{}": "category names from the agent's own catalogue, never a value",
-	"buckets[].counters.models{}": "the model id the provider reported, which is a product name",
+	"agent_id":                            "an identity the backend itself issued",
+	"state.version":                       "the agent build, which is the point of reporting state",
+	"state.platform":                      "the operating system and architecture",
+	"state.substitution":                  "which of two modes is running: token or fake",
+	"state.locales[]":                     "country codes from the agent's own registry",
+	"state.providers[]":                   "upstream codes from the agent's own list",
+	"state.addresses[]":                   "the machine's own IP addresses — personal data, and the one field here that is; see the field's comment",
+	"state.masking":                       "how much of the catalogue is applied: full, partial or none",
+	"state.switched_off[]":                "category names from the agent's own catalogue, never a value — the same strings counters.masked already keys on",
+	"state.secret_level":                  "one of three fixed words — weak, medium, strong — chosen from a closed set the agent itself parses, never a value",
+	"buckets[].counters.masked{}":         "category names from the agent's own catalogue, never a value",
+	"buckets[].counters.models{}":         "the model id the provider reported, which is a product name",
+	"state.rerouted[]":                    "provider codes from the agent's own list — the same strings state.providers[] carries — naming which routes were pointed away from the vendor",
+	"buckets[].counters.providers{}":      "provider codes from the agent's own list, the same strings state.providers[] carries",
+	"buckets[].counters.clients{}":        "a client family from KnownClients, or \"other\" — a User-Agent is reduced to the closed list and never travels",
+	"buckets[].counters.tools.names{}":    "a tool name from KnownTools, or \"other\" — never a name a client made up",
+	"buckets[].counters.tools.programs{}": "a program name from KnownPrograms, or \"other\" — the word comes from the list, not from the command line",
+	"buckets[].counters.tools.classes{}":  "a class from CommandClasses, a fact about the vocabulary and never about the text",
 }
 
 func TestHeartbeatCarriesNoContent(t *testing.T) {
@@ -166,6 +173,15 @@ func TestHeartbeatWireFormat(t *testing.T) {
 			// showing a backend — an agent masking less than its catalogue allows
 			// with nothing switched off to explain it.
 			SecretLevel: "strong",
+
+			// The exposure of the agent itself, all set, for the reason every
+			// omitempty field above is: an example in which none of them is true
+			// exercises none of them on the wire.
+			Console:     true,
+			Tracing:     true,
+			Exposed:     true,
+			Rerouted:    []string{"anthropic"},
+			Allowlisted: 12,
 		},
 		// Two buckets, not one. A batch of one would be a golden in which the
 		// plural case — the whole reason the message is a batch — never appears,
@@ -194,6 +210,33 @@ func TestHeartbeatWireFormat(t *testing.T) {
 					// golden exists to catch.
 					Restarts: 2,
 					Dropped:  2,
+
+					// Every field below is omitempty, and each is exercised here for
+					// the reason the two above are.
+					Refused:   1,
+					Providers: map[string]int{"anthropic": 120, "openai": 8},
+					Upstream:  Upstream{OK: 121, RateLimited: 3, Rejected: 2, Failed: 1, Unreachable: 1},
+					Clients:   map[string]int{"claude-code": 120, "openai-sdk": 7, Other: 1},
+					Policy:    PolicyChanges{Applied: 1, Refused: 1},
+					Degraded:  1,
+					Sessions: Sessions{
+						Active:    4,
+						Opened:    1,
+						Closed:    2,
+						Duration:  histogramOf(1800, 42),
+						Requests:  histogramOf(60, 3),
+						Input:     histogramOf(1_500_000, 9000),
+						Output:    histogramOf(40_000, 800),
+						ToolCalls: histogramOf(55, 0),
+						Masked:    histogramOf(12, 0),
+					},
+					Tools: Tools{
+						Calls:    55,
+						Restored: 4,
+						Names:    map[string]int{"Bash": 30, "Read": 20, "mcp": 3, Other: 2},
+						Programs: map[string]int{"git": 12, "grep": 9, "python3": 4, Other: 5},
+						Classes:  map[string]int{"network": 2, "privilege": 1},
+					},
 				},
 			},
 			{
@@ -302,5 +345,88 @@ func TestSignAndVerify(t *testing.T) {
 				t.Error("verified, so the header is not binding anything")
 			}
 		})
+	}
+}
+
+// histogramOf is a Histogram holding the given values.
+func histogramOf(values ...int) Histogram {
+	var h Histogram
+	for _, v := range values {
+		h.Add(v)
+	}
+	return h
+}
+
+func TestHistogramBucketsByPowerOfTwo(t *testing.T) {
+	cases := map[int]int{
+		0: 0, 1: 1, 2: 2, 3: 2, 4: 3, 7: 3, 8: 4, 1000: 10, 1 << 22: 23, 1 << 30: 23,
+	}
+	for v, want := range cases {
+		var h Histogram
+		h.Add(v)
+		if len(h) != HistogramBuckets {
+			t.Fatalf("Add(%d) made a histogram of %d buckets, want %d", v, len(h), HistogramBuckets)
+		}
+		if h[want] != 1 {
+			t.Errorf("Add(%d) landed in bucket %d, want %d: %v", v, indexOfOne(h), want, h)
+		}
+	}
+}
+
+func indexOfOne(h Histogram) int {
+	for i, n := range h {
+		if n == 1 {
+			return i
+		}
+	}
+	return -1
+}
+
+// A backlog goes to the backend sixty buckets at a time, and the backend reads a
+// body under a bound (cloakfleet-cloud's ingest.maxBody, 1 MiB). The counters
+// gained histograms and four maps, so a bucket is several times the size it was;
+// this holds a full batch at half the bound, so the field that would break it is
+// the one that still gets to choose the number — the /healthz lesson,
+// TestHealthPayloadFitsTheQueryBound, applied to the other payload.
+func TestAFullBatchFitsTheBackendsBodyBound(t *testing.T) {
+	var golden HeartbeatBatch
+	if err := json.Unmarshal([]byte(ExampleHeartbeatsJSON), &golden); err != nil {
+		t.Fatal(err)
+	}
+	full := golden.Buckets[0]
+	// Every map at a plausible ceiling: a workstation talking to every vendor,
+	// through every client, masking every category, running every program.
+	for _, code := range []string{"anthropic", "openai", "gemini", "mistral", "groq", "together", "deepinfra", "xai"} {
+		full.Counters.Providers[code] = 1
+		full.Counters.Models["model-"+code+"-with-a-long-version-suffix-2026"] = TokenUsage{Input: 1, Output: 1, CacheWrite: 1, CacheRead: 1}
+	}
+	for _, c := range KnownClients {
+		full.Counters.Clients[c] = 1
+	}
+	for _, name := range KnownTools {
+		full.Counters.Tools.Names[name] = 1
+	}
+	for _, p := range KnownPrograms {
+		full.Counters.Tools.Programs[p] = 1
+	}
+	for _, c := range CommandClasses {
+		full.Counters.Tools.Classes[c] = 1
+	}
+	for i := range 200 {
+		full.Counters.Masked[fmt.Sprintf("CATEGORY_%03d", i)] = 1
+	}
+
+	batch := golden
+	batch.Buckets = make([]Bucket, 60)
+	for i := range batch.Buckets {
+		batch.Buckets[i] = full
+	}
+	encoded, err := json.Marshal(batch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const bound = 1024 * 1024
+	if len(encoded) > bound/2 {
+		t.Errorf("a full batch of 60 buckets encodes to %d bytes, over half the backend's %d-byte bound", len(encoded), bound)
 	}
 }

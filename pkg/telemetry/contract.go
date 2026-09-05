@@ -23,6 +23,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"math/bits"
 	"time"
 )
 
@@ -230,6 +231,40 @@ type State struct {
 	//
 	// One of three fixed words, never a value.
 	SecretLevel string `json:"secret_level,omitempty"`
+
+	// The four fields below say how the agent itself is exposed, which is the one
+	// thing about it the rest of State cannot: an agent applying its whole catalogue
+	// is still a risk if it is writing every prompt in clear to a log file, or
+	// answering a masking oracle to the whole network. A security officer reading a
+	// fleet view has to be able to see those from the row, not from a shell on the
+	// workstation.
+
+	// Console reports that every value replaced and restored is being printed in
+	// clear (`cloakfleet proxy -a`). Under the installer's service definition that
+	// console is a file, so this is an agent keeping the day's prompts on disk.
+	Console bool `json:"console,omitempty"`
+
+	// Tracing reports that both bodies of every exchange are being written to disk
+	// (`cloakfleet proxy -v`) — the only thing this agent ever writes in clear.
+	Tracing bool `json:"tracing,omitempty"`
+
+	// Exposed reports that the agent listens beyond the loopback interface, where
+	// `/test` is a masking oracle for anybody on the network and a session is named
+	// by a header the caller chooses.
+	Exposed bool `json:"exposed,omitempty"`
+
+	// Rerouted names the provider codes whose route was pointed somewhere other
+	// than the vendor's own host (CLOAKFLEET_PROVIDERS). A gateway, a LiteLLM or a
+	// logging proxy is a party the masked traffic reaches that the dashboard would
+	// otherwise not know about. Codes from the agent's own provider list, the same
+	// strings Providers already carries.
+	Rerouted []string `json:"rerouted,omitempty"`
+
+	// Allowlisted counts the values this deployment declared it never masks
+	// (CLOAKFLEET_PII_ALLOWLIST). A count and never the values: two hundred
+	// exemptions is an agent masking less than its catalogue says, and that is all
+	// a fleet view needs to know.
+	Allowlisted int `json:"allowlisted,omitempty"`
 }
 
 // Counters are the tallies for one window.
@@ -272,6 +307,164 @@ type Counters struct {
 	// auditor needs to see, and a silently lost window looks identical to a
 	// window in which nothing happened.
 	Dropped int `json:"dropped,omitempty"`
+
+	// Refused counts requests the agent would not forward because it could not
+	// read the body — the fail-closed 415. One is a client sending a shape the
+	// agent does not model; a steady rate is a tool that will end up pointed
+	// around the agent.
+	Refused int `json:"refused,omitempty"`
+
+	// Providers counts requests per route code — "anthropic", "openai" — the same
+	// strings State.Providers lists. Models says which model answered; this says
+	// which vendor was asked, including the exchanges that never got an answer.
+	Providers map[string]int `json:"providers,omitempty"`
+
+	// Upstream counts how the providers answered, by class.
+	Upstream Upstream `json:"upstream,omitzero"`
+
+	// Clients counts requests per client family — "claude-code", "cursor",
+	// "openai-python" — read from the User-Agent header and reduced to a closed
+	// list (KnownClients); anything else is counted as "other". It is the
+	// inventory a security officer has no other way to take: which AI tools are in
+	// use on the workstations, and how much of the traffic each one is.
+	Clients map[string]int `json:"clients,omitempty"`
+
+	// Policy counts the changes made to what the agent masks, through PUT /policy.
+	// State says what is switched off; this says when, and how often, somebody
+	// switched something.
+	Policy PolicyChanges `json:"policy,omitzero"`
+
+	// Degraded counts answers where a tool call's arguments never formed a JSON
+	// document — a stream cut short — and were expanded token by token instead of
+	// as a whole. Not a leak: a value split across two events is then left
+	// unrestored, so the tool acts on a replacement. A count of how often the
+	// control's second-best path ran.
+	Degraded int `json:"degraded,omitempty"`
+
+	// Sessions counts the conversations behind the requests, and describes the
+	// ones that ended during the window.
+	Sessions Sessions `json:"sessions,omitzero"`
+
+	// Tools counts what the model asked the workstation to run.
+	Tools Tools `json:"tools,omitzero"`
+}
+
+// Upstream is how the providers answered, by status class. Five integers rather
+// than a map keyed by status, so the contract gains no new string.
+type Upstream struct {
+	// OK is a 2xx.
+	OK int `json:"ok,omitempty"`
+	// RateLimited is a 429, on its own because it is the answer that says the
+	// organisation is at its quota rather than that a request was wrong.
+	RateLimited int `json:"rate_limited,omitempty"`
+	// Rejected is any other 4xx: a bad key, a malformed request, a refused model.
+	Rejected int `json:"rejected,omitempty"`
+	// Failed is a 5xx.
+	Failed int `json:"failed,omitempty"`
+	// Unreachable is a request that got no answer at all.
+	Unreachable int `json:"unreachable,omitempty"`
+}
+
+// PolicyChanges counts requests to PUT /policy.
+type PolicyChanges struct {
+	// Applied changed something about what the agent masks.
+	Applied int `json:"applied,omitempty"`
+	// Refused was rejected in whole or in part.
+	Refused int `json:"refused,omitempty"`
+}
+
+// Sessions describes the conversations behind a window's requests.
+//
+// A session is the identity the request path already scopes its mapping by — the
+// session header — and, where a client sends none, the conversation id Claude Code
+// writes into `metadata.user_id`. Everything left names one shared session. The
+// identity itself never travels: the agent keeps it in memory for as long as the
+// mapping lives, and only the counts leave.
+//
+// The averages a dashboard wants — tokens per conversation, requests per
+// conversation — are deliberately not computed here. A mean over a five-minute
+// window is wrong for conversations that last hours, and the agent would be
+// choosing the statistic. Instead a session's totals fall into histograms when it
+// closes, and the backend reads a median or a p95 from those.
+type Sessions struct {
+	// Active is how many distinct sessions sent a request during the window.
+	Active int `json:"active,omitempty"`
+	// Opened is how many of those were seen for the first time.
+	Opened int `json:"opened,omitempty"`
+	// Closed is how many sessions expired during the window — no request for as
+	// long as the mapping lives — and so how many the histograms below describe.
+	Closed int `json:"closed,omitempty"`
+
+	// Per closed session, each a Histogram: how long it lasted, in seconds, from
+	// its first request to its last; how many requests it made; the input tokens
+	// it consumed, cache included, and the output tokens; how many tool calls the
+	// model made in it; and how many values were masked in it.
+	Duration  Histogram `json:"duration,omitempty"`
+	Requests  Histogram `json:"requests,omitempty"`
+	Input     Histogram `json:"input,omitempty"`
+	Output    Histogram `json:"output,omitempty"`
+	ToolCalls Histogram `json:"tool_calls,omitempty"`
+	Masked    Histogram `json:"masked,omitempty"`
+}
+
+// HistogramBuckets is the length of a Histogram.
+//
+// Twenty-four powers of two reach 8,388,608 — more input tokens than a
+// conversation has, more seconds than a session's mapping survives — and the last
+// bucket is open-ended, so nothing is ever lost, only capped.
+const HistogramBuckets = 24
+
+// Histogram counts values by order of magnitude: bucket 0 holds the zeros, and
+// bucket i holds the values in [2^(i-1), 2^i), the last one everything above.
+//
+// Fixed edges rather than a map keyed by a range label, so the contract gains no
+// string, and logarithmic because the quantities it describes span six orders of
+// magnitude between a one-line question and an afternoon of code review. Nil until
+// a session has closed.
+type Histogram []int
+
+// Add counts one value.
+func (h *Histogram) Add(v int) {
+	if *h == nil {
+		*h = make(Histogram, HistogramBuckets)
+	}
+	i := 0
+	if v > 0 {
+		i = min(bits.Len(uint(v)), HistogramBuckets-1)
+	}
+	(*h)[i]++
+}
+
+// Tools counts what the model asked the workstation to run.
+//
+// A tool call is the one part of an answer that is neither prose nor a value: it
+// is an instruction the tool on this workstation is about to carry out. What is
+// counted is how many there were, how many acted on a value the agent had masked
+// on the way out, and which tools and programs they named — each name reduced to a
+// closed vocabulary the agent carries, so the heartbeat stays counts and catalogue
+// terms. The arguments themselves never travel.
+type Tools struct {
+	// Calls is how many tool calls the answers carried.
+	Calls int `json:"calls,omitempty"`
+
+	// Restored is how many of those had a masked value put back into their
+	// arguments: the number of times a personal or credential value the model
+	// never saw reached an action on the workstation.
+	Restored int `json:"restored,omitempty"`
+
+	// Names counts calls per tool, from KnownTools; the rest are "other".
+	Names map[string]int `json:"names,omitempty"`
+
+	// Programs counts the programs a shell tool was asked to run, from
+	// KnownPrograms; the rest are "other". Read from the first word of each command
+	// in the arguments, never the arguments themselves.
+	Programs map[string]int `json:"programs,omitempty"`
+
+	// Classes counts the shell commands that fall into one of CommandClasses —
+	// reaching the network, elevating privileges, installing software. What a
+	// security officer wants to know about a command is not its name but what kind
+	// of thing it does, and a class is a fact about the vocabulary, not the text.
+	Classes map[string]int `json:"classes,omitempty"`
 }
 
 // TokenUsage is what one model consumed.
