@@ -14,18 +14,33 @@
   .meta code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   .cols { display: grid; gap: 1rem; grid-template-columns: repeat(3, minmax(0, 1fr)); }
   @media (max-width: 1000px) { .cols { grid-template-columns: 1fr; } }
-  section { border: 1px solid var(--line); border-radius: 6px; padding: .75rem; min-width: 0; }
+  section { border: 1px solid var(--line); border-radius: 6px; padding: .75rem; min-width: 0;
+            display: flex; flex-direction: column; }
   h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em;
        margin: 0 0 .5rem; color: var(--muted); font-weight: 600; }
   h2 .count { float: right; text-transform: none; letter-spacing: 0; font-weight: 400; }
   textarea, pre { width: 100%; box-sizing: border-box; margin: 0;
                   font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; }
-  textarea { min-height: 26rem; resize: vertical; padding: .5rem;
+  /* Stretches to the row, which the two <pre> columns set: capped at its minimum
+     it showed a third of a text the other two columns showed whole. */
+  textarea { min-height: 26rem; flex: 1; resize: vertical; padding: .5rem;
              border: 1px solid var(--line); border-radius: 4px;
              background: transparent; color: inherit; }
   pre { min-height: 26rem; overflow: auto; white-space: pre-wrap; word-break: break-word;
         padding: .5rem; border: 1px solid transparent; }
-  .bar { margin-top: 1rem; display: flex; gap: .75rem; align-items: baseline; flex-wrap: wrap; }
+  .banner { margin: 0 0 1rem; padding: .5rem .75rem; border: 1px solid var(--warn);
+            border-radius: 4px; color: var(--warn); }
+  .banner a { color: inherit; }
+  .config { margin-bottom: 1rem; padding: .5rem .75rem; border: 1px solid var(--line);
+            border-radius: 6px; font-size: 12px; }
+  .row { display: flex; flex-wrap: wrap; gap: .25rem 1rem; align-items: baseline; }
+  .row + .row { margin-top: .25rem; }
+  .key { color: var(--muted); font-weight: 600; text-transform: uppercase;
+         letter-spacing: .06em; font-size: .7rem; min-width: 8rem; }
+  .row label { white-space: nowrap; }
+  .row .locked { color: var(--muted); }
+  mark { background: #ffd54f66; color: inherit; border-radius: 2px; padding: 0 .1em; }
+  .bar { margin-bottom: 1rem; display: flex; gap: .75rem; align-items: baseline; flex-wrap: wrap; }
   button { font: inherit; padding: .45rem 1rem; border-radius: 4px;
            border: 1px solid var(--line); background: transparent; color: inherit;
            cursor: pointer; }
@@ -47,23 +62,43 @@
 representations, using this agent's own configuration. Paste a record of your
 own — with the values changed — and see what leaves the machine and what does
 not.</p>
-<p class="meta">Locales in use: <code>{{ .Locales }}</code>. Nothing on this page
-is sent anywhere, stored, or written to the session vault.</p>
+<p class="meta">Nothing on this page is sent anywhere, stored, or written to the
+session vault. The switches below change this page only: the agent keeps its own
+configuration, and <code>cloakfleet mask</code> or the menu bar is where that is
+changed.</p>
 
 <form method="post" action="/test">
-  <div class="cols">
-    <section>
-      <h2>As written</h2>
-      <textarea name="text" spellcheck="false">{{ .Text }}</textarea>
-    </section>
-    <section>
-      <h2>Token mode <span class="count">{{ .Token.Count }} replaced</span></h2>
-      <pre>{{ .Token.Output }}</pre>
-    </section>
-    <section>
-      <h2>Stand-in mode <span class="count">{{ .Fake.Count }} replaced</span></h2>
-      <pre>{{ .Fake.Output }}</pre>
-    </section>
+  {{ if .Simulated }}
+  <p class="banner">Simulated configuration — this is not what the agent is
+  doing. <a href="/test">Back to the agent's configuration</a>.</p>
+  {{ end }}
+  <div class="config">
+    <div class="row">
+      <span class="key">Locales</span>
+      {{ range .Locales }}
+      <label><input type="checkbox" name="locale" value="{{ .Code }}"{{ if .On }} checked{{ end }}> {{ .Code }}</label>
+      {{ end }}
+    </div>
+    <div class="row">
+      <span class="key">Secret level</span>
+      {{ range .SecretLevels }}
+      <label><input type="radio" name="secret_level" value="{{ .Name }}"{{ if .On }} checked{{ end }}> {{ .Name }}</label>
+      {{ end }}
+    </div>
+    {{ range .Groups }}
+    <div class="row">
+      <span class="key">{{ .Label }}</span>
+      {{ range .Categories }}
+      {{ if not .Locked }}
+      <label><input type="checkbox" name="on" value="{{ .Code }}"{{ if not .Off }} checked{{ end }}> {{ .Label }}</label>
+      {{ end }}
+      {{ end }}
+      {{ if .Locked }}
+      <span class="locked">{{ len .Categories }} categories, always masked — a credential cannot be switched off</span>
+      {{ end }}
+    </div>
+    {{ end }}
+    <input type="hidden" name="shown" value="{{ .Shown }}">
   </div>
   <div class="bar">
     <button type="submit">Run it again</button>
@@ -75,6 +110,20 @@ is sent anywhere, stored, or written to the session vault.</p>
     not return this text exactly. That happens when the text already contains
     something shaped like a token.</span>
     {{ end }}
+  </div>
+  <div class="cols">
+    <section>
+      <h2>As written</h2>
+      <textarea name="text" spellcheck="false">{{ .Text }}</textarea>
+    </section>
+    <section>
+      <h2>Token mode <span class="count">{{ .Token.Count }} replaced</span></h2>
+      <pre>{{ .Token.Marked }}</pre>
+    </section>
+    <section>
+      <h2>Stand-in mode <span class="count">{{ .Fake.Count }} replaced</span></h2>
+      <pre>{{ .Fake.Output }}</pre>
+    </section>
   </div>
   <p class="hint">Stand-ins are indexed rather than random, so the same text
   always produces the same ones. They are unattributable by construction —

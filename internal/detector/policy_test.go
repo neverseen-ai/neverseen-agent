@@ -507,3 +507,45 @@ func TestSubstitutionNames(t *testing.T) {
 		}
 	}
 }
+
+// The test page simulates a configuration; the agent beside it must not move.
+func TestWithPolicyLeavesTheAgentUntouched(t *testing.T) {
+	d := New(Config{Locales: []string{"fr"}})
+
+	sim, err := d.WithPolicy([]string{"fr", "us"}, []pii.Category{pii.CatEmail}, pii.StrengthStrong)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := sim.Locales(); len(got) != 2 {
+		t.Errorf("simulated locales %v, want fr and us", got)
+	}
+	if got := sim.Disabled(); len(got) != 1 || got[0] != pii.CatEmail {
+		t.Errorf("simulated off %v, want EMAIL", got)
+	}
+	if sim.SecretLevel() != pii.StrengthStrong {
+		t.Errorf("simulated level %v, want strong", sim.SecretLevel())
+	}
+
+	if got := d.Locales(); len(got) != 1 || got[0] != "fr" {
+		t.Errorf("the agent's locales moved to %v", got)
+	}
+	if got := d.Disabled(); len(got) != 0 {
+		t.Errorf("the agent's off set moved to %v", got)
+	}
+	if d.SecretLevel() != pii.StrengthWeak {
+		t.Errorf("the agent's level moved to %v", d.SecretLevel())
+	}
+	if sim.Substitution() != d.Substitution() {
+		t.Errorf("a field the caller did not set must be the agent's: got %v", sim.Substitution())
+	}
+
+	// Refused with the route's own reasons, so the page cannot show a state the
+	// agent could never be in.
+	if _, err := d.WithPolicy([]string{"uk"}, nil, pii.StrengthWeak); err == nil {
+		t.Error("an unknown locale was accepted")
+	}
+	if _, err := d.WithPolicy([]string{"fr"}, []pii.Category{pii.CatAnthropicKey}, pii.StrengthWeak); err == nil {
+		t.Error("a credential was switched off")
+	}
+}

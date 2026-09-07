@@ -49,41 +49,104 @@ func (s *Server) handleTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	text := s.det.Sample()
+	det := s.det
+	text := det.Sample()
 	if r.Method == http.MethodPost {
-		submitted, err := submittedText(r)
+		form, err := submittedForm(r)
 		if err != nil {
 			http.Error(w, err.Error(), err.status())
 			return
 		}
-		if strings.TrimSpace(submitted) != "" {
+		if det, err = s.simulated(form); err != nil {
+			http.Error(w, err.Error(), err.status())
+			return
+		}
+		if submitted := form.Get("text"); strings.TrimSpace(submitted) != "" {
 			text = submitted
 		}
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := playgroundTemplate.Execute(w, s.playgroundView(text)); err != nil {
+	// The page reads the detector as it is now — a locale loaded or a category
+	// switched off since the last visit changes every column — and without this a
+	// browser serves its heuristic copy on the next GET, over an agent that has
+	// moved on.
+	w.Header().Set("Cache-Control", "no-store")
+	if err := playgroundTemplate.Execute(w, s.playgroundView(det, text)); err != nil {
 		// The status line has already gone out, so this can only be reported.
 		s.log.Error("rendering the test page failed", "error", err)
 	}
 }
 
-// submittedText reads the form field, capping the read before the body is
-// buffered rather than after.
-func submittedText(r *http.Request) (string, *playgroundError) {
+// submittedForm reads the form, capping the read before the body is buffered
+// rather than after.
+func submittedForm(r *http.Request) (url.Values, *playgroundError) {
 	body, err := io.ReadAll(io.LimitReader(r.Body, playgroundMaxBytes+1))
 	if err != nil {
-		return "", &playgroundError{"cannot read the submitted form", http.StatusBadRequest}
+		return nil, &playgroundError{"cannot read the submitted form", http.StatusBadRequest}
 	}
 	if len(body) > playgroundMaxBytes {
-		return "", &playgroundError{"the submitted text is too large", http.StatusRequestEntityTooLarge}
+		return nil, &playgroundError{"the submitted text is too large", http.StatusRequestEntityTooLarge}
 	}
 
 	values, err := url.ParseQuery(string(body))
 	if err != nil {
-		return "", &playgroundError{"cannot parse the submitted form", http.StatusBadRequest}
+		return nil, &playgroundError{"cannot parse the submitted form", http.StatusBadRequest}
 	}
-	return values.Get("text"), nil
+	return values, nil
+}
+
+// simulated builds the detector a submission asks to be rendered with.
+//
+// A form that carries no configuration — a text posted on its own — renders with
+// the agent's, so the page stays the tool it was. One that does gets a detector of
+// its own (Detector.WithPolicy), and nothing here writes to the agent: PUT /policy
+// is the one way to change what it does, and this page is neither authenticated
+// nor, under -l, loopback only.
+//
+// The switched-off set is rebuilt from two halves. What the form drew is in
+// "shown", and a drawn switch left unticked is off. What it could not draw — a
+// category no locale of the rendered configuration could emit — keeps the agent's
+// own intent, for the reason Health.Off exists beside Health.Groups: rebuilt from
+// the reachable half alone, loading `us` on a page rendered with `fr` would have
+// shown SSN masked over an agent that has it switched off.
+func (s *Server) simulated(form url.Values) (*detector.Detector, *playgroundError) {
+	if _, configured := form["secret_level"]; !configured {
+		return s.det, nil
+	}
+
+	level, err := detector.ParseSecretLevel(form.Get("secret_level"))
+	if err != nil {
+		return nil, &playgroundError{err.Error(), http.StatusUnprocessableEntity}
+	}
+
+	on := make(map[pii.Category]bool)
+	for _, code := range form["on"] {
+		on[pii.Category(code)] = true
+	}
+	shown := make(map[pii.Category]bool)
+	off := make([]pii.Category, 0)
+	for _, code := range strings.Split(form.Get("shown"), ",") {
+		if code == "" {
+			continue
+		}
+		cat := pii.Category(code)
+		shown[cat] = true
+		if !on[cat] {
+			off = append(off, cat)
+		}
+	}
+	for _, cat := range s.det.Disabled() {
+		if !shown[cat] {
+			off = append(off, cat)
+		}
+	}
+
+	det, err := s.det.WithPolicy(form["locale"], off, level)
+	if err != nil {
+		return nil, &playgroundError{err.Error(), http.StatusUnprocessableEntity}
+	}
+	return det, nil
 }
 
 type playgroundError struct {
@@ -95,8 +158,17 @@ func (e *playgroundError) Error() string { return e.message }
 func (e *playgroundError) status() int   { return e.code }
 
 type playgroundView struct {
-	Text    string
-	Locales string
+	Text string
+
+	// The configuration the page rendered with, drawn as the switches that would
+	// reproduce it, and whether it is the agent's own. Simulated is what puts the
+	// banner up: a page that showed a simulated result under the agent's heading
+	// would be the picture disagreeing with the traffic.
+	Locales      []playgroundLocale
+	SecretLevels []playgroundLevel
+	Groups       []HealthGroup
+	Shown        string
+	Simulated    bool
 
 	Token playgroundColumn
 	Fake  playgroundColumn
@@ -109,9 +181,38 @@ type playgroundView struct {
 	Findings []playgroundFinding
 }
 
+type playgroundLocale struct {
+	Code string
+	On   bool
+}
+
+type playgroundLevel struct {
+	Name string
+	On   bool
+}
+
 type playgroundColumn struct {
 	Output string
 	Count  int
+
+	// Marked is Output with each token wrapped for highlighting, already escaped.
+	// Only the token column has one: a stand-in is prose by design and there is
+	// nothing in the text to find it by.
+	Marked template.HTML
+}
+
+// markTokens escapes the masked text and wraps every token in <mark>.
+//
+// Escaped first, then marked, and the order is the safety argument: escaping
+// touches nothing a token is made of — capitals, digits, underscores and the two
+// brackets — and produces only entities, so the scan afterwards finds exactly the
+// tokens the detector wrote and nothing the caller pasted. The result is the one
+// template.HTML on the page, and this function is the only thing that builds it.
+func markTokens(masked string) template.HTML {
+	escaped := template.HTMLEscapeString(masked)
+	return template.HTML(pii.ReplaceTokens(escaped, func(token string) (string, bool) {
+		return "<mark>" + token + "</mark>", true
+	}))
 }
 
 type playgroundFinding struct {
@@ -125,34 +226,60 @@ type playgroundFinding struct {
 	TokenInFakeMode bool
 }
 
-func (s *Server) playgroundView(text string) playgroundView {
-	locales := "none"
-	if l := s.det.Locales(); len(l) > 0 {
-		locales = strings.Join(l, ", ")
-	}
-
+func (s *Server) playgroundView(det *detector.Detector, text string) playgroundView {
 	// A detector per column, each with its own counters, so the same text renders
 	// identically on every reload and the comparison is readable.
-	tokenDet := s.det.WithSubstitution(detector.SubstitutionToken)
+	tokenDet := det.WithSubstitution(detector.SubstitutionToken)
 	masked, mapping, replaced := tokenDet.MaskOnce(text)
 
-	fakeMasked, _, fakeReplaced := s.det.WithSubstitution(detector.SubstitutionFake).MaskOnce(text)
+	fakeMasked, _, fakeReplaced := det.WithSubstitution(detector.SubstitutionFake).MaskOnce(text)
+
+	loaded := make(map[string]bool)
+	for _, code := range det.Locales() {
+		loaded[code] = true
+	}
+	locales := make([]playgroundLocale, 0, len(pii.LocaleCodes()))
+	for _, code := range pii.LocaleCodes() {
+		locales = append(locales, playgroundLocale{Code: code, On: loaded[code]})
+	}
+
+	levels := make([]playgroundLevel, 0, 3)
+	for _, name := range detector.SecretLevels() {
+		levels = append(levels, playgroundLevel{Name: name, On: name == det.SecretLevel().String()})
+	}
+
+	// The same list the menu bar draws, so the two surfaces agree; the hidden
+	// field is what lets the next submission tell an unticked switch from one it
+	// never drew.
+	groups := catalogueOf(det)
+	var shown []string
+	for _, g := range groups {
+		for _, c := range g.Categories {
+			if !c.Locked {
+				shown = append(shown, c.Code)
+			}
+		}
+	}
 
 	return playgroundView{
-		Text:       text,
-		Locales:    locales,
-		Token:      playgroundColumn{Output: masked, Count: replaced},
-		Fake:       playgroundColumn{Output: fakeMasked, Count: fakeReplaced},
-		RoundTrips: detector.Unmask(masked, mapping) == text,
-		Findings:   s.playgroundFindings(text),
+		Text:         text,
+		Locales:      locales,
+		SecretLevels: levels,
+		Groups:       groups,
+		Shown:        strings.Join(shown, ","),
+		Simulated:    det != s.det,
+		Token:        playgroundColumn{Output: masked, Count: replaced, Marked: markTokens(masked)},
+		Fake:         playgroundColumn{Output: fakeMasked, Count: fakeReplaced},
+		RoundTrips:   detector.Unmask(masked, mapping) == text,
+		Findings:     playgroundFindings(det, text),
 	}
 }
 
 // playgroundFindings lists what the catalogue found, in reading order, so a
 // missing replacement can be told apart from an undetected value.
-func (s *Server) playgroundFindings(text string) []playgroundFinding {
-	matches := s.det.Scan(text)
-	fakes := pii.NewFakeSet(s.det.Locales())
+func playgroundFindings(det *detector.Detector, text string) []playgroundFinding {
+	matches := det.Scan(text)
+	fakes := pii.NewFakeSet(det.Locales())
 
 	out := make([]playgroundFinding, 0, len(matches))
 	for _, m := range matches {

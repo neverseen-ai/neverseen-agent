@@ -83,6 +83,18 @@ type HealthGroup struct {
 	Categories []HealthCategory `json:"categories"`
 }
 
+// Locked reports whether every category in the group is one that cannot be
+// switched off. The test page draws such a group as one line rather than as a
+// hundred and thirty-one disabled switches, which buried the nineteen real ones.
+func (g HealthGroup) Locked() bool {
+	for _, c := range g.Categories {
+		if !c.Locked {
+			return false
+		}
+	}
+	return len(g.Categories) > 0
+}
+
 // HealthCategory is one switch.
 type HealthCategory struct {
 	Code  string `json:"code"`

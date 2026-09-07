@@ -253,9 +253,14 @@ func (s *Server) healthNow() Health {
 // so a menu built from its own copy would go on offering a category after a
 // rebuilt agent stopped having one — and the picture would disagree with the
 // traffic, which is the whole failure the single /healthz type exists to prevent.
-func (s *Server) catalogue() []HealthGroup {
+func (s *Server) catalogue() []HealthGroup { return catalogueOf(s.det) }
+
+// catalogueOf draws it for any detector, because the test page draws the same
+// list for a simulated one — the same switches, in the same order, with the same
+// labels, or the page and the menu would name one category two ways.
+func catalogueOf(det *detector.Detector) []HealthGroup {
 	off := make(map[pii.Category]bool)
-	for _, cat := range s.det.Disabled() {
+	for _, cat := range det.Disabled() {
 		off[cat] = true
 	}
 
@@ -264,7 +269,7 @@ func (s *Server) catalogue() []HealthGroup {
 	// for one of those would tell somebody the agent is masking a value it cannot
 	// recognise — the opposite of what a list of switches is for.
 	inPlay := make(map[pii.Category]bool)
-	for _, cat := range s.det.Categories() {
+	for _, cat := range det.Categories() {
 		inPlay[cat] = true
 	}
 

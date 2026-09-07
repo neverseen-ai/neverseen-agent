@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -45,6 +46,9 @@ func TestTestPageOpensOnTheSample(t *testing.T) {
 	if got.status != http.StatusOK {
 		t.Fatalf("status %d, want 200", got.status)
 	}
+	if cc := got.header.Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("Cache-Control %q, want no-store: a cached page shows a configuration the agent no longer has", cc)
+	}
 
 	// The sample it opens on comes from the detector, so it demonstrates the
 	// locales this deployment actually loaded rather than a fixed text.
@@ -59,10 +63,106 @@ func TestTestPageOpensOnTheSample(t *testing.T) {
 	}
 
 	// The configuration is on the page, because a comparison built on defaults
-	// would answer a different question than the one being asked.
-	if !strings.Contains(got.body, "fr, gb, us") {
-		t.Errorf("the page does not say which locales are in use:\n%s", excerpt(got.body))
+	// would answer a different question than the one being asked — and it is drawn
+	// as the agent has it, ticked, so an untouched page still says what the agent
+	// does.
+	for _, code := range []string{"fr", "gb", "us"} {
+		if !strings.Contains(got.body, `name="locale" value="`+code+`" checked`) {
+			t.Errorf("locale %s is not drawn as loaded:\n%s", code, excerpt(got.body))
+		}
 	}
+	if !strings.Contains(got.body, `name="secret_level" value="weak" checked`) {
+		t.Errorf("the secret level is not drawn as the agent's:\n%s", excerpt(got.body))
+	}
+	if strings.Contains(got.body, "Simulated configuration") {
+		t.Errorf("an untouched page must not say it is simulating:\n%s", excerpt(got.body))
+	}
+}
+
+// The switches simulate; they never write. The page is unauthenticated and, under
+// -l, reachable from the network, so a switch that wrote through would be the
+// control PUT /policy exists to guard.
+func TestTestPageSimulatesWithoutChangingTheAgent(t *testing.T) {
+	up := newUpstream(t, echoJSON)
+	agent := newAgent(t, up, []string{"fr"})
+
+	const text = "Contact: alice" + "@" + "example.org, SSN 123-45-6789"
+
+	// Email switched off, us loaded on top of fr, strong level.
+	form := url.Values{
+		"text":         {text},
+		"locale":       {"fr", "us"},
+		"secret_level": {"strong"},
+		"shown":        {"EMAIL,PHONE"},
+		"on":           {"PHONE"},
+	}
+	got := submitForm(t, agent, form)
+	if got.status != http.StatusOK {
+		t.Fatalf("status %d, want 200", got.status)
+	}
+	// The value itself is on the page whatever happens — in the "as written"
+	// column and in the findings — so the token is what says which way it went.
+	if strings.Contains(got.body, "[EMAIL_") {
+		t.Errorf("EMAIL was unticked and still masked:\n%s", excerpt(got.body))
+	}
+	if !strings.Contains(got.body, "[SSN_") {
+		t.Errorf("us was ticked and the SSN was not masked:\n%s", excerpt(got.body))
+	}
+	if !strings.Contains(got.body, "Simulated configuration") {
+		t.Errorf("a page rendered off the agent's configuration must say so:\n%s", excerpt(got.body))
+	}
+	if !strings.Contains(got.body, `name="secret_level" value="strong" checked`) {
+		t.Errorf("the page does not redraw the level it rendered with:\n%s", excerpt(got.body))
+	}
+
+	// The agent beside it has not moved: /healthz is the one answer to that.
+	var h Health
+	if err := json.Unmarshal([]byte(get(t, agent, "/healthz").body), &h); err != nil {
+		t.Fatal(err)
+	}
+	if len(h.Locales) != 1 || h.Locales[0] != "fr" {
+		t.Errorf("the agent's locales moved to %v", h.Locales)
+	}
+	if len(h.Off) != 0 {
+		t.Errorf("the agent's off set moved to %v", h.Off)
+	}
+	if h.SecretLevel != "weak" {
+		t.Errorf("the agent's level moved to %s", h.SecretLevel)
+	}
+
+	// A text posted on its own — the form as it was — still renders the agent's.
+	plain := submit(t, agent, text)
+	if strings.Contains(plain.body, "Simulated configuration") {
+		t.Errorf("a submission carrying no configuration must render the agent's:\n%s", excerpt(plain.body))
+	}
+}
+
+// Refused with the route's own reasons: the page cannot show a state the agent
+// could never be in.
+func TestTestPageRefusesAConfigurationTheAgentWould(t *testing.T) {
+	up := newUpstream(t, echoJSON)
+	agent := newAgent(t, up, []string{"fr"})
+
+	for name, form := range map[string]url.Values{
+		"unknown locale": {"secret_level": {"weak"}, "locale": {"uk"}},
+		"unknown level":  {"secret_level": {"paranoid"}},
+		"credential off": {"secret_level": {"weak"}, "shown": {"SECRET_ANTHROPIC_KEY"}},
+	} {
+		if got := submitForm(t, agent, form); got.status != http.StatusUnprocessableEntity {
+			t.Errorf("%s: status %d, want 422", name, got.status)
+		}
+	}
+}
+
+func submitForm(t *testing.T, agent *httptest.Server, form url.Values) reply {
+	t.Helper()
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, agent.URL+"/test", strings.NewReader(form.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	return do(t, agent, req)
 }
 
 // The point of three columns: one text, both representations, side by side.
@@ -151,7 +251,11 @@ func TestTestPageEscapesWhatItEchoes(t *testing.T) {
 	up := newUpstream(t, echoJSON)
 	agent := newAgent(t, up, nil)
 
-	got := submit(t, agent, `<script>alert("x")</script> and mail claire@example.fr`)
+	// The address is assembled rather than written, and so is the token expected
+	// below: this repository is read through the agent it builds, and a literal of
+	// either shape in a test is rewritten on the way in.
+	address := "marie.durand" + "@" + "acme-corp.fr"
+	got := submit(t, agent, `<script>alert("x")</script> and mail `+address)
 
 	if strings.Contains(got.body, "<script>alert") {
 		t.Errorf("submitted markup was echoed unescaped:\n%s", excerpt(got.body))
@@ -159,6 +263,17 @@ func TestTestPageEscapesWhatItEchoes(t *testing.T) {
 	// Escaped, not dropped: the operator has to see what they pasted.
 	if !strings.Contains(got.body, "&lt;script&gt;") {
 		t.Errorf("submitted markup was not shown at all:\n%s", excerpt(got.body))
+	}
+
+	// The token column is the one piece of HTML built by hand, so the escaping is
+	// asserted on it in particular: the pasted markup must arrive as entities there
+	// too, and only what the detector wrote may be marked.
+	token := "[" + "EMAIL_1]"
+	if !strings.Contains(got.body, "<mark>"+token+"</mark>") {
+		t.Errorf("the token is not highlighted in the token column:\n%s", excerpt(got.body))
+	}
+	if n := strings.Count(got.body, "<mark>"); n != 1 {
+		t.Errorf("want exactly one highlighted token, got %d:\n%s", n, excerpt(got.body))
 	}
 }
 

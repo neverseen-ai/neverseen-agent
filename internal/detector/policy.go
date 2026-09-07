@@ -383,3 +383,40 @@ func (d *Detector) Categories() []pii.Category {
 	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
 	return out
 }
+
+// WithPolicy derives a detector that applies a different configuration without
+// the agent adopting it.
+//
+// It exists for one caller, the test page, whose question is "what would this text
+// become if…" — a category switched off, a locale loaded, the secret level raised.
+// PUT /policy is the only way to change what the agent does, and it is
+// authenticated; the page is not, and reachable beyond loopback under -l, so a
+// switch on it that wrote through would hand the network the control. What it gets
+// instead is a copy: a policy of its own, seeded from the live one so a field the
+// caller does not set (the substitution mode) is the agent's, and validated by the
+// same setters the route uses, so a locale or a category the agent would refuse is
+// refused here with the same message.
+//
+// Unlike WithSubstitution it deliberately does not share the policy pointer: the
+// whole point is to hold a state the agent has not got. Own counters, for the
+// reason WithSubstitution has them.
+func (d *Detector) WithPolicy(locales []string, off []pii.Category, level pii.Strength) (*Detector, error) {
+	p := &policy{}
+	p.cat.Store(d.catalogue())
+	p.sub.Store(d.policy.sub.Load())
+
+	sim := &Detector{
+		config:   d.config,
+		allow:    d.allow,
+		policy:   p,
+		counters: make(map[string]*atomic.Int64),
+	}
+	if err := sim.SetLocales(locales); err != nil {
+		return nil, err
+	}
+	if err := sim.Disable(off); err != nil {
+		return nil, err
+	}
+	sim.SetSecretLevel(level)
+	return sim, nil
+}
