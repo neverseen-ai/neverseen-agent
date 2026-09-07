@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cloakfleet/cloakfleet/internal/detector"
-	"github.com/cloakfleet/cloakfleet/internal/vault"
-	"github.com/cloakfleet/cloakfleet/pkg/pii"
+	"github.com/neverseen-ai/neverseen-agent/internal/detector"
+	"github.com/neverseen-ai/neverseen-agent/internal/vault"
+	"github.com/neverseen-ai/neverseen-agent/pkg/pii"
 )
 
 // The route and its reader are one type in one package, so the only way to check
@@ -45,7 +45,7 @@ func TestStatusReadsWhatTheAgentServes(t *testing.T) {
 }
 
 // Nothing listening is an answer, not a failure: every caller wants to report that
-// state rather than handle an error, and a shell wired to `cloakfleet env` depends
+// state rather than handle an error, and a shell wired to `neverseen env` depends
 // on it being cheap and quiet.
 func TestQueryReportsAnAbsentAgent(t *testing.T) {
 	got := Query(t.Context(), "127.0.0.1:1", 200*time.Millisecond)
@@ -82,7 +82,7 @@ func TestAnAgentWithNoLocaleIsNotMasking(t *testing.T) {
 	}
 	// And it names the variable to set, from the constant the detector reads, so
 	// the instruction cannot go stale the day it is renamed.
-	if !strings.Contains(out.String(), "CLOAKFLEET_PII_LOCALE") {
+	if !strings.Contains(out.String(), "NEVERSEEN_PII_LOCALE") {
 		t.Errorf("the report does not say what to set:\n%s", out.String())
 	}
 }
@@ -107,8 +107,8 @@ func TestABadBodyStillCountsAsAnswering(t *testing.T) {
 // Write opens on Headline, so the sentence a person reads is the shared one rather
 // than a second copy that drifts away from it.
 //
-// Asserted because the drift it prevents has already happened once: `cloakfleet
-// status` called a category "switched off" where `cloakfleet mask` called the same
+// Asserted because the drift it prevents has already happened once: `neverseen
+// status` called a category "switched off" where `neverseen mask` called the same
 // category "in clear", and nothing failed. The command's half of the pair is held
 // by TestMaskOpensOnTheSharedSentence.
 func TestWriteOpensOnTheHeadline(t *testing.T) {

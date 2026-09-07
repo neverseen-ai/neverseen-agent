@@ -6,8 +6,8 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/cloakfleet/cloakfleet/internal/detector"
-	"github.com/cloakfleet/cloakfleet/internal/vault"
+	"github.com/neverseen-ai/neverseen-agent/internal/detector"
+	"github.com/neverseen-ai/neverseen-agent/internal/vault"
 )
 
 // What the machine running the tests reports has to be usable for the one purpose

@@ -73,7 +73,7 @@ jobs:
   # Both are only ever exercised at release time otherwise, which is the worst
   # moment to find out.
   #
-  # On macOS, and that is forced rather than chosen: cloakfleet-tray puts an icon
+  # On macOS, and that is forced rather than chosen: neverseen-tray puts an icon
   # in the menu bar through Cocoa, so it needs cgo and the frameworks it links
   # against, which exist on no other runner. The agent itself is pure Go and is
   # cross-compiled from here for both platforms, as it always was — the Mac is

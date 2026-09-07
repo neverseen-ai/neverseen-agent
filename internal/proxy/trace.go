@@ -31,7 +31,7 @@ import (
 // somebody watching their own screen.
 //
 // So it takes a flag on a command that is already a foreground mode, never an
-// environment variable, and never `cloakfleet proxy`: a background service writing
+// environment variable, and never `neverseen proxy`: a background service writing
 // prompts to disk is the one thing this design must not be able to do by accident.
 // The directory is 0700 and each file 0600, the same treatment the control key gets,
 // because both are things only their owner may read.

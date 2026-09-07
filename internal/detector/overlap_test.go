@@ -3,7 +3,7 @@ package detector
 import (
 	"testing"
 
-	"github.com/cloakfleet/cloakfleet/pkg/pii"
+	"github.com/neverseen-ai/neverseen-agent/pkg/pii"
 )
 
 // Overlap resolution decides which category names a stretch of text, and every

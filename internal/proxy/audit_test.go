@@ -17,8 +17,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cloakfleet/cloakfleet/internal/detector"
-	"github.com/cloakfleet/cloakfleet/internal/vault"
+	"github.com/neverseen-ai/neverseen-agent/internal/detector"
+	"github.com/neverseen-ai/neverseen-agent/internal/vault"
 )
 
 // Audit mode is the one surface in this agent that prints a real value, so what

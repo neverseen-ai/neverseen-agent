@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cloakfleet/cloakfleet/internal/detector"
-	contract "github.com/cloakfleet/cloakfleet/pkg/telemetry"
+	"github.com/neverseen-ai/neverseen-agent/internal/detector"
+	contract "github.com/neverseen-ai/neverseen-agent/pkg/telemetry"
 )
 
 // The traces the replay reads are the ones the tracer writes, so the fixture is

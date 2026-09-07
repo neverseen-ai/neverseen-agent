@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cloakfleet/cloakfleet/pkg/telemetry"
+	"github.com/neverseen-ai/neverseen-agent/pkg/telemetry"
 )
 
 // The agent files its last window before the command returns.
@@ -66,22 +66,22 @@ func TestTheLastWindowIsFiledBeforeTheCommandReturns(t *testing.T) {
 	defer provider.Close()
 
 	// The only test that goes through runProxy, which passes no PolicyFile and no
-	// ControlKeyFile — so both fall back to ~/.cloakfleet, and this test read the
+	// ControlKeyFile — so both fall back to ~/.neverseen, and this test read the
 	// policy of whichever workstation ran it. On a machine with the agent installed
-	// and EMAIL switched off, the file wins over CLOAKFLEET_PII_LOCALE below, the
+	// and EMAIL switched off, the file wins over NEVERSEEN_PII_LOCALE below, the
 	// address goes out in clear and the assertion at the end fails over a rule that
 	// is working exactly as written. Every other test names a temp file in Options;
 	// this one has nowhere to name it, so the home directory itself is moved, which
-	// keeps the control key out of the developer's ~/.cloakfleet as well.
+	// keeps the control key out of the developer's ~/.neverseen as well.
 	t.Setenv("HOME", t.TempDir())
 
 	addr := freePort(t)
-	t.Setenv("CLOAKFLEET_LISTEN", addr)
-	t.Setenv("CLOAKFLEET_PROVIDERS", "anthropic="+provider.URL)
-	t.Setenv("CLOAKFLEET_PII_LOCALE", "fr")
-	t.Setenv("CLOAKFLEET_BACKEND_URL", backend.URL)
-	t.Setenv("CLOAKFLEET_ENROLMENT_TOKEN", "enrol-me")
-	t.Setenv("CLOAKFLEET_IDENTITY_FILE", filepath.Join(t.TempDir(), "agent.json"))
+	t.Setenv("NEVERSEEN_LISTEN", addr)
+	t.Setenv("NEVERSEEN_PROVIDERS", "anthropic="+provider.URL)
+	t.Setenv("NEVERSEEN_PII_LOCALE", "fr")
+	t.Setenv("NEVERSEEN_BACKEND_URL", backend.URL)
+	t.Setenv("NEVERSEEN_ENROLMENT_TOKEN", "enrol-me")
+	t.Setenv("NEVERSEEN_IDENTITY_FILE", filepath.Join(t.TempDir(), "agent.json"))
 
 	returned := make(chan error, 1)
 	go func() { returned <- runProxy(nil, io.Discard) }()

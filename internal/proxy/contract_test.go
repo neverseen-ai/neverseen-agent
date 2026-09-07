@@ -9,8 +9,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/cloakfleet/cloakfleet/internal/detector"
-	"github.com/cloakfleet/cloakfleet/internal/vault"
+	"github.com/neverseen-ai/neverseen-agent/internal/detector"
+	"github.com/neverseen-ai/neverseen-agent/internal/vault"
 )
 
 // The contract between this agent and the browser extension, as one file both sides

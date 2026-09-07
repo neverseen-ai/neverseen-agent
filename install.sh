@@ -1,5 +1,5 @@
 #!/bin/sh
-# Install the Cloakfleet agent as a background service on this workstation.
+# Install the Neverseen agent as a background service on this workstation.
 #
 # Three things this script deliberately does NOT do:
 #
@@ -7,7 +7,7 @@
 #      this one replaces did, and the day somebody stopped the proxy without
 #      running its uninstaller, every LLM tool on the machine broke with a
 #      connection error from a line in a file they had not touched. What goes
-#      into the profile instead is `eval "$(cloakfleet env)"`, which prints
+#      into the profile instead is `eval "$(neverseen env)"`, which prints
 #      nothing while the agent is stopped — so the tools reach their provider
 #      directly, exactly as before it was installed.
 #
@@ -28,25 +28,25 @@
 
 set -eu
 
-BIN_NAME=cloakfleet
+BIN_NAME=neverseen
 # The menu bar icon is its own binary, and only on macOS: it is Cocoa, and Linux
 # has no menu bar to put it in. See internal/tray for what a Linux tray would cost.
-TRAY_NAME=cloakfleet-tray
-PREFIX="${CLOAKFLEET_PREFIX:-$HOME/.local}"
+TRAY_NAME=neverseen-tray
+PREFIX="${NEVERSEEN_PREFIX:-$HOME/.local}"
 BIN_DIR="$PREFIX/bin"
-CONFIG_DIR="$HOME/.cloakfleet"
+CONFIG_DIR="$HOME/.neverseen"
 CONFIG_FILE="$CONFIG_DIR/.env"
 LOG_FILE="$CONFIG_DIR/agent.log"
 
-SERVICE_LABEL=ai.cloakfleet.agent
+SERVICE_LABEL=ai.neverseen.agent
 LAUNCH_AGENT="$HOME/Library/LaunchAgents/$SERVICE_LABEL.plist"
-TRAY_LABEL=ai.cloakfleet.tray
+TRAY_LABEL=ai.neverseen.tray
 TRAY_AGENT="$HOME/Library/LaunchAgents/$TRAY_LABEL.plist"
-SYSTEMD_UNIT="$HOME/.config/systemd/user/cloakfleet.service"
+SYSTEMD_UNIT="$HOME/.config/systemd/user/neverseen.service"
 
 # The line added to a profile. Matched verbatim on uninstall, so it has to stay
 # one line and stay recognisable.
-SHELL_LINE='eval "$(cloakfleet env)"  # cloakfleet: prints nothing while the agent is stopped'
+SHELL_LINE='eval "$(neverseen env)"  # neverseen: prints nothing while the agent is stopped'
 
 say()  { printf '%s\n' "$*"; }
 warn() { printf '%s\n' "$*" >&2; }
@@ -71,7 +71,7 @@ install_binary() {
     if [ -f ./go.mod ] && command -v go >/dev/null 2>&1; then
         say "Building from source…"
         go build -ldflags "-s -w -X main.version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)" \
-            -o "$BIN_DIR/$BIN_NAME" ./cmd/cloakfleet
+            -o "$BIN_DIR/$BIN_NAME" ./cmd/neverseen
     elif [ -f "./$BIN_NAME" ]; then
         say "Installing the bundled binary…"
         cp "./$BIN_NAME" "$BIN_DIR/$BIN_NAME"
@@ -88,7 +88,7 @@ install_binary() {
     if [ "$(platform)" = darwin ]; then
         if [ -f ./go.mod ] && command -v go >/dev/null 2>&1; then
             if go build -ldflags "-s -w -X main.version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)" \
-                -o "$BIN_DIR/$TRAY_NAME" ./cmd/cloakfleet-tray 2>/dev/null; then
+                -o "$BIN_DIR/$TRAY_NAME" ./cmd/neverseen-tray 2>/dev/null; then
                 chmod 0755 "$BIN_DIR/$TRAY_NAME"
                 say "Installed $BIN_DIR/$TRAY_NAME"
             else
@@ -103,7 +103,7 @@ install_binary() {
 
     case ":$PATH:" in
         *":$BIN_DIR:"*) ;;
-        *) warn "Note: $BIN_DIR is not on your PATH, so \`cloakfleet\` will not be found yet." ;;
+        *) warn "Note: $BIN_DIR is not on your PATH, so \`neverseen\` will not be found yet." ;;
     esac
 }
 
@@ -123,26 +123,26 @@ write_config() {
     # masks its invoice numbers and misses its identifiers. So the file ships
     # with the question rather than with an answer.
     cat > "$CONFIG_FILE" <<'EOF'
-# Cloakfleet agent configuration. See .env.example for every variable.
+# Neverseen agent configuration. See .env.example for every variable.
 
 # Which country's identifiers to look for: fr, gb, us, none, or a comma-separated
 # mix. There is no sensible default — scanning one country's data with another
 # country's patterns is worse than scanning none of it — so set this before you
 # rely on the agent for anything.
-CLOAKFLEET_PII_LOCALE=
+NEVERSEEN_PII_LOCALE=
 
 # Loopback only. Do not widen this: the agent forwards whatever credential its
 # caller sent and scopes its session mapping by a header the caller controls, so
 # it is built for one person on one machine.
-CLOAKFLEET_LISTEN=127.0.0.1:8787
+NEVERSEEN_LISTEN=127.0.0.1:8787
 
 # Supervision, if you have a backend. Both blank means the agent runs standalone,
 # which is a complete product rather than a disabled one.
-# CLOAKFLEET_BACKEND_URL=
-# CLOAKFLEET_ENROLMENT_TOKEN=
+# NEVERSEEN_BACKEND_URL=
+# NEVERSEEN_ENROLMENT_TOKEN=
 EOF
     chmod 0600 "$CONFIG_FILE"
-    say "Wrote $CONFIG_FILE — set CLOAKFLEET_PII_LOCALE in it, then --restart"
+    say "Wrote $CONFIG_FILE — set NEVERSEEN_PII_LOCALE in it, then --restart"
 }
 
 # ---------------------------------------------------------------- the service
@@ -206,12 +206,12 @@ EOF
 }
 
 install_service_linux() {
-    command -v systemctl >/dev/null 2>&1 || die "systemctl not found; run \`cloakfleet proxy\` yourself"
+    command -v systemctl >/dev/null 2>&1 || die "systemctl not found; run \`neverseen proxy\` yourself"
 
     mkdir -p "$(dirname "$SYSTEMD_UNIT")"
     cat > "$SYSTEMD_UNIT" <<EOF
 [Unit]
-Description=Cloakfleet agent
+Description=Neverseen agent
 After=network-online.target
 
 [Service]
@@ -224,8 +224,8 @@ RestartSec=5
 WantedBy=default.target
 EOF
     systemctl --user daemon-reload
-    systemctl --user enable --now cloakfleet.service
-    say "Enabled the systemd user service cloakfleet.service"
+    systemctl --user enable --now neverseen.service
+    say "Enabled the systemd user service neverseen.service"
 }
 
 # ---------------------------------------------------------------- the shell
@@ -237,8 +237,8 @@ wire_shell() {
     done
     [ -n "$profile" ] || { warn "No shell profile found; add this line yourself:"; say "  $SHELL_LINE"; return; }
 
-    if grep -qF 'cloakfleet env' "$profile" 2>/dev/null; then
-        say "Your $profile already evaluates \`cloakfleet env\`"
+    if grep -qF 'neverseen env' "$profile" 2>/dev/null; then
+        say "Your $profile already evaluates \`neverseen env\`"
         return
     fi
 
@@ -251,12 +251,12 @@ wire_shell() {
 unwire_shell() {
     for profile in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.profile"; do
         [ -f "$profile" ] || continue
-        grep -qF 'cloakfleet env' "$profile" 2>/dev/null || continue
+        grep -qF 'neverseen env' "$profile" 2>/dev/null || continue
 
         # Written to a temporary file and moved, so an interrupted uninstall
         # cannot leave a truncated login file behind.
-        tmp="$profile.cloakfleet.$$"
-        grep -vF 'cloakfleet env' "$profile" > "$tmp" && mv "$tmp" "$profile"
+        tmp="$profile.neverseen.$$"
+        grep -vF 'neverseen env' "$profile" > "$tmp" && mv "$tmp" "$profile"
         say "Removed the export line from $profile"
     done
 }
@@ -275,13 +275,13 @@ do_install() {
     [ "${WIRE_SHELL:-0}" = 1 ] && wire_shell
 
     say ""
-    say "Done. The agent is running on $(grep -E '^CLOAKFLEET_LISTEN' "$CONFIG_FILE" | cut -d= -f2)."
+    say "Done. The agent is running on $(grep -E '^NEVERSEEN_LISTEN' "$CONFIG_FILE" | cut -d= -f2)."
     say "Open its test page to see what it would mask, with your own text:"
-    say "  http://$(grep -E '^CLOAKFLEET_LISTEN' "$CONFIG_FILE" | cut -d= -f2)/test"
+    say "  http://$(grep -E '^NEVERSEEN_LISTEN' "$CONFIG_FILE" | cut -d= -f2)/test"
 }
 
 do_status() {
-    addr=$(grep -E '^CLOAKFLEET_LISTEN' "$CONFIG_FILE" 2>/dev/null | cut -d= -f2)
+    addr=$(grep -E '^NEVERSEEN_LISTEN' "$CONFIG_FILE" 2>/dev/null | cut -d= -f2)
     addr=${addr:-127.0.0.1:8787}
 
     say "Service:"
@@ -295,7 +295,7 @@ do_status() {
                 launchctl list | grep -F "$TRAY_LABEL" || say "  the menu bar icon is not loaded"
             fi
             ;;
-        linux)  systemctl --user is-active cloakfleet.service || true ;;
+        linux)  systemctl --user is-active neverseen.service || true ;;
     esac
 
     # Through the agent's own command rather than curl and a raw body. One place
@@ -306,7 +306,7 @@ do_status() {
     # and this script is not the service: the variable lives in the config file,
     # which nothing has sourced here.
     say "Health:"
-    CLOAKFLEET_LISTEN="$addr" "$BIN_DIR/$BIN_NAME" status || true
+    NEVERSEEN_LISTEN="$addr" "$BIN_DIR/$BIN_NAME" status || true
 }
 
 do_restart() {
@@ -319,7 +319,7 @@ do_restart() {
                 launchctl load -w "$TRAY_AGENT"
             fi
             ;;
-        linux) systemctl --user restart cloakfleet.service ;;
+        linux) systemctl --user restart neverseen.service ;;
     esac
     say "Restarted."
 }
@@ -327,7 +327,7 @@ do_restart() {
 do_logs() {
     case "$(platform)" in
         darwin) [ -f "$LOG_FILE" ] || die "no log at $LOG_FILE yet"; tail -f "$LOG_FILE" ;;
-        linux)  journalctl --user -u cloakfleet.service -f ;;
+        linux)  journalctl --user -u neverseen.service -f ;;
     esac
 }
 
@@ -340,7 +340,7 @@ do_uninstall() {
             rm -f "$TRAY_AGENT"
             ;;
         linux)
-            systemctl --user disable --now cloakfleet.service 2>/dev/null || true
+            systemctl --user disable --now neverseen.service 2>/dev/null || true
             rm -f "$SYSTEMD_UNIT"
             systemctl --user daemon-reload 2>/dev/null || true
             ;;

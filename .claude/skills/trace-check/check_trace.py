@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check one cloakfleet trace: did the masking hold, and did anything get lost.
+"""Check one neverseen trace: did the masking hold, and did anything get lost.
 
 A trace holds the two halves of an exchange as bytes — the body that arrived, the
 body that left, and the answer that came back — which is exactly what is needed to

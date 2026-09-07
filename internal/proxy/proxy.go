@@ -26,11 +26,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cloakfleet/cloakfleet/internal/detector"
-	"github.com/cloakfleet/cloakfleet/internal/telemetry"
-	"github.com/cloakfleet/cloakfleet/internal/vault"
-	"github.com/cloakfleet/cloakfleet/pkg/pii"
-	pkgtelemetry "github.com/cloakfleet/cloakfleet/pkg/telemetry"
+	"github.com/neverseen-ai/neverseen-agent/internal/detector"
+	"github.com/neverseen-ai/neverseen-agent/internal/telemetry"
+	"github.com/neverseen-ai/neverseen-agent/internal/vault"
+	"github.com/neverseen-ai/neverseen-agent/pkg/pii"
+	pkgtelemetry "github.com/neverseen-ai/neverseen-agent/pkg/telemetry"
 )
 
 // Config is what the proxy needs beyond a detector and a vault.
@@ -44,12 +44,12 @@ type Config struct {
 	Logger *slog.Logger
 
 	// Audit receives one line per value replaced or restored, values in clear.
-	// Nil — the ordinary case — means nothing is printed at all. Only `cloakfleet
+	// Nil — the ordinary case — means nothing is printed at all. Only `neverseen
 	// proxy -a` sets it; see audit.go for why this one surface may see content.
 	Audit io.Writer
 
 	// Traces, when set, records both bodies of every exchange into a directory, one
-	// file per exchange. Nil everywhere but `cloakfleet proxy -v` — see trace.go for
+	// file per exchange. Nil everywhere but `neverseen proxy -v` — see trace.go for
 	// why the only thing this agent writes to disk in clear takes a flag on a
 	// foreground command and nothing else.
 	Traces *tracer
@@ -190,7 +190,7 @@ func (s *Server) reverseProxy(base *url.URL) *httputil.ReverseProxy {
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			s.recorder.Upstream(0)
 			s.log.Error("upstream failed", "path", r.URL.Path, "error", err)
-			http.Error(w, "cloakfleet: the provider could not be reached", http.StatusBadGateway)
+			http.Error(w, "neverseen: the provider could not be reached", http.StatusBadGateway)
 		},
 	}
 }
@@ -316,7 +316,7 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request) {
 		// Named explicitly rather than guessed at. A proxy that silently picked
 		// a provider would send one vendor's key to another vendor.
 		http.Error(w, fmt.Sprintf(
-			"cloakfleet: no provider named %q. Point your client at /<provider>, one of: %s",
+			"neverseen: no provider named %q. Point your client at /<provider>, one of: %s",
 			code, strings.Join(providerCodes(s.providers), ", ")), http.StatusNotFound)
 		return
 	}
@@ -329,7 +329,7 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request) {
 		// rather than a pass-through.
 		s.recorder.Refused()
 		s.log.Error("masking failed, refusing to forward", "session", session, "error", err)
-		http.Error(w, "cloakfleet: the request body could not be masked", http.StatusUnsupportedMediaType)
+		http.Error(w, "neverseen: the request body could not be masked", http.StatusUnsupportedMediaType)
 		return
 	}
 
@@ -374,7 +374,7 @@ func (s *Server) maskRequest(session, provider string, r *http.Request) (*traceR
 	// The identifiers naming this client to the provider that issued them are not
 	// the caller's data, and a token in their place is a cost with no protection
 	// bought — see identifiers.go. Decided on where the route goes, not what it is
-	// called: the same code can be pointed at any host by CLOAKFLEET_PROVIDERS.
+	// called: the same code can be pointed at any host by NEVERSEEN_PROVIDERS.
 	conversation := session
 	if decodeErr == nil {
 		pass.Exempt = exemptIdentifiers(s.hosts[provider], doc)

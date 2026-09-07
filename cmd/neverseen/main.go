@@ -1,4 +1,4 @@
-// Command cloakfleet is the agent: one binary, one pipeline.
+// Command neverseen is the agent: one binary, one pipeline.
 //
 // It is deliberately a single entrypoint. The project this one replaces shipped
 // two, each assembling its own pipeline from the same packages, and they
@@ -25,10 +25,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/cloakfleet/cloakfleet/internal/detector"
-	"github.com/cloakfleet/cloakfleet/internal/proxy"
-	"github.com/cloakfleet/cloakfleet/internal/telemetry"
-	"github.com/cloakfleet/cloakfleet/pkg/pii"
+	"github.com/neverseen-ai/neverseen-agent/internal/detector"
+	"github.com/neverseen-ai/neverseen-agent/internal/proxy"
+	"github.com/neverseen-ai/neverseen-agent/internal/telemetry"
+	"github.com/neverseen-ai/neverseen-agent/pkg/pii"
 )
 
 // version is stamped at build time with -ldflags "-X main.version=…".
@@ -37,25 +37,25 @@ import (
 // silently inert, and every release it built reported the same string.
 var version = "dev"
 
-const usage = `cloakfleet — mask sensitive values before they reach a model.
+const usage = `neverseen — mask sensitive values before they reach a model.
 
 Usage:
-  cloakfleet proxy [-a] [-v] [-l addr]
+  neverseen proxy [-a] [-v] [-l addr]
                            run the agent: mask what goes out, restore what comes
                            back. -a prints every value it replaces and restores,
                            in clear; -v writes both bodies of every exchange to
                            ./%s. Neither belongs in a service definition.
                            -l binds somewhere other than the loopback default,
                            which makes /healthz and /test reachable
-  cloakfleet scan [file]   report the sensitive values in a file, or in stdin
-  cloakfleet status        report whether the agent is masking, and what
-  cloakfleet mask          list what is masked, and switch a category or a family
+  neverseen scan [file]   report the sensitive values in a file, or in stdin
+  neverseen status        report whether the agent is masking, and what
+  neverseen mask          list what is masked, and switch a category or a family
                            off for this run
-  cloakfleet key           print the control key, for the browser extension
-  cloakfleet env [--force] print the shell exports that point a tool at the agent
-  cloakfleet replay <dir>  rebuild the heartbeat batch from the traces in a
+  neverseen key           print the control key, for the browser extension
+  neverseen env [--force] print the shell exports that point a tool at the agent
+  neverseen replay <dir>  rebuild the heartbeat batch from the traces in a
                            directory and print it; nothing is sent or queued
-  cloakfleet version       print the version
+  neverseen version       print the version
 
 Point a client at the agent by naming the provider in the path:
 
@@ -65,7 +65,7 @@ Point a client at the agent by naming the provider in the path:
 Or let your shell do it, safely — this prints nothing while the agent is stopped,
 so your tools keep working instead of failing on a line you did not write:
 
-  eval "$(cloakfleet env)"
+  eval "$(neverseen env)"
 
 While it runs, %s/test shows what would be masked — your own
 text, both representations side by side, in this agent's configuration.
@@ -106,7 +106,7 @@ func main() {
 	case errors.Is(err, errQuiet):
 		os.Exit(1)
 	default:
-		fmt.Fprintln(os.Stderr, "cloakfleet:", err)
+		fmt.Fprintln(os.Stderr, "neverseen:", err)
 		os.Exit(1)
 	}
 }
@@ -200,10 +200,10 @@ func printUsage(w io.Writer) {
 //
 // # What the flags cost, and where they must not go
 //
-// -a prints values in clear to standard output. Under `cloakfleet proxy` in a
+// -a prints values in clear to standard output. Under `neverseen proxy` in a
 // terminal that is one operator looking at their own data, which is the situation the
 // whole reveal was designed for. In a service definition it is something else: the
-// installer redirects this agent's output to ~/.cloakfleet/agent.log, so -a in a
+// installer redirects this agent's output to ~/.neverseen/agent.log, so -a in a
 // plist writes everybody's prompts, in clear, to a file, for as long as the service
 // runs. Neither flag belongs in one, and the banner below says so on every start.
 //
@@ -220,7 +220,7 @@ func runProxy(args []string, stdout io.Writer) error {
 	// The address the environment already carries, as a flag, because a container or
 	// a VM on this workstation cannot reach a loopback-bound agent and setting a
 	// variable to say so is a poor fit for a one-off run. It overrides
-	// CLOAKFLEET_LISTEN — the command's choice wins, as it does for every option here
+	// NEVERSEEN_LISTEN — the command's choice wins, as it does for every option here
 	// — and the agent warns on every start when the result is reachable, whichever of
 	// the two set it.
 	listen := fs.String("l", "",
@@ -275,7 +275,7 @@ const defaultTraceDir = "traces"
 func printRevealBanner(w io.Writer, agent *proxy.Agent, reveal bool) {
 	state := agent.Server.State()
 
-	fmt.Fprintf(w, "\ncloakfleet — the agent in the foreground, on %s.\n\n", agent.Addr)
+	fmt.Fprintf(w, "\nneverseen — the agent in the foreground, on %s.\n\n", agent.Addr)
 
 	locales := "none"
 	if len(state.Locales) > 0 {

@@ -48,7 +48,7 @@ async function refresh(): Promise<void> {
         // asks the agent to do no work at all. /mask would have been the obvious
         // probe and it counts a request — a fleet view would show this page's every
         // open as traffic.
-        await unmask(settings, 'cloakfleet:probe', { text: '', tail: '', final: true }, fetch);
+        await unmask(settings, 'neverseen:probe', { text: '', tail: '', final: true }, fetch);
         return null;
       });
 

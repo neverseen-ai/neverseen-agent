@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/cloakfleet/cloakfleet/pkg/telemetry"
+	"github.com/neverseen-ai/neverseen-agent/pkg/telemetry"
 )
 
 func TestIdentityRoundTrip(t *testing.T) {
@@ -62,7 +62,7 @@ func TestIncompleteIdentityIsRefused(t *testing.T) {
 // The file holds a signing key, so its directory must not be readable by other
 // users of a shared machine either.
 func TestIdentityDirectoryIsPrivate(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "cloakfleet")
+	dir := filepath.Join(t.TempDir(), "neverseen")
 	if err := SaveIdentity(filepath.Join(dir, "agent.json"), Identity{AgentID: "a", Key: "b"}); err != nil {
 		t.Fatal(err)
 	}

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cloakfleet/cloakfleet/internal/detector"
-	"github.com/cloakfleet/cloakfleet/internal/proxy"
+	"github.com/neverseen-ai/neverseen-agent/internal/detector"
+	"github.com/neverseen-ai/neverseen-agent/internal/proxy"
 )
 
 // The documented configuration and the code have to agree, in both directions.
@@ -52,7 +52,7 @@ func TestDocumentedEnvironmentMatchesTheCode(t *testing.T) {
 	for line := range strings.Lines(doc) {
 		line = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "#"))
 		name, _, found := strings.Cut(line, "=")
-		if !found || !strings.HasPrefix(name, "CLOAKFLEET_") {
+		if !found || !strings.HasPrefix(name, "NEVERSEEN_") {
 			continue
 		}
 		if !slices.Contains(read, name) {

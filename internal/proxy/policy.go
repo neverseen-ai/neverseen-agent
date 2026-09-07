@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cloakfleet/cloakfleet/internal/detector"
+	"github.com/neverseen-ai/neverseen-agent/internal/detector"
 )
 
 // The one route on this agent that changes what it does, and the only one that is
@@ -36,7 +36,7 @@ import (
 // controlHeader carries the secret. Named rather than reusing the telemetry
 // headers: that key authenticates this workstation to a backend, and reusing it
 // would put a key with a remote meaning into a local exchange.
-const controlHeader = "X-Cloakfleet-Control"
+const controlHeader = "X-Neverseen-Control"
 
 // authorised reports whether a request carries the control secret, and writes the
 // refusal itself when it does not.
@@ -57,7 +57,7 @@ const controlHeader = "X-Cloakfleet-Control"
 // or written must not degrade into accepting anything.
 func (s *Server) authorised(w http.ResponseWriter, r *http.Request) bool {
 	if s.controlKey == "" {
-		http.Error(w, "cloakfleet: no control key on this agent, so this route refuses everything",
+		http.Error(w, "neverseen: no control key on this agent, so this route refuses everything",
 			http.StatusServiceUnavailable)
 		return false
 	}
@@ -65,7 +65,7 @@ func (s *Server) authorised(w http.ResponseWriter, r *http.Request) bool {
 	// Deliberately says nothing about what was wrong. A local process probing this
 	// does not need to be told whether the header was missing or merely incorrect.
 	if subtle.ConstantTimeCompare([]byte(r.Header.Get(controlHeader)), []byte(s.controlKey)) != 1 {
-		http.Error(w, "cloakfleet: not authorised", http.StatusForbidden)
+		http.Error(w, "neverseen: not authorised", http.StatusForbidden)
 		return false
 	}
 	return true
@@ -104,7 +104,7 @@ func (s *Server) handlePolicy(w http.ResponseWriter, r *http.Request) {
 		// than an increment, and saying so in the method is what tells a caller
 		// that sending it twice is safe.
 		w.Header().Set("Allow", http.MethodPut)
-		http.Error(w, "cloakfleet: use PUT to replace the set of categories", http.StatusMethodNotAllowed)
+		http.Error(w, "neverseen: use PUT to replace the set of categories", http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -114,13 +114,13 @@ func (s *Server) handlePolicy(w http.ResponseWriter, r *http.Request) {
 
 	body, err := io.ReadAll(io.LimitReader(r.Body, 16*1024))
 	if err != nil {
-		http.Error(w, "cloakfleet: could not read the request", http.StatusBadRequest)
+		http.Error(w, "neverseen: could not read the request", http.StatusBadRequest)
 		return
 	}
 
 	var req policyRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		http.Error(w, "cloakfleet: the request is not a JSON object with an \"off\" list",
+		http.Error(w, "neverseen: the request is not a JSON object with an \"off\" list",
 			http.StatusBadRequest)
 		return
 	}
@@ -139,7 +139,7 @@ func (s *Server) handlePolicy(w http.ResponseWriter, r *http.Request) {
 	if errors.Is(err, errPartialPolicy) {
 		// A malformed request rather than a refused state: nothing was applied, and
 		// there is nothing to persist or to log as a change.
-		http.Error(w, "cloakfleet: "+err.Error(), http.StatusBadRequest)
+		http.Error(w, "neverseen: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -159,7 +159,7 @@ func (s *Server) handlePolicy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		http.Error(w, "cloakfleet: "+err.Error(), http.StatusUnprocessableEntity)
+		http.Error(w, "neverseen: "+err.Error(), http.StatusUnprocessableEntity)
 		return
 	}
 

@@ -34,7 +34,7 @@ import (
 //
 // "Anthropic" is the host the request is going to, not the name of the route.
 // Keyed on the code, the rule held for exactly as long as nobody used the
-// override .env.example documents: `CLOAKFLEET_PROVIDERS=anthropic=https://gateway.internal`
+// override .env.example documents: `NEVERSEEN_PROVIDERS=anthropic=https://gateway.internal`
 // repoints the route at a gateway, a LiteLLM or a logging proxy, and every
 // request through it would have sent the caller's session, device and account
 // identifiers in clear — from `metadata` and from every tool argument holding

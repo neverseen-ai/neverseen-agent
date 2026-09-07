@@ -3,7 +3,7 @@
 ## `install.sh`
 
 One POSIX shell script (CI checks it is portable shell). It installs the binaries into
-`$PREFIX/bin` (`$CLOAKFLEET_PREFIX`, default `~/.local`), writes `~/.cloakfleet/.env`,
+`$PREFIX/bin` (`$NEVERSEEN_PREFIX`, default `~/.local`), writes `~/.neverseen/.env`,
 and registers a background service.
 
 ```
@@ -19,7 +19,7 @@ and registers a background service.
 1. **It never exports a base URL into a shell profile.** Agent Veil did, and the day
    somebody stopped the proxy without running its uninstaller, every LLM tool on the machine
    broke with a connection error from a line in a file they had not touched. What goes into
-   the profile instead is `eval "$(cloakfleet env)"`, which prints nothing while the agent is
+   the profile instead is `eval "$(neverseen env)"`, which prints nothing while the agent is
    stopped — so the tools reach their provider directly, exactly as before it was installed.
    **Availability over enforcement, on purpose**; supervision is what makes it safe, because
    a stopped agent shows up in the dashboard as silent rather than as nothing at all.
@@ -32,12 +32,12 @@ and registers a background service.
    enrolment token, and it belongs in the config file rather than in an installer's arguments
    where it would land in the shell history.
 
-**The config file ships with the question rather than an answer**: `CLOAKFLEET_PII_LOCALE=`
+**The config file ships with the question rather than an answer**: `NEVERSEEN_PII_LOCALE=`
 is written empty, because choosing a locale here would be worse than leaving it — scanning
 one country's data with another country's patterns masks its invoice numbers and misses its
 identifiers. The directory is `0700` and the file `0600`. An existing config is kept.
 
-**`--uninstall` undoes exactly what the installer added and leaves `~/.cloakfleet/` alone.**
+**`--uninstall` undoes exactly what the installer added and leaves `~/.neverseen/` alone.**
 That directory holds the operator's config, the identity a backend knows the machine by, and
 any buckets not yet delivered: deleting the identity silently would have the next install
 enrol as a **second agent and count twice** against what they pay for, and deleting the
@@ -45,18 +45,18 @@ buffer would throw away the record of an outage still in progress.
 
 ### Services
 
-- **macOS** — a launchd agent at `~/Library/LaunchAgents/ai.cloakfleet.agent.plist`, with
+- **macOS** — a launchd agent at `~/Library/LaunchAgents/ai.neverseen.agent.plist`, with
   `KeepAlive`, because nobody should stop the masking by accident.
-- **macOS, the icon** — a second launchd agent, `ai.cloakfleet.tray.plist`, deliberately
+- **macOS, the icon** — a second launchd agent, `ai.neverseen.tray.plist`, deliberately
   **without** `KeepAlive`: the menu offers "Quit the icon", and launchd would put it straight
   back while the person watched nothing happen. Closing a window has to work.
-- **Linux** — a systemd user unit at `~/.config/systemd/user/cloakfleet.service`. No tray:
+- **Linux** — a systemd user unit at `~/.config/systemd/user/neverseen.service`. No tray:
   the icon is Cocoa, and Linux has no menu bar to put it in.
 
 ## Release (`.goreleaser.yml`)
 
-Two build ids. `cloakfleet` (`./cmd/cloakfleet`) builds for darwin and linux; `cloakfleet-tray`
-(`./cmd/cloakfleet-tray`) for darwin only, since it needs cgo for AppKit. The macOS archives
+Two build ids. `neverseen` (`./cmd/neverseen`) builds for darwin and linux; `neverseen-tray`
+(`./cmd/neverseen-tray`) for darwin only, since it needs cgo for AppKit. The macOS archives
 carry both binaries, the Linux archives only the agent. CI runs `goreleaser check` and builds
 a snapshot on every run, so a broken release configuration fails before a tag does
 (`.github/workflows/ci.yml`).
@@ -67,7 +67,7 @@ string — which is what Agent Veil shipped.
 
 ## The menu bar binary
 
-`cmd/cloakfleet-tray` is the **one exception** to the one-entrypoint rule, and its package
+`cmd/neverseen-tray` is the **one exception** to the one-entrypoint rule, and its package
 doc is where the bar it had to clear is written down.
 
 **It assembles nothing** — no detector, no vault, no provider table, no key, no configuration.
@@ -77,7 +77,7 @@ it.
 
 **What earned it a binary of its own is what happened when it was a subcommand**, which was
 tried and measured. The menu bar is Cocoa, cgo is a property of a whole binary rather than of
-a subcommand, and `bin/cloakfleet` came out linking AppKit, no longer building under
+a subcommand, and `bin/neverseen` came out linking AppKit, no longer building under
 `CGO_ENABLED=0`, and running a GUI toolkit's package initialiser in every proxy process that
 would never draw anything. Worse, the two then shipped together — a broken Cocoa build would
 mean no release of the masking agent at all. That is the rule the telemetry already follows at
@@ -108,7 +108,7 @@ A menu bar cannot be asserted on in CI, so what can be is kept where a test reac
 alternative is a feature whose behaviour has only ever run on somebody's screen.
 
 - **The icon follows `Status.Level()` and nothing else**, so the picture and the exit code of
-  `cloakfleet status` cannot disagree about the same agent
+  `neverseen status` cannot disagree about the same agent
   (`TestTheIconFollowsWhetherValuesAreReplaced`,
   `TestAPartlyMaskingAgentGetsItsOwnIcon`). **There are three icons**, because a category
   can be switched off: such an agent is masking, so the masking picture would be the green
@@ -177,7 +177,7 @@ three share is the table and the caveat — two spellings of the variable would 
 to be wrong about how somebody's traffic gets masked.
 
 **Only two providers are in it**, and the reason is the same one that keeps the other six as
-comments in `cloakfleet env`: a guessed variable name is an instruction that does nothing, and
+comments in `neverseen env`: a guessed variable name is an instruction that does nothing, and
 a guessed command name is worse — it fails with "command not found" after somebody has already
 pasted it and believed it. Adding one means a **verified** pair, not a plausible one.
 

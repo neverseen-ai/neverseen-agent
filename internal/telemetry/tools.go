@@ -5,7 +5,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/cloakfleet/cloakfleet/pkg/telemetry"
+	"github.com/neverseen-ai/neverseen-agent/pkg/telemetry"
 )
 
 // A tool call is the one part of an answer that is neither prose nor a value: it

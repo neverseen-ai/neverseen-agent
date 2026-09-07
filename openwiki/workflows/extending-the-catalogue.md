@@ -75,9 +75,9 @@ on `localeRegistry` records it).
    pair.** A guessed variable name is an instruction that does nothing, and a guessed command
    name is worse — it fails with "command not found" after somebody has already pasted it and
    believed it. That is why only two providers are in the table and the other six stay as
-   comments in `cloakfleet env`.
+   comments in `neverseen env`.
 3. **If the tool does not simply honour the variable, the `Caveat` field is where that goes** —
-   beside the pair it qualifies, not in whichever surface was written last. `cloakfleet env`,
+   beside the pair it qualifies, not in whichever surface was written last. `neverseen env`,
    the audit console and the menu bar all hand over the caveat because they all read this
    table.
 
@@ -125,7 +125,7 @@ missing rather than dropping them quietly.
 
 ## Before you propose a second `main`
 
-The bar is `cmd/cloakfleet-tray`'s: **assembles no pipeline, holds no secret, and pays a cost
+The bar is `cmd/neverseen-tray`'s: **assembles no pipeline, holds no secret, and pays a cost
 the agent would otherwise carry** (a Cocoa dependency that would break `CGO_ENABLED=0` builds
 of the masking agent and tie its release to a GUI toolkit's). See
 [Distribution](../operations/distribution.md#the-menu-bar-binary).

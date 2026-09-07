@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/cloakfleet/cloakfleet/pkg/telemetry"
+	"github.com/neverseen-ai/neverseen-agent/pkg/telemetry"
 )
 
 // maxBufferedBuckets caps the queue however long the outage and however short the
@@ -319,7 +319,7 @@ func writeFile(path string, content any) error {
 // removeFile deletes path and any half-written temporary beside it.
 //
 // The temporary goes too, because nothing else ever will: the installer leaves
-// ~/.cloakfleet/ alone on purpose, so a temporary left by a write that failed
+// ~/.neverseen/ alone on purpose, so a temporary left by a write that failed
 // between os.WriteFile and os.Rename would sit there for the life of the machine.
 func removeFile(path string) error {
 	clean := filepath.Clean(path)

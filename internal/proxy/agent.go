@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cloakfleet/cloakfleet/internal/detector"
-	"github.com/cloakfleet/cloakfleet/internal/telemetry"
-	"github.com/cloakfleet/cloakfleet/internal/vault"
+	"github.com/neverseen-ai/neverseen-agent/internal/detector"
+	"github.com/neverseen-ai/neverseen-agent/internal/telemetry"
+	"github.com/neverseen-ai/neverseen-agent/internal/vault"
 )
 
 // Assembling the agent: what the command decides, what the environment decides,
@@ -51,7 +51,7 @@ type Options struct {
 	Listen string
 
 	// Audit is where every value replaced or restored is written, in clear. Nil
-	// unless `cloakfleet proxy -a` asked for it, which is the ordinary case.
+	// unless `neverseen proxy -a` asked for it, which is the ordinary case.
 	Audit io.Writer
 
 	// ControlKeyFile overrides where the local control secret is kept. Empty means
@@ -79,7 +79,7 @@ type Options struct {
 	// per exchange. Empty — the ordinary case — records nothing at all.
 	//
 	// A directory rather than a boolean, so the one thing this agent writes in clear
-	// says in the option where it goes. Only `cloakfleet proxy -v` sets it.
+	// says in the option where it goes. Only `neverseen proxy -v` sets it.
 	TraceDir string
 }
 
@@ -217,7 +217,7 @@ func FromEnv(logger *slog.Logger, opts Options) (*Agent, error) {
 // DetectorFromEnv assembles the detector the way every command must: from the
 // environment, then from the stored policy, which wins.
 //
-// One function because there were two. `cloakfleet scan` built its detector from
+// One function because there were two. `neverseen scan` built its detector from
 // the environment alone while the agent applied the stored policy on top, so a
 // category unticked in the menu bar was reported as masked by `scan` and forwarded
 // in clear by the agent on the same workstation — the "two entrypoints drifted"
@@ -235,7 +235,7 @@ func DetectorFromEnv(logger *slog.Logger, policyFile string) (*detector.Detector
 	// The stored policy, and it wins over everything read above.
 	//
 	// The environment configures an agent nobody has said anything to yet. Once a
-	// surface has written a policy — the menu bar, `cloakfleet mask`, the test page —
+	// surface has written a policy — the menu bar, `neverseen mask`, the test page —
 	// that policy is the state, or the click lasts exactly until the workstation
 	// restarts, which is the whole reason this file exists. An operator who wants the
 	// environment back deletes it, and the line below says at every start which of

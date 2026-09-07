@@ -1,4 +1,4 @@
-// Command cloakfleet-tray shows in the menu bar whether the agent is masking.
+// Command neverseen-tray shows in the menu bar whether the agent is masking.
 //
 // # Why this is a second binary, when the rule says one entrypoint
 //
@@ -14,7 +14,7 @@
 //
 // What made it worth a second binary is what happens when it is not one. The menu
 // bar is Cocoa, so this needs cgo — and cgo is a property of a whole binary, not of
-// a subcommand. Built into the agent, `cloakfleet` links AppKit, stops building
+// a subcommand. Built into the agent, `neverseen` links AppKit, stops building
 // with CGO_ENABLED=0, and runs a GUI toolkit's package initialiser in every proxy
 // process that will never draw anything. Worse, the two then ship together: a
 // broken Cocoa build means no release of the masking agent at all. That is the same
@@ -33,8 +33,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/cloakfleet/cloakfleet/internal/proxy"
-	"github.com/cloakfleet/cloakfleet/internal/tray"
+	"github.com/neverseen-ai/neverseen-agent/internal/proxy"
+	"github.com/neverseen-ai/neverseen-agent/internal/tray"
 )
 
 // version is stamped at build time with -ldflags "-X main.version=…".
@@ -55,7 +55,7 @@ func main() {
 			}
 			return
 		default:
-			_, _ = os.Stderr.WriteString("usage: cloakfleet-tray [version]\n")
+			_, _ = os.Stderr.WriteString("usage: neverseen-tray [version]\n")
 			os.Exit(1)
 		}
 	}

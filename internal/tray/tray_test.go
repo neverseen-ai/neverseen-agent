@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cloakfleet/cloakfleet/internal/proxy"
+	"github.com/neverseen-ai/neverseen-agent/internal/proxy"
 )
 
 // recorder is a view that remembers what it was told, which is the whole of what
@@ -42,7 +42,7 @@ func (r *recorder) last() display {
 }
 
 // The icon follows Masking and nothing else, so the picture and the exit code of
-// `cloakfleet status` cannot disagree about the same agent.
+// `neverseen status` cannot disagree about the same agent.
 func TestTheIconFollowsWhetherValuesAreReplaced(t *testing.T) {
 	masking := proxy.Status{Addr: "127.0.0.1:8787", Answering: true,
 		Health: proxy.Health{Version: "1.4.2", Locales: []string{"fr", "gb"}, Substitution: "token"}}
@@ -97,7 +97,7 @@ func TestTheMenuSaysWhatIsHappeningToTheTraffic(t *testing.T) {
 	lines := render(proxy.Status{Addr: "127.0.0.1:8787"}).lines
 	joined := strings.Join(lines, "\n")
 
-	for _, want := range []string{"clear", "not answering", "cloakfleet proxy"} {
+	for _, want := range []string{"clear", "not answering", "neverseen proxy"} {
 		if !strings.Contains(strings.ToLower(joined), want) {
 			t.Errorf("the menu does not mention %q:\n%s", want, joined)
 		}
@@ -272,7 +272,7 @@ func TestWatchNoticesAProviderListChange(t *testing.T) {
 }
 
 // The line handed over is the one the agent's own table produces, so the menu and
-// `cloakfleet env` cannot come to disagree about how a tool is pointed at it.
+// `neverseen env` cannot come to disagree about how a tool is pointed at it.
 func TestTheLineIsTheAgentsOwn(t *testing.T) {
 	// A provider whose variable *and* CLI are both de-facto gets a line somebody
 	// can paste and press return on. A prefixed assignment, not an export: it
@@ -302,7 +302,7 @@ func TestTheClipboardFailureIsReported(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("pbcopy is the only clipboard this can rely on being present")
 	}
-	if err := copyToClipboard("cloakfleet tray test"); err != nil {
+	if err := copyToClipboard("neverseen tray test"); err != nil {
 		t.Errorf("copying to the clipboard failed: %v", err)
 	}
 }
@@ -688,7 +688,7 @@ func TestAClickCarriesTheWholeState(t *testing.T) {
 
 // The two changes the field-by-field comparison could not see.
 //
-// Neither is exotic: both are made by `cloakfleet mask`, which is the only way to
+// Neither is exotic: both are made by `neverseen mask`, which is the only way to
 // reach these settings on a workstation with no menu bar, and both used to leave
 // the bar ticking the value the agent had stopped applying. The secret level is
 // named nowhere in the state lines, so it moved with nothing else to give it away;

@@ -119,7 +119,7 @@ func planSwitches(d display, maxGroups, maxCats int) []entryPlan {
 			plans[i] = planGroup(d.switches[i], maxCats)
 		case i == shown && overflow > 0:
 			plans[i] = entryPlan{
-				title:   fmt.Sprintf("…and %d more — see cloakfleet status", overflow+1),
+				title:   fmt.Sprintf("…and %d more — see neverseen status", overflow+1),
 				visible: true,
 			}
 		}

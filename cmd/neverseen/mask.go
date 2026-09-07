@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cloakfleet/cloakfleet/internal/proxy"
+	"github.com/neverseen-ai/neverseen-agent/internal/proxy"
 )
 
-// `cloakfleet mask` is the other way to change what the agent masks, and on Linux
+// `neverseen mask` is the other way to change what the agent masks, and on Linux
 // it is the only one: the menu bar is Cocoa, so a workstation without one had the
 // route and no way to reach it but curl.
 //
@@ -22,18 +22,18 @@ import (
 // own either, as nothing in cmd/ does: proxy.ListenAddress owns where the agent is,
 // and the control key comes from the file the agent wrote.
 
-const maskUsage = `cloakfleet mask — see and change what the agent masks.
+const maskUsage = `neverseen mask — see and change what the agent masks.
 
 Usage:
-  cloakfleet mask                       list every category, by family
-  cloakfleet mask --off EMAIL,DOB       stop masking these
-  cloakfleet mask --on DOB              mask them again
-  cloakfleet mask --off personal        a whole family, by its name
-  cloakfleet mask --reset               mask everything again
-  cloakfleet mask --substitution fake   change what a masked value is replaced by
-  cloakfleet mask --secret-level strong how far down the strength scale to mask
-  cloakfleet mask --locales fr,gb       load these country pattern sets
-  cloakfleet mask --locales none        load none of them
+  neverseen mask                       list every category, by family
+  neverseen mask --off EMAIL,DOB       stop masking these
+  neverseen mask --on DOB              mask them again
+  neverseen mask --off personal        a whole family, by its name
+  neverseen mask --reset               mask everything again
+  neverseen mask --substitution fake   change what a masked value is replaced by
+  neverseen mask --secret-level strong how far down the strength scale to mask
+  neverseen mask --locales fr,gb       load these country pattern sets
+  neverseen mask --locales none        load none of them
 
 A category or family that is switched off leaves the machine in clear. Credentials
 can never be switched off, whichever way they are named.
@@ -56,7 +56,7 @@ token is the default. Credentials are tokenized either way.
 locale-independent identifiers and the credentials are found.
 
 Changes survive a restart: the agent stores what it was last told in
-~/.cloakfleet/policy.json, and with that file present the environment's own
+~/.neverseen/policy.json, and with that file present the environment's own
 settings are not read. Delete the file to hand the agent back to its environment.
 `
 
@@ -85,7 +85,7 @@ func runMask(args []string, stdout io.Writer) error {
 		// The same answer `status` gives, because it is the same situation: a
 		// stopped agent means unmasked traffic rather than a broken workstation, and
 		// there is nothing here to change.
-		fmt.Fprintf(stdout, "cloakfleet is not answering on %s, so there is nothing to change.\n", addr)
+		fmt.Fprintf(stdout, "neverseen is not answering on %s, so there is nothing to change.\n", addr)
 		fmt.Fprint(stdout, "Your tools are reaching their provider directly, unmasked.\n")
 		return errQuiet
 	}
@@ -189,7 +189,7 @@ func newSet(status proxy.Status, off, on string, reset bool) ([]string, error) {
 // "uk" learns it from the command they ran rather than from an HTTP status.
 //
 // "none" is spelled out rather than expressed as an empty argument, matching
-// CLOAKFLEET_PII_LOCALE: `--locales ""` is what a shell produces from an unset
+// NEVERSEEN_PII_LOCALE: `--locales ""` is what a shell produces from an unset
 // variable by accident, and it must not silently mean "stop looking for anything".
 func parseLocales(status proxy.Status, spec string) ([]string, error) {
 	if strings.EqualFold(strings.TrimSpace(spec), "none") {
@@ -249,7 +249,7 @@ func resolveName(status proxy.Status, name string) ([]string, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("no category or family named %q — `cloakfleet mask` lists them", name)
+	return nil, fmt.Errorf("no category or family named %q — `neverseen mask` lists them", name)
 }
 
 // lockedReason says which rule refused, because a bare refusal leaves somebody
@@ -273,7 +273,7 @@ func splitNames(spec string) []string {
 
 // writeCatalogue prints every family and what is happening to each category.
 //
-// The first column is a word rather than a tick, so `cloakfleet mask | grep "in
+// The first column is a word rather than a tick, so `neverseen mask | grep "in
 // clear"` answers the question this command exists for. A symbol would need a legend
 // and would not survive a pipe into anything.
 func writeCatalogue(w io.Writer, status proxy.Status) {
@@ -283,7 +283,7 @@ func writeCatalogue(w io.Writer, status proxy.Status) {
 	// a catalogue that holds almost nothing.
 	//
 	// The sentence comes from proxy.Status rather than from here, because this
-	// command and `cloakfleet status` are two surfaces reporting on one agent: the
+	// command and `neverseen status` are two surfaces reporting on one agent: the
 	// hand-written pair had already drifted, one calling a category "switched off"
 	// where the other called it "in clear". What follows it is this command's own,
 	// since only this one is about to list the catalogue underneath.
@@ -326,7 +326,7 @@ func writeCatalogue(w io.Writer, status proxy.Status) {
 		fmt.Fprint(w, "\n")
 	}
 
-	fmt.Fprint(w, "Switch one off with `cloakfleet mask --off CODE`, a whole family by its name.\n")
+	fmt.Fprint(w, "Switch one off with `neverseen mask --off CODE`, a whole family by its name.\n")
 	fmt.Fprint(w, "Change the rest with `--substitution token|fake`, `--secret-level weak|medium|strong`\n"+
 		"and `--locales fr,gb|none`.\n")
 }

@@ -10,36 +10,36 @@ it, which is how Agent Veil ended up applying a default on one path and not the 
 
 | Variable | Owner | Default | Notes |
 | --- | --- | --- | --- |
-| `CLOAKFLEET_PII_LOCALE` | `detector.EnvLocale` | unset = **none** | `fr`, `gb`, `us`, `none`, or a comma-separated mix |
-| `CLOAKFLEET_PII_ALLOWLIST` | `detector.EnvAllowList` | empty | values never to mask, comma-separated; compared ignoring case and spacing |
-| `CLOAKFLEET_PII_SUBSTITUTION` | `detector.EnvSubstitution` | `token` | `token` or `fake` |
-| `CLOAKFLEET_SECRET_LEVEL` | `detector.EnvSecretLevel` | `weak` | `weak`, `medium` or `strong`; grades the catch-all named-secret pattern only — see [the secret level](../architecture/detection-engine.md#the-secret-level) |
-| `CLOAKFLEET_LISTEN` | `proxy.EnvListen` | `127.0.0.1:8787` | loopback on purpose — see below |
-| `CLOAKFLEET_PROVIDERS` | `proxy.EnvProviders` | none | `code=url` pairs, applied as **overrides** onto the default set |
-| `CLOAKFLEET_ENCRYPTION_KEY` | `proxy.EnvEncryptionKey` | generated per process | 32 bytes, hex, for the session mapping |
-| `CLOAKFLEET_BACKEND_URL` | `proxy.EnvBackendURL` | unset = **no supervision at all** | no reporter is built; a whole feature rather than a disabled one |
-| `CLOAKFLEET_ENROLMENT_TOKEN` | `proxy.EnvEnrolmentToken` | unset | presented once, traded for a per-agent identity |
-| `CLOAKFLEET_IDENTITY_FILE` | `proxy.EnvIdentityFile` | `~/.cloakfleet/agent.json` | where the issued identity is kept |
+| `NEVERSEEN_PII_LOCALE` | `detector.EnvLocale` | unset = **none** | `fr`, `gb`, `us`, `none`, or a comma-separated mix |
+| `NEVERSEEN_PII_ALLOWLIST` | `detector.EnvAllowList` | empty | values never to mask, comma-separated; compared ignoring case and spacing |
+| `NEVERSEEN_PII_SUBSTITUTION` | `detector.EnvSubstitution` | `token` | `token` or `fake` |
+| `NEVERSEEN_SECRET_LEVEL` | `detector.EnvSecretLevel` | `weak` | `weak`, `medium` or `strong`; grades the catch-all named-secret pattern only — see [the secret level](../architecture/detection-engine.md#the-secret-level) |
+| `NEVERSEEN_LISTEN` | `proxy.EnvListen` | `127.0.0.1:8787` | loopback on purpose — see below |
+| `NEVERSEEN_PROVIDERS` | `proxy.EnvProviders` | none | `code=url` pairs, applied as **overrides** onto the default set |
+| `NEVERSEEN_ENCRYPTION_KEY` | `proxy.EnvEncryptionKey` | generated per process | 32 bytes, hex, for the session mapping |
+| `NEVERSEEN_BACKEND_URL` | `proxy.EnvBackendURL` | unset = **no supervision at all** | no reporter is built; a whole feature rather than a disabled one |
+| `NEVERSEEN_ENROLMENT_TOKEN` | `proxy.EnvEnrolmentToken` | unset | presented once, traded for a per-agent identity |
+| `NEVERSEEN_IDENTITY_FILE` | `proxy.EnvIdentityFile` | `~/.neverseen/agent.json` | where the issued identity is kept |
 
 Every one of these is documented in **`.env.example`**, and
-`TestDocumentedEnvironmentMatchesTheCode` (`cmd/cloakfleet/env_test.go:22`) fails in **both**
+`TestDocumentedEnvironmentMatchesTheCode` (`cmd/neverseen/env_test.go:22`) fails in **both**
 directions: a variable the code reads and the file does not mention fails the build, and so
 does one the file documents and no code reads. `TestUsageNamesEverySetting` holds the usage
 text to the same standard — `printUsage` builds it from the constants and the locale
 registry, so a name cannot go stale under a rename. The test lists the constants by hand,
-so a new setting is added to both or the usage silently omits it: `CLOAKFLEET_SECRET_LEVEL`
+so a new setting is added to both or the usage silently omits it: `NEVERSEEN_SECRET_LEVEL`
 was missing from both for a while, and nothing failed.
 
-**`CLOAKFLEET_PII_LOCALE` unset means none, deliberately.** Scanning one country's data with
+**`NEVERSEEN_PII_LOCALE` unset means none, deliberately.** Scanning one country's data with
 another country's patterns is worse than scanning none of it, and an operator who never set
 the variable has not chosen that.
 
-**`CLOAKFLEET_LISTEN` is not a default to override lightly** (`env.go:43-49`). The agent
+**`NEVERSEEN_LISTEN` is not a default to override lightly** (`env.go:43-49`). The agent
 trusts whoever reaches it — it forwards their credentials and scopes the session mapping by a
 header they control — so it is built for one person on one workstation. Bound to a reachable
 interface it becomes a way to read another user's session.
 
-`~/.cloakfleet/` holds the operator's config, the identity a backend knows the machine by,
+`~/.neverseen/` holds the operator's config, the identity a backend knows the machine by,
 the policy a surface last applied, and any buckets not yet delivered. `install.sh
 --uninstall` deliberately leaves it alone.
 
@@ -47,20 +47,20 @@ the policy a surface last applied, and any buckets not yet delivered. `install.s
 locales, the substitution mode, the secret level — see *What a surface changed survives
 the restart* below. The environment configures an agent nobody has said anything to yet.
 
-## Commands (`cmd/cloakfleet`)
+## Commands (`cmd/neverseen`)
 
 ```
-cloakfleet proxy         run the agent: mask what goes out, restore what comes back
-cloakfleet proxy -a      also print every value it replaces and restores, in clear
-cloakfleet proxy -v      also write every exchange to ./traces: both bodies and the answer
-cloakfleet scan [file]   report the sensitive values in a file, or in stdin
-cloakfleet status        report whether the agent is masking, and what
-cloakfleet mask          list what is masked, and switch a category or family off
-cloakfleet key           print the control key, for the browser extension
-cloakfleet env [--force] print the shell exports that point a tool at the agent
-cloakfleet replay <dir>  rebuild the heartbeat batch from the traces in a
+neverseen proxy         run the agent: mask what goes out, restore what comes back
+neverseen proxy -a      also print every value it replaces and restores, in clear
+neverseen proxy -v      also write every exchange to ./traces: both bodies and the answer
+neverseen scan [file]   report the sensitive values in a file, or in stdin
+neverseen status        report whether the agent is masking, and what
+neverseen mask          list what is masked, and switch a category or family off
+neverseen key           print the control key, for the browser extension
+neverseen env [--force] print the shell exports that point a tool at the agent
+neverseen replay <dir>  rebuild the heartbeat batch from the traces in a
                          directory and print it; nothing is sent or queued
-cloakfleet version       print the version
+neverseen version       print the version
 ```
 
 `run` (`main.go:115`) is `main`'s body with its inputs and output passed in, so every command
@@ -77,8 +77,8 @@ caller today (see [what replacing the `audit` command cost](#what-replacing-the-
 
 #### `-l`, and what leaves the loopback default behind
 
-`cloakfleet proxy -l 0.0.0.0:8787` serves every interface. The address was already
-reachable through `CLOAKFLEET_LISTEN`; the flag is the same setting where a one-off run
+`neverseen proxy -l 0.0.0.0:8787` serves every interface. The address was already
+reachable through `NEVERSEEN_LISTEN`; the flag is the same setting where a one-off run
 can reach it, and `Options.Listen` wins over the variable — the command's choice does,
 for every option, so an operator serving a container for one run does not have to unset
 a profile (`TestTheListenFlagOverridesTheEnvironment`).
@@ -135,22 +135,22 @@ prefixed as an error would make the ordinary case of a stopped agent read like a
 `proxy.ShellEnv` (`internal/proxy/shellenv.go:128`) asks the agent whether it is running and
 exports **nothing** if it is not (unless `--force`) — three `#` comment lines saying so,
 which `eval` ignores (`shellenv.go:135-139`). That is the whole point: a login file
-evaluating `eval "$(cloakfleet env)"` has to be a no-op on a machine where the agent is
+evaluating `eval "$(neverseen env)"` has to be a no-op on a machine where the agent is
 stopped. See [Distribution](distribution.md#pointing-a-tool-at-the-agent) for the failure this
 avoids and the `shellTools` table it reads.
 
 ### `mask` — see and change what is masked
 
 ```
-cloakfleet mask                       list what is applied: mode, secret level, countries, categories
-cloakfleet mask --off EMAIL,DOB       stop masking these
-cloakfleet mask --on DOB              mask them again
-cloakfleet mask --off personal        a whole family, by its name
-cloakfleet mask --reset               mask everything again
-cloakfleet mask --substitution fake   change what a masked value becomes
-cloakfleet mask --secret-level strong how far down the strength scale to mask
-cloakfleet mask --locales fr,gb       load these country pattern sets
-cloakfleet mask --locales none        load none of them
+neverseen mask                       list what is applied: mode, secret level, countries, categories
+neverseen mask --off EMAIL,DOB       stop masking these
+neverseen mask --on DOB              mask them again
+neverseen mask --off personal        a whole family, by its name
+neverseen mask --reset               mask everything again
+neverseen mask --substitution fake   change what a masked value becomes
+neverseen mask --secret-level strong how far down the strength scale to mask
+neverseen mask --locales fr,gb       load these country pattern sets
+neverseen mask --locales none        load none of them
 ```
 
 **Every change carries the whole state**, because the route replaces it rather than
@@ -190,7 +190,7 @@ been shown the state and is about to be shown it again: the command prints the
 catalogue from the agent's reply afterwards, which is the same mitigation the menu bar
 uses when it redraws from the reply rather than from its own click.
 
-The first column is a word rather than a tick, so `cloakfleet mask | grep "in clear"`
+The first column is a word rather than a tick, so `neverseen mask | grep "in clear"`
 answers the question the command exists for. A symbol would need a legend and would
 not survive a pipe.
 
@@ -227,13 +227,13 @@ fails on a purge that is not guarded.
 
 `internal/proxy/policyfile.go`.
 
-Everything the menu bar, `cloakfleet mask` and the test page can change went through
+Everything the menu bar, `neverseen mask` and the test page can change went through
 `PUT /policy` and lasted exactly as long as the process. A person unticked a category,
 restarted the workstation, and the agent came back masking it again while the menu they
 had set said otherwise on the next click — a control whose settings are forgotten is one
 nobody can rely on having set.
 
-So the route stores what it applied in **`~/.cloakfleet/policy.json`**, and `FromEnv`
+So the route stores what it applied in **`~/.neverseen/policy.json`**, and `FromEnv`
 reads it at start-up. The file holds the same four fields the route carries, in the same
 shape, because it *is* that request: what the agent would have to be sent to arrive where
 it is. One document rather than a field per setting, for the reason the route replaces the
@@ -248,14 +248,14 @@ for.
 - **But only when something was applied.** Written from a `defer` above the applier, a
   request refused before the first change — a misspelled `substitution`, refused with 422
   — created the file for the first time, and from then on the agent read its own empty
-  policy in preference to the environment: `CLOAKFLEET_PII_LOCALE` in the operator's
+  policy in preference to the environment: `NEVERSEEN_PII_LOCALE` in the operator's
   profile did nothing, permanently, over a request that changed nothing. The file's
   absence has to keep meaning "nobody has", so `applyPolicy` reports `applied` and the two
   kinds of refusal are told apart. `TestARequestRefusedBeforeAnythingAppliedStoresNothing`
   is the counterpart of the case above and neither is meaningful alone.
 - **One writer at a time, and a temporary name of its own.** Storing the file is a
   read-modify-write — apply, read the detector back, store — and the menu bar and
-  `cloakfleet mask` interleave the halves of one, which is the hazard the route already
+  `neverseen mask` interleave the halves of one, which is the hazard the route already
   names for the mapping. The handler takes `policyMu`, and the write goes through
   `os.CreateTemp` rather than a fixed `.tmp`: sharing one temporary path, two writers
   truncated and filled it under each other and what landed under the rename was one
@@ -270,7 +270,7 @@ for.
 - **It wins over the environment, and that is the point.** Once a surface has written a
   policy, that policy is the state; otherwise the click does not survive the restart and
   the file has no purpose. The cost is real: with the file present, changing
-  `CLOAKFLEET_PII_LOCALE` in a profile does nothing. **Deleting the file hands the agent
+  `NEVERSEEN_PII_LOCALE` in a profile does nothing. **Deleting the file hands the agent
   back to the environment**, and the agent says on every start which of the two it read.
   `TestAChangeSurvivesARestartAndBeatsTheEnvironment` asserts it through the two real
   halves — the route, then `FromEnv` — because a file written correctly and never read
@@ -343,8 +343,8 @@ their own data**, asking "is my address actually being replaced" — which no co
 answers.
 
 ```
-cloakfleet proxy -a    print every value replaced on the way out and restored on the way back
-cloakfleet proxy -v    write every exchange to ./traces (both bodies and the answer), one file each
+neverseen proxy -a    print every value replaced on the way out and restored on the way back
+neverseen proxy -v    write every exchange to ./traces (both bodies and the answer), one file each
 ```
 
 **They are independent.** `-a` alone prints and keeps nothing; `-v` alone records and
@@ -355,12 +355,12 @@ do nothing.
 
 ### What replacing the `audit` command cost
 
-There used to be a `cloakfleet audit` command on a port of its own (33333), and being
+There used to be a `neverseen audit` command on a port of its own (33333), and being
 a *command* was the guarantee: printing a value in clear was a mode somebody entered,
 and no environment variable could turn it on under the background service.
 
 A flag can go in a service definition. The installer sends this agent's output to
-`~/.cloakfleet/agent.log`, so `-a` in a launchd plist writes every prompt, in clear,
+`~/.neverseen/agent.log`, so `-a` in a launchd plist writes every prompt, in clear,
 to a file, for as long as the service runs. **Neither flag belongs in one**, and the
 banner says so on every start rather than leaving it in this page.
 
@@ -412,7 +412,7 @@ agent does not yet read on either path.
 
 **What it costs.** These arguments are the caller's own paths, commands and addresses,
 in clear, one document at a time — so under the installer's service definition `-a`
-files every tool call of every exchange in `~/.cloakfleet/agent.log` for as long as it
+files every tool call of every exchange in `~/.neverseen/agent.log` for as long as it
 runs, and a `Write` call of several kilobytes will scroll the MASK lines away. There is
 no ceiling on the width yet; the `TODO:` in `audit.go` says so.
 
@@ -503,5 +503,5 @@ is the one property a trace cannot trade away.
 
 ## See also
 
-- [Distribution](distribution.md) — installing as a service, the menu bar, `cloakfleet env`.
+- [Distribution](distribution.md) — installing as a service, the menu bar, `neverseen env`.
 - [Request path](../architecture/request-path.md) — what the console is watching.

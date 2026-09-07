@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cloakfleet/cloakfleet/internal/detector"
-	"github.com/cloakfleet/cloakfleet/internal/vault"
+	"github.com/neverseen-ai/neverseen-agent/internal/detector"
+	"github.com/neverseen-ai/neverseen-agent/internal/vault"
 )
 
 // The end-to-end test the unit suite cannot replace: a real agent, a real
@@ -34,13 +34,13 @@ import (
 // went upstream, so "the provider never saw it" is a statement about bytes rather
 // than about intent.
 //
-// Skipped unless CLOAKFLEET_E2E_CLAUDE is set: it spends the operator's Claude
+// Skipped unless NEVERSEEN_E2E_CLAUDE is set: it spends the operator's Claude
 // quota and needs the CLI signed in. Run it with:
 //
-//	CLOAKFLEET_E2E_CLAUDE=1 go test ./internal/proxy/ -run TestE2EClaudeCode -v
+//	NEVERSEEN_E2E_CLAUDE=1 go test ./internal/proxy/ -run TestE2EClaudeCode -v
 func TestE2EClaudeCode(t *testing.T) {
-	if os.Getenv("CLOAKFLEET_E2E_CLAUDE") == "" {
-		t.Skip("CLOAKFLEET_E2E_CLAUDE is unset: this test runs the Claude CLI against the real " +
+	if os.Getenv("NEVERSEEN_E2E_CLAUDE") == "" {
+		t.Skip("NEVERSEEN_E2E_CLAUDE is unset: this test runs the Claude CLI against the real " +
 			"provider and spends the operator's quota. Set it to run.")
 	}
 	if _, err := exec.LookPath("claude"); err != nil {
@@ -166,7 +166,7 @@ func saveE2EPage(t *testing.T, answer string) string {
 	// Cleaned, which is the honest answer to "this path came from the
 	// environment": whoever runs the test decides where its artefact goes, and
 	// the process already runs as them.
-	path := filepath.Clean(os.Getenv("CLOAKFLEET_E2E_OUTPUT"))
+	path := filepath.Clean(os.Getenv("NEVERSEEN_E2E_OUTPUT"))
 	if path == "." {
 		path = filepath.Join("..", "..", "e2e-artefacts", "claude-session.html")
 	}

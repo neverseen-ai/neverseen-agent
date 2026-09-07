@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/cloakfleet/cloakfleet/pkg/pii"
+	"github.com/neverseen-ai/neverseen-agent/pkg/pii"
 )
 
 // The environment is read here and nowhere else.
@@ -18,16 +18,16 @@ import (
 const (
 	// EnvLocale selects which country pattern sets load: a code, several codes
 	// separated by commas, or "none" for the locale-independent sets only.
-	EnvLocale = "CLOAKFLEET_PII_LOCALE"
+	EnvLocale = "NEVERSEEN_PII_LOCALE"
 	// EnvAllowList lists values never to mask, separated by commas.
-	EnvAllowList = "CLOAKFLEET_PII_ALLOWLIST"
+	EnvAllowList = "NEVERSEEN_PII_ALLOWLIST"
 	// EnvSubstitution selects what a masked value looks like: "token" or "fake".
-	EnvSubstitution = "CLOAKFLEET_PII_SUBSTITUTION"
+	EnvSubstitution = "NEVERSEEN_PII_SUBSTITUTION"
 
 	// EnvSecretLevel is how far down the strength scale a named secret is masked:
 	// "weak", "medium" or "strong". The starting value only — PUT /policy moves it
 	// while the agent runs, exactly as it does the substitution mode.
-	EnvSecretLevel = "CLOAKFLEET_SECRET_LEVEL"
+	EnvSecretLevel = "NEVERSEEN_SECRET_LEVEL"
 )
 
 // minConfidence is the score a match must reach to be reported.

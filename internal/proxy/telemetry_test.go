@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cloakfleet/cloakfleet/internal/detector"
-	"github.com/cloakfleet/cloakfleet/internal/telemetry"
-	"github.com/cloakfleet/cloakfleet/internal/vault"
-	"github.com/cloakfleet/cloakfleet/pkg/pii"
-	contract "github.com/cloakfleet/cloakfleet/pkg/telemetry"
+	"github.com/neverseen-ai/neverseen-agent/internal/detector"
+	"github.com/neverseen-ai/neverseen-agent/internal/telemetry"
+	"github.com/neverseen-ai/neverseen-agent/internal/vault"
+	"github.com/neverseen-ai/neverseen-agent/pkg/pii"
+	contract "github.com/neverseen-ai/neverseen-agent/pkg/telemetry"
 )
 
 // The counters are only worth anything if the request path actually feeds them.
@@ -237,8 +237,8 @@ func TestStateReportsWhatIsRunning(t *testing.T) {
 // does nothing. It is the free half of the product, and it has to be a whole
 // feature rather than a disabled one.
 func TestNoBackendMeansNoReporter(t *testing.T) {
-	t.Setenv("CLOAKFLEET_PII_LOCALE", "fr")
-	t.Setenv("CLOAKFLEET_BACKEND_URL", "")
+	t.Setenv("NEVERSEEN_PII_LOCALE", "fr")
+	t.Setenv("NEVERSEEN_BACKEND_URL", "")
 
 	agent, err := FromEnv(nil, Options{PolicyFile: NoFile})
 	if err != nil {
@@ -273,10 +273,10 @@ func TestNoBackendMeansNoReporter(t *testing.T) {
 }
 
 func TestBackendConfiguredMeansAReporter(t *testing.T) {
-	t.Setenv("CLOAKFLEET_PII_LOCALE", "fr")
-	t.Setenv("CLOAKFLEET_BACKEND_URL", "https://supervision.example.invalid")
-	t.Setenv("CLOAKFLEET_ENROLMENT_TOKEN", "enrol-me")
-	t.Setenv("CLOAKFLEET_IDENTITY_FILE", t.TempDir()+"/agent.json")
+	t.Setenv("NEVERSEEN_PII_LOCALE", "fr")
+	t.Setenv("NEVERSEEN_BACKEND_URL", "https://supervision.example.invalid")
+	t.Setenv("NEVERSEEN_ENROLMENT_TOKEN", "enrol-me")
+	t.Setenv("NEVERSEEN_IDENTITY_FILE", t.TempDir()+"/agent.json")
 
 	agent, err := FromEnv(nil, Options{PolicyFile: NoFile})
 	if err != nil {

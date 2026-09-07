@@ -240,12 +240,12 @@ type State struct {
 	// workstation.
 
 	// Console reports that every value replaced and restored is being printed in
-	// clear (`cloakfleet proxy -a`). Under the installer's service definition that
+	// clear (`neverseen proxy -a`). Under the installer's service definition that
 	// console is a file, so this is an agent keeping the day's prompts on disk.
 	Console bool `json:"console,omitempty"`
 
 	// Tracing reports that both bodies of every exchange are being written to disk
-	// (`cloakfleet proxy -v`) — the only thing this agent ever writes in clear.
+	// (`neverseen proxy -v`) — the only thing this agent ever writes in clear.
 	Tracing bool `json:"tracing,omitempty"`
 
 	// Exposed reports that the agent listens beyond the loopback interface, where
@@ -254,14 +254,14 @@ type State struct {
 	Exposed bool `json:"exposed,omitempty"`
 
 	// Rerouted names the provider codes whose route was pointed somewhere other
-	// than the vendor's own host (CLOAKFLEET_PROVIDERS). A gateway, a LiteLLM or a
+	// than the vendor's own host (NEVERSEEN_PROVIDERS). A gateway, a LiteLLM or a
 	// logging proxy is a party the masked traffic reaches that the dashboard would
 	// otherwise not know about. Codes from the agent's own provider list, the same
 	// strings Providers already carries.
 	Rerouted []string `json:"rerouted,omitempty"`
 
 	// Allowlisted counts the values this deployment declared it never masks
-	// (CLOAKFLEET_PII_ALLOWLIST). A count and never the values: two hundred
+	// (NEVERSEEN_PII_ALLOWLIST). A count and never the values: two hundred
 	// exemptions is an agent masking less than its catalogue says, and that is all
 	// a fleet view needs to know.
 	Allowlisted int `json:"allowlisted,omitempty"`
@@ -520,7 +520,7 @@ type EnrolResponse struct {
 const (
 	// HeaderAgent carries the agent id, so a backend can find the key to verify
 	// with before parsing the body.
-	HeaderAgent = "X-Cloakfleet-Agent"
+	HeaderAgent = "X-Neverseen-Agent"
 
 	// HeaderSignature carries the hex HMAC-SHA256 of the request body under the
 	// agent's key.
@@ -529,7 +529,7 @@ const (
 	// body is the whole message and there is nothing else to bind. It makes a
 	// heartbeat unforgeable without the key, which is what stops one workstation
 	// filing reports as another.
-	HeaderSignature = "X-Cloakfleet-Signature"
+	HeaderSignature = "X-Neverseen-Signature"
 )
 
 // Signing lives here, in the contract, rather than on either side of it.

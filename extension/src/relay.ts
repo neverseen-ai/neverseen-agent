@@ -125,7 +125,7 @@ function post(id: number, reply: Reply<unknown>): void {
  * and stays until it is dismissed.
  */
 function showBanner(message: string): void {
-  const id = 'cloakfleet-banner';
+  const id = 'neverseen-banner';
   document.getElementById(id)?.remove();
 
   const banner = document.createElement('div');

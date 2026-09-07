@@ -8,8 +8,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/cloakfleet/cloakfleet/internal/detector"
-	"github.com/cloakfleet/cloakfleet/pkg/pii"
+	"github.com/neverseen-ai/neverseen-agent/internal/detector"
+	"github.com/neverseen-ai/neverseen-agent/pkg/pii"
 )
 
 // The /test page shows one text three ways: as written, masked with tokens, and

@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cloakfleet/cloakfleet/internal/vault"
-	"github.com/cloakfleet/cloakfleet/pkg/pii"
-	"github.com/cloakfleet/cloakfleet/pkg/telemetry"
+	"github.com/neverseen-ai/neverseen-agent/internal/vault"
+	"github.com/neverseen-ai/neverseen-agent/pkg/pii"
+	"github.com/neverseen-ai/neverseen-agent/pkg/telemetry"
 )
 
 var epoch = time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)

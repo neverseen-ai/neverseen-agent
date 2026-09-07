@@ -19,7 +19,7 @@ export const DEFAULT_BASE_URL = 'http://127.0.0.1:8787';
 /** The header proxy.controlHeader reads. A custom header is what a page cannot set
  * on a simple cross-origin request, which is what keeps the internet out of these
  * routes. */
-const CONTROL_HEADER = 'X-Cloakfleet-Control';
+const CONTROL_HEADER = 'X-Neverseen-Control';
 
 /** The header proxy.sessionOf reads. /mask and /unmask for one conversation must
  * name the same session, or the expansion finds nothing. */
@@ -115,7 +115,7 @@ async function call<T>(
   fetchImpl: Fetch,
 ): Promise<T> {
   if (!cfg.key) {
-    throw new AgentError('unconfigured', 'no control key stored — run `cloakfleet key` and paste it');
+    throw new AgentError('unconfigured', 'no control key stored — run `neverseen key` and paste it');
   }
 
   let resp: Response;

@@ -27,7 +27,7 @@ import (
 // Beside the identity a backend issued, under the same directory and the same
 // permissions, because it is the same kind of thing: a credential this machine
 // holds, which the installer deliberately does not delete.
-const DefaultControlKeyFile = "~/.cloakfleet/control.key"
+const DefaultControlKeyFile = "~/.neverseen/control.key"
 
 // loadControlKey reads the local control secret, creating one if there is none.
 //

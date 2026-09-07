@@ -17,7 +17,7 @@ import (
 // somebody stopped the proxy without running the uninstaller, every one of them
 // broke with a connection error, from a line in a file they had not touched.
 //
-// The fix is that the export is *conditional on the agent answering*. `cloakfleet
+// The fix is that the export is *conditional on the agent answering*. `neverseen
 // env` prints the variables only when something is listening, so a profile line
 // that evaluates it produces nothing when the agent is down, and the tools go
 // straight to their provider exactly as they did before it was installed.
@@ -132,9 +132,9 @@ func ShellEnv(ctx context.Context, w io.Writer, addr string, force bool) error {
 	base := "http://" + addr
 
 	if !force && !agentIsListening(ctx, addr) {
-		fmt.Fprintf(w, "# cloakfleet is not answering on %s, so nothing is exported here and\n", addr)
+		fmt.Fprintf(w, "# neverseen is not answering on %s, so nothing is exported here and\n", addr)
 		fmt.Fprintf(w, "# your tools will reach their provider directly, unmasked. Start it with\n")
-		fmt.Fprintf(w, "# `cloakfleet proxy`, or pass --force to export anyway.\n")
+		fmt.Fprintf(w, "# `neverseen proxy`, or pass --force to export anyway.\n")
 		return nil
 	}
 
@@ -161,7 +161,7 @@ func ShellEnv(ctx context.Context, w io.Writer, addr string, force bool) error {
 
 // listenTimeout is how long a local caller waits for the agent to answer.
 //
-// Short because `cloakfleet env` runs on every new shell when it is wired into a
+// Short because `neverseen env` runs on every new shell when it is wired into a
 // profile, and a second of latency there is a second a developer waits for their
 // prompt. On the loopback interface the answer takes a millisecond or it is not
 // coming.

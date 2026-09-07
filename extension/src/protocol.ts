@@ -9,10 +9,10 @@
 // is one that forwards in clear.
 
 /** The message tag a page-world post carries, so the relay ignores everything else. */
-export const PAGE_SOURCE = 'cloakfleet:page';
+export const PAGE_SOURCE = 'neverseen:page';
 
 /** The tag a relay's answer carries, so the page world ignores its own posts. */
-export const RELAY_SOURCE = 'cloakfleet:relay';
+export const RELAY_SOURCE = 'neverseen:relay';
 
 /**
  * Why an ask failed, in the only four ways a person can act on differently.
@@ -163,7 +163,7 @@ export type RelayMessage = {
  * `proxy.Status.Level` gives.
  *
  * The indicator follows this rather than "is it masking", for the same reason the
- * menu bar icon and the `cloakfleet status` exit code do: an agent with a category
+ * menu bar icon and the `neverseen status` exit code do: an agent with a category
  * switched off *is* masking, and a green light over that is a green light over the
  * values that are not being replaced.
  *

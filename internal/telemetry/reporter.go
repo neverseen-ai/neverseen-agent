@@ -11,7 +11,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/cloakfleet/cloakfleet/pkg/telemetry"
+	"github.com/neverseen-ai/neverseen-agent/pkg/telemetry"
 )
 
 // DefaultInterval is how often a supervised agent reports.

@@ -4,9 +4,9 @@ import (
 	"net/url"
 	"runtime"
 
-	"github.com/cloakfleet/cloakfleet/internal/detector"
-	"github.com/cloakfleet/cloakfleet/pkg/pii"
-	contract "github.com/cloakfleet/cloakfleet/pkg/telemetry"
+	"github.com/neverseen-ai/neverseen-agent/internal/detector"
+	"github.com/neverseen-ai/neverseen-agent/pkg/pii"
+	contract "github.com/neverseen-ai/neverseen-agent/pkg/telemetry"
 )
 
 // What the agent says about itself to a supervision backend.
@@ -66,7 +66,7 @@ func detectorState(det *detector.Detector) contract.State {
 }
 
 // rerouted names the provider codes whose route does not go to the vendor's own
-// host: a default code pointed elsewhere by CLOAKFLEET_PROVIDERS, or a code the
+// host: a default code pointed elsewhere by NEVERSEEN_PROVIDERS, or a code the
 // agent does not know by default at all. Nil when every route is where the
 // catalogue says it is, so the field stays absent rather than empty.
 func (s *Server) rerouted() []string {

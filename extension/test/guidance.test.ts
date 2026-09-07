@@ -30,14 +30,14 @@ test('a stopped agent is not reported as a broken extension', () => {
   const d = diagnose({ ok: false, reason: 'unreachable', message: 'refused' }, null, BASE);
   assert.equal(d.level, 'none');
   assert.match(d.headline, /not running/);
-  assert.equal(d.command, 'cloakfleet proxy');
+  assert.equal(d.command, 'neverseen proxy');
   assert.match(d.body, /unmasked/,
     'the consequence of a stopped agent is what somebody has to be told, not its status');
 });
 
 test('no key yet is its own state, not a refusal', () => {
   const d = diagnose(ok(healthy()), null, BASE);
-  assert.equal(d.command, 'cloakfleet key');
+  assert.equal(d.command, 'neverseen key');
   assert.match(d.headline, /connect/i);
 });
 
@@ -46,14 +46,14 @@ test('a refused key says reconnect, not "the agent is down"', () => {
   // apart is what keeps somebody from restarting a service that is running.
   const d = diagnose(ok(healthy()), { ok: false, reason: 'unauthorised', message: 'nope' }, BASE);
   assert.match(d.headline, /refused/);
-  assert.equal(d.command, 'cloakfleet key');
+  assert.equal(d.command, 'neverseen key');
   assert.match(d.body, /rotated|different agent/);
 });
 
 test('the agent’s own words survive a refusal it explained', () => {
   const d = diagnose(
     ok(healthy()),
-    { ok: false, reason: 'refused', message: 'cloakfleet: no category named "EMIAL"' },
+    { ok: false, reason: 'refused', message: 'neverseen: no category named "EMIAL"' },
     BASE,
   );
   assert.match(d.body, /EMIAL/,
@@ -70,7 +70,7 @@ test('an agent masking nothing is not green', () => {
 test('a switched-off category degrades the indicator and is named', () => {
   // Level, not "is it masking". An agent with a category switched off *is* masking,
   // and a green light over that is a green light over the values not being replaced —
-  // which is why the menu bar icon and the `cloakfleet status` exit code follow the
+  // which is why the menu bar icon and the `neverseen status` exit code follow the
   // same three answers.
   const d = diagnose(
     ok(
@@ -125,9 +125,9 @@ test('levelOf reads what the agent said, and falls back to what it carried', () 
 });
 
 test('every blocked reason names the command that fixes it', () => {
-  assert.match(blockedMessage('unreachable', ''), /cloakfleet proxy/);
-  assert.match(blockedMessage('unconfigured', ''), /cloakfleet key/);
-  assert.match(blockedMessage('unauthorised', ''), /cloakfleet key/);
+  assert.match(blockedMessage('unreachable', ''), /neverseen proxy/);
+  assert.match(blockedMessage('unconfigured', ''), /neverseen key/);
+  assert.match(blockedMessage('unauthorised', ''), /neverseen key/);
   assert.match(blockedMessage('refused', 'the agent said no'), /the agent said no/);
 
   for (const reason of ['unreachable', 'unconfigured', 'unauthorised', 'refused'] as const) {
@@ -139,7 +139,7 @@ test('every blocked reason names the command that fixes it', () => {
 test('a pasted key is checked for shape before the agent is blamed for it', () => {
   assert.ok(looksLikeAKey('0'.repeat(64)));
   assert.ok(!looksLikeAKey('0'.repeat(63)), 'a truncated secret looks like protection and is not');
-  assert.ok(!looksLikeAKey('$ cloakfleet key ' + '0'.repeat(64)), 'a pasted shell prompt');
+  assert.ok(!looksLikeAKey('$ neverseen key ' + '0'.repeat(64)), 'a pasted shell prompt');
   assert.ok(!looksLikeAKey('Z'.repeat(64)));
 });
 

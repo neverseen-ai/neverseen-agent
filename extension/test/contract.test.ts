@@ -95,7 +95,7 @@ test('contract: every request carries the key and the session', async () => {
   await mask(cfg, contract.session, exchange.request.texts as string[], fetchImpl);
 
   const headers = seen.init?.headers as Record<string, string>;
-  assert.equal(headers['X-Cloakfleet-Control'], cfg.key,
+  assert.equal(headers['X-Neverseen-Control'], cfg.key,
     'without the control header the agent refuses, and the send is blocked');
   assert.equal(headers['X-Session-Id'], contract.session,
     '/mask and /unmask for one conversation must name the same session, or the expansion finds nothing');

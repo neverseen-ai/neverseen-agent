@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/cloakfleet/cloakfleet/internal/proxy"
+	"github.com/neverseen-ai/neverseen-agent/internal/proxy"
 )
 
-// `cloakfleet key` prints the control secret, for pasting into the browser
+// `neverseen key` prints the control secret, for pasting into the browser
 // extension's options page.
 //
 // It reads the file the agent wrote, through proxy.ReadControlKey — the one reader,
-// as the menu bar and `cloakfleet mask` already use. It never creates one: a key
+// as the menu bar and `neverseen mask` already use. It never creates one: a key
 // minted by a reader is a key the agent does not know, and the route would refuse it
 // while looking authenticated.
 //
@@ -26,11 +26,11 @@ func runKey(stdout io.Writer) error {
 		// Not an error about a missing file, because the ordinary cause is not one:
 		// the agent writes this key the first time it starts, so an empty answer here
 		// almost always means it has never run.
-		return fmt.Errorf("no control key in %s — start the agent once with `cloakfleet proxy`, "+
+		return fmt.Errorf("no control key in %s — start the agent once with `neverseen proxy`, "+
 			"which writes it", proxy.DefaultControlKeyFile)
 	}
 
-	// The key alone on a line, so `cloakfleet key | pbcopy` puts exactly the key on
+	// The key alone on a line, so `neverseen key | pbcopy` puts exactly the key on
 	// the clipboard. Anything explanatory here would be pasted into the options page
 	// along with it.
 	fmt.Fprintln(stdout, key)

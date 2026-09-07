@@ -54,13 +54,13 @@ func TestRun(t *testing.T) {
 		{
 			name: "help prints the usage and the registered locales",
 			args: []string{"help"},
-			want: []string{"cloakfleet scan", "CLOAKFLEET_PII_LOCALE", "fr, gb, us"},
+			want: []string{"neverseen scan", "NEVERSEEN_PII_LOCALE", "fr, gb, us"},
 		},
 		{
 			name:    "no command is an error, with the usage to recover from it",
 			args:    nil,
 			wantErr: true,
-			want:    []string{"cloakfleet scan"},
+			want:    []string{"neverseen scan"},
 		},
 		{
 			name:    "an unknown command is an error",
@@ -88,8 +88,8 @@ func TestRun(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv("CLOAKFLEET_PII_LOCALE", tt.locale)
-			t.Setenv("CLOAKFLEET_PII_ALLOWLIST", "")
+			t.Setenv("NEVERSEEN_PII_LOCALE", tt.locale)
+			t.Setenv("NEVERSEEN_PII_ALLOWLIST", "")
 			// scan reads the stored policy as the agent does, and this workstation
 			// may have one.
 			t.Setenv("HOME", t.TempDir())
@@ -118,14 +118,14 @@ func TestRun(t *testing.T) {
 func TestRunScanFollowsTheStoredPolicy(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("CLOAKFLEET_PII_LOCALE", "fr")
-	t.Setenv("CLOAKFLEET_PII_ALLOWLIST", "")
+	t.Setenv("NEVERSEEN_PII_LOCALE", "fr")
+	t.Setenv("NEVERSEEN_PII_ALLOWLIST", "")
 
-	if err := os.MkdirAll(filepath.Join(home, ".cloakfleet"), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Join(home, ".neverseen"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	stored := `{"off":["EMAIL"],"substitution":"token","locales":["gb"],"secret_level":"weak"}`
-	if err := os.WriteFile(filepath.Join(home, ".cloakfleet", "policy.json"), []byte(stored), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(home, ".neverseen", "policy.json"), []byte(stored), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -143,8 +143,8 @@ func TestRunScanFollowsTheStoredPolicy(t *testing.T) {
 
 func TestRunScanReadsAFile(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("CLOAKFLEET_PII_LOCALE", "fr")
-	t.Setenv("CLOAKFLEET_PII_ALLOWLIST", "")
+	t.Setenv("NEVERSEEN_PII_LOCALE", "fr")
+	t.Setenv("NEVERSEEN_PII_ALLOWLIST", "")
 
 	path := filepath.Join(t.TempDir(), "note.txt")
 	const body = "Assuré 2 69 05 49 588 157 80, joignable au 06 12 34 56 78."
@@ -168,8 +168,8 @@ func TestRunScanReadsAFile(t *testing.T) {
 // who declares a value and still sees it reported has no way to tell which of
 // the two is ignoring them.
 func TestRunScanHonoursTheAllowList(t *testing.T) {
-	t.Setenv("CLOAKFLEET_PII_LOCALE", "none")
-	t.Setenv("CLOAKFLEET_PII_ALLOWLIST", "claire@example.fr")
+	t.Setenv("NEVERSEEN_PII_LOCALE", "none")
+	t.Setenv("NEVERSEEN_PII_ALLOWLIST", "claire@example.fr")
 
 	var out bytes.Buffer
 	if err := run([]string{"scan"}, strings.NewReader("write to claire@example.fr"), &out); err != nil {
@@ -183,7 +183,7 @@ func TestRunScanHonoursTheAllowList(t *testing.T) {
 // status answers about an agent that is not there, and exits non-zero without
 // turning the ordinary case of a stopped agent into an error message.
 func TestRunStatusWithNoAgent(t *testing.T) {
-	t.Setenv("CLOAKFLEET_LISTEN", "127.0.0.1:1") // nothing listens there
+	t.Setenv("NEVERSEEN_LISTEN", "127.0.0.1:1") // nothing listens there
 
 	var out strings.Builder
 	err := run([]string{"status"}, nil, &out)

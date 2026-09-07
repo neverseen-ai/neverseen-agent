@@ -1,8 +1,8 @@
 {
-  "name": "cloakfleet-extension",
+  "name": "neverseen-extension",
   "version": "0.1.0",
   "private": true,
-  "description": "Cloakfleet for web chats: the page's traffic, masked by the local agent.",
+  "description": "Neverseen for web chats: the page's traffic, masked by the local agent.",
   "type": "module",
   "scripts": {
     "build": "node build.mjs",

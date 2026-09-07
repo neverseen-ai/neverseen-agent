@@ -1,11 +1,11 @@
 ---
 name: trace-check
-description: Check a cloakfleet trace from traces/ — did the masking hold everywhere, is the outbound body the inbound one with nothing but replacements in it, did the answer arrive whole. Use when asked to verify a trace, check whether masking or unmasking worked, whether a value leaked, or whether a body or an answer was truncated. Triggers on "vérifie la trace", "check the last trace", "un secret a-t-il été oublié", "le texte a-t-il été tronqué", "traces/*.txt".
+description: Check a neverseen trace from traces/ — did the masking hold everywhere, is the outbound body the inbound one with nothing but replacements in it, did the answer arrive whole. Use when asked to verify a trace, check whether masking or unmasking worked, whether a value leaked, or whether a body or an answer was truncated. Triggers on "vérifie la trace", "check the last trace", "un secret a-t-il été oublié", "le texte a-t-il été tronqué", "traces/*.txt".
 ---
 
 # Checking a trace
 
-A trace (`traces/*.txt`, written by `cloakfleet proxy -v`) holds one exchange as
+A trace (`traces/*.txt`, written by `neverseen proxy -v`) holds one exchange as
 bytes: the body that arrived, the body that left, and the answer that came back.
 That is enough to settle three questions mechanically. Do not read the file by eye
 first — a coding tool's request is hundreds of kilobytes of one-line JSON, and
@@ -76,7 +76,7 @@ the provider — for you to read. Then:
 3. Before reporting anything as a detector gap, check the policy — a switched-off
    category explains a value in clear completely:
    `curl -s localhost:8787/healthz | python3 -m json.tool`, and remember
-   `~/.cloakfleet/policy.json` wins over the environment.
+   `~/.neverseen/policy.json` wins over the environment.
 4. A real gap is a new corpus case first, then a pattern. The procedure is
    `openwiki/workflows/extending-the-catalogue.md` — and a corpus case that must
    come out **untouched** goes in beside it, or recall alone passes a pattern
@@ -97,7 +97,7 @@ cannot show the text the caller actually read.
 
 To close that half, one of:
 
-- `cloakfleet proxy -a` prints an `UNMASK` line per expansion, live;
+- `neverseen proxy -a` prints an `UNMASK` line per expansion, live;
 - assert on the client's own output — `extension/e2e/run.test.mjs` is the model for
   this: it checks what the site received *and* what the page rendered, because
   either alone passes over a page that was never touched.

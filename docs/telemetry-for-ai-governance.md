@@ -131,7 +131,7 @@ clear, and the fleet view has to show that from the row.
 
 ## Rebuilding the heartbeat from traces
 
-`cloakfleet replay <dir>` reads a directory of `-v` traces back through the same
+`neverseen replay <dir>` reads a directory of `-v` traces back through the same
 recorder the agent uses and prints the batch the agent would have filed: the
 conversation from `metadata.user_id`, the categories by masking the IN body again
 with today's detector, the model and tokens from the trace header, the tool calls
@@ -164,4 +164,4 @@ batch of sixty buckets is held at half the backend's 1 MiB body bound by
 | Reducing a tool call to the vocabularies | `internal/telemetry/tools.go` |
 | What the request path feeds, and `State` | `internal/proxy/proxy.go`, `stream.go`, `audit.go`, `policy.go`, `telemetry.go` |
 | The conversation identity | `internal/proxy/identifiers.go` (`conversationOf`) |
-| The replay | `internal/proxy/replay.go`, `cmd/cloakfleet/main.go` (`runReplay`) |
+| The replay | `internal/proxy/replay.go`, `cmd/neverseen/main.go` (`runReplay`) |

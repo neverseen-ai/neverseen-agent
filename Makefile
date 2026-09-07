@@ -1,8 +1,8 @@
 .PHONY: help build run test test-cover lint fmt tidy score score-update bench-accuracy \
 	e2e-claude extension extension-e2e contract-update clean
 
-BIN     := bin/cloakfleet
-PKG     := ./cmd/cloakfleet
+BIN     := bin/neverseen
+PKG     := ./cmd/neverseen
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -X main.version=$(VERSION)
 
@@ -18,7 +18,7 @@ build: ## Build the agent binary into bin/
 
 run: build ## Run the agent and open its test page — loads .env if there is one
 	@set -a; [ -f .env ] && . ./.env; set +a; \
-	  addr=$${CLOAKFLEET_LISTEN:-$(LISTEN)}; \
+	  addr=$${NEVERSEEN_LISTEN:-$(LISTEN)}; \
 	  ( sleep 1; open "http://$$addr/test" ) & \
 	  exec $(BIN) proxy
 
@@ -48,7 +48,7 @@ bench-accuracy: ## Per-category accuracy report over the corpus
 	go test ./internal/detector/ -run TestAccuracyCorpus -v
 
 e2e-claude: ## End-to-end: the Claude CLI through the agent to the real provider (spends quota)
-	CLOAKFLEET_E2E_CLAUDE=1 go test ./internal/proxy/ -run TestE2EClaudeCode -v -timeout 10m
+	NEVERSEEN_E2E_CLAUDE=1 go test ./internal/proxy/ -run TestE2EClaudeCode -v -timeout 10m
 
 extension: ## Typecheck, test and build the browser extension into extension/dist
 	cd extension && npm ci && npm run check

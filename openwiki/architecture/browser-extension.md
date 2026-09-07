@@ -1,6 +1,6 @@
 # The browser extension
 
-Cloakfleet masks what a *tool* sends by standing in front of it as a proxy. A web chat
+Neverseen masks what a *tool* sends by standing in front of it as a proxy. A web chat
 gives it nothing to stand in front of: the traffic goes from the page to the site's own
 origin, over a connection the page opened, and no environment variable points anywhere.
 
@@ -142,7 +142,7 @@ page is a key any script the site loads can read, and it opens `/unmask`. Two su
 it, both extension code: the service worker, and the options page (`src/options.ts`), which
 talks to the agent directly rather than through the worker — it is where the key is typed,
 and a hop that could only fail buys nothing there. Its probe names the session
-`cloakfleet:probe`, outside the `claude:` namespace `namesAWebSession` enforces; that check
+`neverseen:probe`, outside the `claude:` namespace `namesAWebSession` enforces; that check
 lives in the worker (`background.ts`), so this is the one path it does not cover — a
 constant of this extension's own, never a value a page chose.
 
@@ -275,18 +275,18 @@ is running. The probe uses `/unmask` rather than `/mask` because `/mask` counts 
 and a fleet view would show every open of this page as traffic.
 
 The indicator follows **`Level`**, not `Masking`, for the reason the menu bar icon and the
-`cloakfleet status` exit code do: an agent with a category switched off *is* masking, and
+`neverseen status` exit code do: an agent with a category switched off *is* masking, and
 a green light over that is a green light over the values that are not being replaced.
 
 The base URL is **discovered, not asked for** — `http://127.0.0.1:8787` by default; the
-manual field exists only for an agent moved by `CLOAKFLEET_LISTEN`. Match patterns ignore
+manual field exists only for an agent moved by `NEVERSEEN_LISTEN`. Match patterns ignore
 ports, so `http://127.0.0.1/*` covers whichever one it took.
 
 ---
 
 ## Key delivery
 
-`cloakfleet key` prints the control key; it is pasted into the options page and lives in
+`neverseen key` prints the control key; it is pasted into the options page and lives in
 `chrome.storage.local` — readable by this extension in this profile and by nothing else,
 the profile's equivalent of the 0600 on the file it came from.
 
@@ -297,7 +297,7 @@ name to 127.0.0.1 can read anything this agent serves without a header. The key 
 terminal, which may read the file, never a bare HTTP route.
 
 The next two rungs are described in `plans/chrome-extension.md` and are not built:
-`cloakfleet extension connect` (the key in a URL *fragment*, which never crosses the
+`neverseen extension connect` (the key in a URL *fragment*, which never crosses the
 network), and native messaging (structural auth, for fleet deployment).
 
 ---

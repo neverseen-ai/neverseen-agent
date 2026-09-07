@@ -88,7 +88,7 @@ test('the options page reports the agent it can actually reach', async () => {
   await page.$eval('#key', (el) => ((el).value = ''));
   await page.click('#save');
   await page.waitForFunction(
-    () => document.getElementById('guidance')?.textContent?.includes('cloakfleet key'),
+    () => document.getElementById('guidance')?.textContent?.includes('neverseen key'),
     { timeout: 10_000 },
   );
 
@@ -217,7 +217,7 @@ test('a hostile script on the page cannot read another session back', async () =
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Cloakfleet-Control': agent.key,
+        'X-Neverseen-Control': agent.key,
         'X-Session-Id': 'default',
       },
       body: JSON.stringify({ texts: [`terminal traffic: ${terminalAddress}`] }),
@@ -247,7 +247,7 @@ test('a hostile script on the page cannot read another session back', async () =
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Cloakfleet-Control': agent.key,
+        'X-Neverseen-Control': agent.key,
         'X-Session-Id': 'claude:11111111-2222-3333-4444-555555555555',
       },
       body: JSON.stringify({ texts: [`another chat: ${otherAddress}`] }),
@@ -316,12 +316,12 @@ test('with the agent stopped, the send is blocked rather than forwarded', async 
     'the message reached the site while nothing was masking it');
 
   // And the person is told why, with the command that fixes it.
-  await page.waitForFunction(() => document.getElementById('cloakfleet-banner') !== null, {
+  await page.waitForFunction(() => document.getElementById('neverseen-banner') !== null, {
     timeout: 10_000,
   });
-  const banner = await page.$eval('#cloakfleet-banner', (el) => el.textContent);
+  const banner = await page.$eval('#neverseen-banner', (el) => el.textContent);
   assert.match(banner, /not sent/);
-  assert.match(banner, /cloakfleet proxy/);
+  assert.match(banner, /neverseen proxy/);
 
   await page.close();
 });

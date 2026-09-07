@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cloakfleet/cloakfleet/internal/detector"
-	"github.com/cloakfleet/cloakfleet/internal/vault"
+	"github.com/neverseen-ai/neverseen-agent/internal/detector"
+	"github.com/neverseen-ai/neverseen-agent/internal/vault"
 )
 
 // anthropicKeySample is a credential the catalogue recognises by prefix. Shaped like

@@ -9,17 +9,17 @@ import { DEFAULT_BASE_URL } from './agent.ts';
 //
 // Two settings and no more. The key, which is pasted; and the agent's address, which
 // is discovered rather than asked for — the manual setting exists for the one case
-// the discovery cannot cover, an agent moved by CLOAKFLEET_LISTEN.
+// the discovery cannot cover, an agent moved by NEVERSEEN_LISTEN.
 
 export type Settings = {
   /** baseUrl is where the agent answers, with no trailing slash. */
   baseUrl: string;
 
-  /** key is the agent's control secret, as `cloakfleet key` prints it. */
+  /** key is the agent's control secret, as `neverseen key` prints it. */
   key: string;
 };
 
-const STORAGE_KEY = 'cloakfleet';
+const STORAGE_KEY = 'neverseen';
 
 /** Storage is the slice of chrome.storage.local this needs, so a test can pass a map. */
 export type Storage = {

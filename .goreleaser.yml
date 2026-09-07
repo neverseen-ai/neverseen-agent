@@ -9,7 +9,7 @@ version: 2
 # which is not an oversight: the icon is Cocoa, and Linux has no menu bar to put it
 # in. See internal/tray for what a Linux tray would actually cost.
 
-project_name: cloakfleet
+project_name: neverseen
 
 before:
   hooks:
@@ -22,9 +22,9 @@ builds:
   # The agent, unchanged: pure Go, statically linked, cross-compiled for both
   # platforms from wherever this runs. It has no C dependency and it must keep
   # having none — it is the binary that proxies people's credentials.
-  - id: cloakfleet
-    main: ./cmd/cloakfleet
-    binary: cloakfleet
+  - id: neverseen
+    main: ./cmd/neverseen
+    binary: neverseen
     env:
       - CGO_ENABLED=0
     goos: [darwin, linux]
@@ -44,9 +44,9 @@ builds:
   # It is why this repository's release runs on macOS — nothing else has the
   # frameworks this links against. The agent's targets are cross-compiled from
   # there, which pure Go does anywhere.
-  - id: cloakfleet-tray
-    main: ./cmd/cloakfleet-tray
-    binary: cloakfleet-tray
+  - id: neverseen-tray
+    main: ./cmd/neverseen-tray
+    binary: neverseen-tray
     env:
       - CGO_ENABLED=1
     goos: [darwin]
@@ -92,7 +92,7 @@ release:
   # Source available, not open source: the release notes say so, because somebody
   # will find the binary before they find the licence.
   footer: |
-    Cloakfleet is source available under the Functional Source License
+    Neverseen is source available under the Functional Source License
     (FSL-1.1-ALv2): free for any use, including inside a company, but not to
     offer as a competing product or service. Each release becomes Apache 2.0 two
     years after it ships.

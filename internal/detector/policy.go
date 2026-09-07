@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/cloakfleet/cloakfleet/pkg/pii"
+	"github.com/neverseen-ai/neverseen-agent/pkg/pii"
 )
 
 // policy is the set of categories an operator has switched off, shared by every
@@ -305,7 +305,7 @@ func (d *Detector) Masking() Level {
 // The raw disabled set is the wrong number for a *level*, and the two disagreeing
 // produced a sentence with no reading: with only "fr" loaded and a US category
 // switched off, Masking said "partial" while every surface that lists what is off
-// filtered that category out as unrecognisable — so `cloakfleet status` printed
+// filtered that category out as unrecognisable — so `neverseen status` printed
 // "masking, with 0 categories in clear", the menu bar drew the amber icon over the
 // same nought, and the exit code was non-zero. Level is a statement about what is
 // being applied, not about what somebody has asked for: an agent applying every

@@ -1,12 +1,12 @@
-# Cloakfleet — OpenWiki quickstart
+# Neverseen — OpenWiki quickstart
 
-Cloakfleet is a **workstation agent that masks sensitive values before they reach a
+Neverseen is a **workstation agent that masks sensitive values before they reach a
 language model**. It sits between the AI tools people already use (Claude Code, Codex,
 a script, an SDK) and the model provider: on the way out it replaces personal data and
 credentials with a substitution, on the way back it restores the originals. The model
 never sees the data, and the person using the tool never sees a placeholder.
 
-Module path: `github.com/cloakfleet/cloakfleet` (see `go.mod`). Go 1.26; the only
+Module path: `github.com/neverseen-ai/neverseen-agent` (see `go.mod`). Go 1.26; the only
 dependencies are `fyne.io/systray` (menu bar icon) and `gopkg.in/yaml.v3` (test corpus).
 
 **Licence:** FSL-1.1-ALv2 — *source available, not open source*. Say "source available".
@@ -25,15 +25,15 @@ never import it, and must compile and run with no backend at all.
 | [Browser extension](architecture/browser-extension.md) | `extension/` + `POST /mask` and `POST /unmask` — masking a web chat by wrapping the page's own `fetch` |
 | [Supervision](architecture/supervision.md) | `pkg/telemetry` contract + `internal/telemetry` recorder, on-disk buffer, reporting loop |
 | [Configuration](operations/configuration.md) | The ten environment variables, every CLI command, the test page, the audit console |
-| [Distribution](operations/distribution.md) | `install.sh`, launchd services, GoReleaser, the menu bar binary, `cloakfleet env` |
+| [Distribution](operations/distribution.md) | `install.sh`, launchd services, GoReleaser, the menu bar binary, `neverseen env` |
 | [Extending the catalogue](workflows/extending-the-catalogue.md) | Adding a PII category, a locale, a provider, a telemetry field |
 | [Testing and accuracy](workflows/testing-and-accuracy.md) | The corpus, the per-category score floor, CI gates, the end-to-end test |
 
 ## Repository layout
 
 ```
-cmd/cloakfleet/        the agent — the ONLY binary that masks anything
-cmd/cloakfleet-tray/   menu bar icon; assembles no pipeline (see Distribution)
+cmd/neverseen/        the agent — the ONLY binary that masks anything
+cmd/neverseen-tray/   menu bar icon; assembles no pipeline (see Distribution)
 internal/proxy/        the request path, the routes the agent answers itself
                        (/healthz, /test, /policy, /mask, /unmask), the console and the traces
 internal/detector/     the engine that runs the catalogue over text
@@ -49,7 +49,7 @@ install.sh             installer: binaries, launchd services, optional shell lin
 ## Commands
 
 ```bash
-make build            # bin/cloakfleet
+make build            # bin/neverseen
 make test             # go test -race ./...
 make test-cover       # + coverage; the CI gate is 80%
 make lint             # golangci-lint
@@ -68,7 +68,7 @@ go test ./internal/detector/ -run TestAccuracyCorpus -v   # one suite, verbose
 Run it and point a tool at it by naming the provider in the first path segment:
 
 ```console
-$ CLOAKFLEET_PII_LOCALE=fr,gb,us cloakfleet proxy
+$ NEVERSEEN_PII_LOCALE=fr,gb,us neverseen proxy
 level=INFO msg=listening address=127.0.0.1:8787 providers=anthropic,deepinfra,gemini,...
 
 $ ANTHROPIC_BASE_URL=http://127.0.0.1:8787/anthropic claude -p "…"
@@ -79,10 +79,10 @@ $ ANTHROPIC_BASE_URL=http://127.0.0.1:8787/anthropic claude -p "…"
 These are not style preferences. Each one is a failure that already happened, mostly in
 **Agent Veil**, the MIT-licensed project this one replaces (see `NOTICE`).
 
-- **One entrypoint assembles the pipeline.** `cmd/cloakfleet` is the only binary that
+- **One entrypoint assembles the pipeline.** `cmd/neverseen` is the only binary that
   masks. Agent Veil shipped two, each assembling its own pipeline from the same
   packages; they drifted, and the same request was masked in one and answered in clear
-  in the other (`cmd/cloakfleet/main.go` package doc). `cmd/cloakfleet-tray` is the one
+  in the other (`cmd/neverseen/main.go` package doc). `cmd/neverseen-tray` is the one
   exception and it assembles nothing — see [Distribution](operations/distribution.md).
 - **The environment is read in one place per setting.** `detector.FromEnv` owns the
   detection settings, `internal/proxy/env.go` owns the proxy's. A command in `cmd/`
@@ -96,7 +96,7 @@ These are not style preferences. Each one is a failure that already happened, mo
   that is down must never stop the masking.
 - **The agent holds no API keys.** The caller's credential is forwarded untouched
   (`internal/proxy/provider.go:20-24`).
-- **Counts, never content**, everywhere except `cloakfleet proxy -a` (a screen) and
+- **Counts, never content**, everywhere except `neverseen proxy -a` (a screen) and
   `-v` (a file under `traces/`) — the two deliberate exceptions, for one operator at
   their own keyboard on their own data. Neither belongs in a service definition.
 - **British spelling** in comments and prose; the linter is configured for it.
@@ -105,7 +105,7 @@ These are not style preferences. Each one is a failure that already happened, mo
   code is noise.
 - **Nothing enters the tree unexercised**, and **no documentation ahead of the code** —
   `TestDocumentedEnvironmentMatchesTheCode` fails in both directions
-  (`cmd/cloakfleet/env_test.go:22`).
+  (`cmd/neverseen/env_test.go:22`).
 
 ## Guidance for a change
 

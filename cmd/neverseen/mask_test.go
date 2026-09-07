@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cloakfleet/cloakfleet/internal/proxy"
+	"github.com/neverseen-ai/neverseen-agent/internal/proxy"
 )
 
 // fakeAgent answers /healthz with a catalogue and records what /policy was sent, so
@@ -45,11 +45,11 @@ func newFakeAgent(t *testing.T, off ...string) *fakeAgent {
 		// the fake one does too: a test passing against a laxer agent than the real
 		// one is a test that proves nothing.
 		if req.Substitution == "" {
-			http.Error(w, "cloakfleet: this route replaces the whole state", http.StatusBadRequest)
+			http.Error(w, "neverseen: this route replaces the whole state", http.StatusBadRequest)
 			return
 		}
 		if a.refuse != "" {
-			http.Error(w, "cloakfleet: "+a.refuse, http.StatusUnprocessableEntity)
+			http.Error(w, "neverseen: "+a.refuse, http.StatusUnprocessableEntity)
 			return
 		}
 		a.off, a.mode, a.locales = req.Off, req.Substitution, req.Locales
@@ -107,7 +107,7 @@ func (a *fakeAgent) health() proxy.Health {
 }
 
 // With no flags the command lists the catalogue. The first column is a word rather
-// than a symbol so `cloakfleet mask | grep "in clear"` answers the question the
+// than a symbol so `neverseen mask | grep "in clear"` answers the question the
 // command exists for.
 func TestMaskListsTheCatalogue(t *testing.T) {
 	newFakeAgent(t, "DOB")
@@ -297,7 +297,7 @@ func TestUsageNamesTheMaskCommand(t *testing.T) {
 	var out strings.Builder
 	printUsage(&out)
 
-	if got := out.String(); !strings.Contains(got, "cloakfleet mask") {
+	if got := out.String(); !strings.Contains(got, "neverseen mask") {
 		t.Errorf("the usage text does not mention the mask command:\n%s", got)
 	}
 }
@@ -458,7 +458,7 @@ func TestMaskSaysWhenNoCountryIsLoaded(t *testing.T) {
 	}
 }
 
-// The catalogue listing opens on the same sentence `cloakfleet status` prints.
+// The catalogue listing opens on the same sentence `neverseen status` prints.
 //
 // The other half of the pair proxy's TestWriteOpensOnTheHeadline holds. The two
 // commands report on one agent, and written apart they had already drifted: this

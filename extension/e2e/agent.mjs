@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 // It runs under a HOME of its own, so a test never reads or writes the operator's own
 // control key, and on a port of its own, so it never fights an agent already running.
 
-const BINARY = fileURLToPath(new URL('../../bin/cloakfleet', import.meta.url));
+const BINARY = fileURLToPath(new URL('../../bin/neverseen', import.meta.url));
 
 async function freePort() {
   const server = createServer();
@@ -25,9 +25,9 @@ async function freePort() {
   return port;
 }
 
-/** startAgent runs `cloakfleet proxy` and waits until it is answering. */
+/** startAgent runs `neverseen proxy` and waits until it is answering. */
 export async function startAgent({ locales = 'fr' } = {}) {
-  const home = mkdtempSync(join(tmpdir(), 'cloakfleet-home-'));
+  const home = mkdtempSync(join(tmpdir(), 'neverseen-home-'));
   const port = await freePort();
   const baseUrl = `http://127.0.0.1:${port}`;
 
@@ -35,9 +35,9 @@ export async function startAgent({ locales = 'fr' } = {}) {
     env: {
       ...process.env,
       HOME: home,
-      CLOAKFLEET_PII_LOCALE: locales,
-      CLOAKFLEET_PII_ALLOWLIST: '',
-      CLOAKFLEET_BACKEND_URL: '',
+      NEVERSEEN_PII_LOCALE: locales,
+      NEVERSEEN_PII_ALLOWLIST: '',
+      NEVERSEEN_BACKEND_URL: '',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -62,8 +62,8 @@ export async function startAgent({ locales = 'fr' } = {}) {
   }
 
   // Read rather than written: only the agent mints this, because a key created by a
-  // reader is a key the agent does not know. `cloakfleet key` reads the same file.
-  const key = readFileSync(join(home, '.cloakfleet', 'control.key'), 'utf8').trim();
+  // reader is a key the agent does not know. `neverseen key` reads the same file.
+  const key = readFileSync(join(home, '.neverseen', 'control.key'), 'utf8').trim();
 
   return {
     baseUrl,

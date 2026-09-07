@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/cloakfleet/cloakfleet/internal/detector"
+	"github.com/neverseen-ai/neverseen-agent/internal/detector"
 )
 
 // The audit console is the one place in this agent where a real value is written
@@ -20,7 +20,7 @@ import (
 // and a value that reaches one of them has left the machine as surely as if it
 // had gone to the model.
 //
-// `cloakfleet proxy -a` is the opposite situation: one operator, at their own
+// `neverseen proxy -a` is the opposite situation: one operator, at their own
 // keyboard, running the agent in the foreground of their own terminal on their own
 // data, to answer "is my address actually being replaced". That question cannot be
 // answered by a count, and answering it by reading a masked body in one window and
@@ -38,7 +38,7 @@ type auditor struct {
 	mu sync.Mutex
 	w  io.Writer
 
-	// colour is off unless the writer is a terminal, so `cloakfleet proxy -a | tee
+	// colour is off unless the writer is a terminal, so `neverseen proxy -a | tee
 	// audit.log` and a test both get plain text rather than escape sequences
 	// through the middle of a value.
 	colour bool
@@ -226,7 +226,7 @@ func (a *auditor) unmasked(replacement, original string) {
 // The arguments are printed **after restoration**, in clear, on purpose and at a
 // cost that is recorded rather than hidden: they carry the caller's own paths,
 // commands and addresses, so under the installer's service definition -a puts every
-// tool call of every exchange into ~/.cloakfleet/agent.log for as long as the
+// tool call of every exchange into ~/.neverseen/agent.log for as long as the
 // service runs. That is the exposure the banner already warns about for the MASK
 // lines; this widens it from single values to a whole arguments document.
 //

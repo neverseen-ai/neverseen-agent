@@ -15,30 +15,30 @@ import (
 // setting and no chance of two of them disagreeing.
 const (
 	// EnvListen is the address to listen on.
-	EnvListen = "CLOAKFLEET_LISTEN"
+	EnvListen = "NEVERSEEN_LISTEN"
 	// EnvProviders overrides upstream URLs, as "code=url" pairs separated by
 	// commas.
-	EnvProviders = "CLOAKFLEET_PROVIDERS"
+	EnvProviders = "NEVERSEEN_PROVIDERS"
 	// EnvEncryptionKey is the 32-byte key, hex-encoded, that the session mapping
 	// is sealed with. Unset means one is generated for the life of the process.
-	EnvEncryptionKey = "CLOAKFLEET_ENCRYPTION_KEY"
+	EnvEncryptionKey = "NEVERSEEN_ENCRYPTION_KEY"
 
 	// EnvBackendURL points at a supervision backend. Unset means no supervision
 	// at all — no reporter is built, nothing is sent, and the agent is otherwise
 	// identical. That is the free half of the product, and it is a whole feature
 	// rather than a disabled one.
-	EnvBackendURL = "CLOAKFLEET_BACKEND_URL"
+	EnvBackendURL = "NEVERSEEN_BACKEND_URL"
 
 	// EnvEnrolmentToken is presented once, to trade for an identity of this
 	// agent's own.
-	EnvEnrolmentToken = "CLOAKFLEET_ENROLMENT_TOKEN"
+	EnvEnrolmentToken = "NEVERSEEN_ENROLMENT_TOKEN"
 
 	// EnvIdentityFile is where that issued identity is kept.
-	EnvIdentityFile = "CLOAKFLEET_IDENTITY_FILE"
+	EnvIdentityFile = "NEVERSEEN_IDENTITY_FILE"
 )
 
 // DefaultIdentityFile is where an agent keeps the identity a backend issued it.
-const DefaultIdentityFile = "~/.cloakfleet/agent.json"
+const DefaultIdentityFile = "~/.neverseen/agent.json"
 
 // DefaultListen binds the loopback interface only.
 //
@@ -52,7 +52,7 @@ const DefaultListen = "127.0.0.1:8787"
 // something other than this workstation can reach.
 //
 // It exists because the answer decides what a warning says, and the address arrives
-// by two routes — CLOAKFLEET_LISTEN and `proxy -l` — which must not come to disagree
+// by two routes — NEVERSEEN_LISTEN and `proxy -l` — which must not come to disagree
 // about what counts as reachable. One predicate, asked at the point the agent starts
 // listening, covers both.
 //

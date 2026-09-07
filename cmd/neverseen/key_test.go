@@ -10,16 +10,16 @@ import (
 
 const sampleKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-// TestKeyPrintsTheControlKey — and prints nothing else, because `cloakfleet key |
+// TestKeyPrintsTheControlKey — and prints nothing else, because `neverseen key |
 // pbcopy` is what it is for, and a heading on the clipboard is a key the options
 // page refuses.
 func TestKeyPrintsTheControlKey(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	if err := os.MkdirAll(filepath.Join(home, ".cloakfleet"), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Join(home, ".neverseen"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(home, ".cloakfleet", "control.key"),
+	if err := os.WriteFile(filepath.Join(home, ".neverseen", "control.key"),
 		[]byte(sampleKey+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func TestKeySaysWhereToGetOneWhenThereIsNone(t *testing.T) {
 	if err == nil {
 		t.Fatal("an agent with no key printed something")
 	}
-	if !strings.Contains(err.Error(), "cloakfleet proxy") {
+	if !strings.Contains(err.Error(), "neverseen proxy") {
 		t.Fatalf("the message does not say how to get one: %v", err)
 	}
 	if out.Len() != 0 {
@@ -62,7 +62,7 @@ func TestKeyNeverCreatesOne(t *testing.T) {
 
 	_ = run([]string{"key"}, strings.NewReader(""), &bytes.Buffer{})
 
-	if _, err := os.Stat(filepath.Join(home, ".cloakfleet", "control.key")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(home, ".neverseen", "control.key")); !os.IsNotExist(err) {
 		t.Fatal("the command created a key file")
 	}
 }

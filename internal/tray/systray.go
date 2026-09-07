@@ -8,7 +8,7 @@ import (
 
 	"fyne.io/systray"
 
-	"github.com/cloakfleet/cloakfleet/internal/proxy"
+	"github.com/neverseen-ai/neverseen-agent/internal/proxy"
 )
 
 // Run puts the icon in the menu bar and keeps it up to date until the context is
@@ -103,7 +103,7 @@ type providerSlot struct {
 
 func (m *menuBar) build() {
 	systray.SetTemplateIcon(unmaskedIcon, unmaskedIcon)
-	systray.SetTooltip("cloakfleet")
+	systray.SetTooltip("neverseen")
 
 	m.entries = make([]*systray.MenuItem, 0, lineCount)
 	for range lineCount {
@@ -318,7 +318,7 @@ func (m *menuBar) apply(want proxy.Policy) {
 		// Nothing to do but leave the menu as it is: the next poll redraws it from
 		// the agent, so a refused click corrects itself within pollEvery rather than
 		// leaving a tick that lies.
-		log.Printf("cloakfleet-tray: %v", err)
+		log.Printf("neverseen-tray: %v", err)
 		return
 	}
 	m.show(render(status))
@@ -338,7 +338,7 @@ func (m *menuBar) buildProviders() {
 	// proxy stops, from a line nobody remembers adding. The form that is safe in a
 	// profile is the one that prints nothing while the agent is down, and the place
 	// to say so is where the line is handed over.
-	caution := parent.AddSubMenuItem(`For one shell — a profile wants: eval "$(cloakfleet env)"`, "")
+	caution := parent.AddSubMenuItem(`For one shell — a profile wants: eval "$(neverseen env)"`, "")
 	caution.Disable()
 	parent.AddSeparator()
 
@@ -527,7 +527,7 @@ func (m *menuBar) showProviders(codes []string) {
 			m.slots[i].item.Show()
 		case i == shown && overflow > 0:
 			m.slots[i].code = ""
-			m.slots[i].item.SetTitle(fmt.Sprintf("…and %d more — see cloakfleet env", overflow+1))
+			m.slots[i].item.SetTitle(fmt.Sprintf("…and %d more — see neverseen env", overflow+1))
 			m.slots[i].item.SetTooltip("")
 			m.slots[i].item.Show()
 		default:

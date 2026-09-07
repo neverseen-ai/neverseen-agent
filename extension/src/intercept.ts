@@ -67,7 +67,7 @@ export function install(target: Window & typeof globalThis, site: Site, send: Se
 
 /** wrapFetch is the whole masked path: mask what goes out, restore what comes back. */
 export function wrapFetch(original: typeof fetch, site: Site, send: Send): typeof fetch {
-  return async function cloakfleetFetch(
+  return async function neverseenFetch(
     input: RequestInfo | URL,
     init?: RequestInit,
   ): Promise<Response> {
@@ -94,7 +94,7 @@ export function wrapFetch(original: typeof fetch, site: Site, send: Send): typeo
       // forwarding what could not be inspected is the one failure a data-loss control
       // must never have.
       throw block(send, 'refused', 'send',
-        'Cloakfleet: your message was not sent — its contents could not be read, so nothing could mask them.',
+        'Neverseen: your message was not sent — its contents could not be read, so nothing could mask them.',
         err);
     }
 
@@ -103,7 +103,7 @@ export function wrapFetch(original: typeof fetch, site: Site, send: Send): typeo
       body = JSON.parse(raw);
     } catch (err) {
       throw block(send, 'refused', 'send',
-        'Cloakfleet: your message was not sent — it is not in a shape this extension knows how to mask.',
+        'Neverseen: your message was not sent — it is not in a shape this extension knows how to mask.',
         err);
     }
 

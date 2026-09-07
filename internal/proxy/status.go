@@ -9,13 +9,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cloakfleet/cloakfleet/internal/detector"
+	"github.com/neverseen-ai/neverseen-agent/internal/detector"
 )
 
 // Health is what the agent answers about itself on /healthz.
 //
 // One type for both sides of that route: the server marshals it and every local
-// caller — `cloakfleet status`, and the menu bar item that will read the same
+// caller — `neverseen status`, and the menu bar item that will read the same
 // endpoint — unmarshals it, in this same package, so the two cannot come to
 // disagree about a field name. That is the drift with no symptom otherwise, the
 // one the shared golden exists to catch on the backend contract.
@@ -236,14 +236,14 @@ func Query(ctx context.Context, addr string, timeout time.Duration) Status {
 	defer func() { _ = resp.Body.Close() }()
 
 	// Bounded, and read to the end either way: this runs on every new shell when
-	// `cloakfleet env` is wired into a profile, and a connection left half open on
+	// `neverseen env` is wired into a profile, and a connection left half open on
 	// a machine that opens a shell every few seconds is a socket nobody reclaims.
 	//
 	// healthMaxBytes, not a literal, because the payload carries the whole
 	// catalogue by group and so grows with it. At 8 KiB it already did not fit:
 	// the second tier of vendor prefixes took the body past the cap, the read
 	// truncated, the parse below failed and every field stayed empty — so
-	// `cloakfleet status` printed nothing, the menu bar drew nothing and the exit
+	// `neverseen status` printed nothing, the menu bar drew nothing and the exit
 	// code said something was wrong, over an agent that was answering perfectly.
 	// TestHealthPayloadFitsTheQueryBound is what makes the next overrun loud.
 	body, err := io.ReadAll(io.LimitReader(resp.Body, healthMaxBytes))
@@ -263,8 +263,8 @@ func Query(ctx context.Context, addr string, timeout time.Duration) Status {
 // surface is about to report on it.
 //
 // One sentence rather than one per surface, because the two that print it were
-// written apart and had already drifted: `cloakfleet status` called a category
-// "switched off" where `cloakfleet mask` called the same category "in clear", so
+// written apart and had already drifted: `neverseen status` called a category
+// "switched off" where `neverseen mask` called the same category "in clear", so
 // the two commands describing the same agent disagreed about what had happened to
 // it. Which is the failure the single /healthz type prevents on the wire, arrived
 // at through prose instead.
@@ -283,14 +283,14 @@ func (s Status) Headline() string {
 
 	switch {
 	case !s.Answering:
-		return fmt.Sprintf("cloakfleet is not answering on %s.", s.Addr)
+		return fmt.Sprintf("neverseen is not answering on %s.", s.Addr)
 	case len(s.Locales) == 0:
-		return fmt.Sprintf("cloakfleet is answering on %s but masking almost nothing.", s.Addr)
+		return fmt.Sprintf("neverseen is answering on %s but masking almost nothing.", s.Addr)
 	case s.Level() == detector.LevelPartial:
-		return fmt.Sprintf("cloakfleet is masking on %s, with %d categor%s in clear.",
+		return fmt.Sprintf("neverseen is masking on %s, with %d categor%s in clear.",
 			s.Addr, len(off), plural(len(off), "y", "ies"))
 	default:
-		return fmt.Sprintf("cloakfleet is masking on %s. Every category its locales loaded is on.",
+		return fmt.Sprintf("neverseen is masking on %s. Every category its locales loaded is on.",
 			s.Addr)
 	}
 }
@@ -307,7 +307,7 @@ func (s Status) Write(w io.Writer) {
 	case !s.Answering:
 		fmt.Fprintf(w, "Your tools are reaching their provider directly, unmasked — which is\n")
 		fmt.Fprintf(w, "deliberate: a stopped agent leaves them working rather than broken.\n")
-		fmt.Fprintf(w, "Start it with `cloakfleet proxy`, or `./install.sh --restart`.\n")
+		fmt.Fprintf(w, "Start it with `neverseen proxy`, or `./install.sh --restart`.\n")
 		return
 
 	case len(s.Locales) == 0:

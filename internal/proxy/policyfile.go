@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"slices"
 
-	"github.com/cloakfleet/cloakfleet/internal/detector"
-	"github.com/cloakfleet/cloakfleet/pkg/pii"
+	"github.com/neverseen-ai/neverseen-agent/internal/detector"
+	"github.com/neverseen-ai/neverseen-agent/pkg/pii"
 )
 
 // What a surface changed survives the restart, and the file is the state.
@@ -30,7 +30,7 @@ import (
 // environment configures an agent nobody has said anything to yet; once a surface
 // has written a policy, that policy is the state, or the click does not survive the
 // restart and this file has no purpose. The cost is real and named in the
-// documentation: with the file present, changing CLOAKFLEET_PII_LOCALE in a profile
+// documentation: with the file present, changing NEVERSEEN_PII_LOCALE in a profile
 // does nothing. Deleting the file hands the agent back to the environment, and the
 // agent says at start-up which of the two it read.
 
@@ -39,7 +39,7 @@ import (
 // Beside the control key, under the directory the installer deliberately leaves
 // alone on uninstall: it is the same kind of thing, state this machine holds that
 // nobody types by hand.
-const DefaultPolicyFile = "~/.cloakfleet/policy.json"
+const DefaultPolicyFile = "~/.neverseen/policy.json"
 
 // loadPolicyFile reads the stored state, or reports nil when there is none.
 //
@@ -95,7 +95,7 @@ func writePolicyFile(path string, state policyRequest) error {
 
 	// A name of its own for each write, and not a fixed ".tmp".
 	//
-	// Two surfaces write this file — the menu bar and `cloakfleet mask`, and they
+	// Two surfaces write this file — the menu bar and `neverseen mask`, and they
 	// interleave, which is the hazard the route already names for the detector. On
 	// one path they truncated and filled the same temporary file at once, and what
 	// landed under the rename was one writer's short document inside the other's

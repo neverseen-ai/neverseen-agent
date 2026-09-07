@@ -7,7 +7,7 @@ import (
 	"net"
 	"net/http"
 
-	"github.com/cloakfleet/cloakfleet/internal/detector"
+	"github.com/neverseen-ai/neverseen-agent/internal/detector"
 )
 
 // The two routes a caller that is not a proxy hop uses: text in, masked text out,
@@ -63,7 +63,7 @@ type maskReply struct {
 func (s *Server) handleMask(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, "cloakfleet: use POST to mask text", http.StatusMethodNotAllowed)
+		http.Error(w, "neverseen: use POST to mask text", http.StatusMethodNotAllowed)
 		return
 	}
 	if !s.authorised(w, r) {
@@ -95,7 +95,7 @@ func (s *Server) handleMask(w http.ResponseWriter, r *http.Request) {
 		// send the model text it cannot read back.
 		s.log.Error("storing the session mapping failed, refusing to answer",
 			"session", session, "error", err)
-		http.Error(w, "cloakfleet: the session mapping could not be stored", http.StatusInternalServerError)
+		http.Error(w, "neverseen: the session mapping could not be stored", http.StatusInternalServerError)
 		return
 	}
 
@@ -145,7 +145,7 @@ type unmaskReply struct {
 func (s *Server) handleUnmask(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, "cloakfleet: use POST to expand masked text", http.StatusMethodNotAllowed)
+		http.Error(w, "neverseen: use POST to expand masked text", http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -161,7 +161,7 @@ func (s *Server) handleUnmask(w http.ResponseWriter, r *http.Request) {
 	// refuses. The upgrade path is TLS with a certificate the extension pins, or an
 	// explicit opt-in that says out loud what it costs — not a relaxation of this.
 	if !fromLoopback(r.RemoteAddr) {
-		http.Error(w, "cloakfleet: this route answers on the loopback interface only",
+		http.Error(w, "neverseen: this route answers on the loopback interface only",
 			http.StatusForbidden)
 		return
 	}
@@ -220,16 +220,16 @@ func fromLoopback(remoteAddr string) bool {
 func decodeExtensionBody(w http.ResponseWriter, r *http.Request, into any) bool {
 	body, err := io.ReadAll(io.LimitReader(r.Body, extensionMaxBytes+1))
 	if err != nil {
-		http.Error(w, "cloakfleet: could not read the request", http.StatusBadRequest)
+		http.Error(w, "neverseen: could not read the request", http.StatusBadRequest)
 		return false
 	}
 	if len(body) > extensionMaxBytes {
-		http.Error(w, fmt.Sprintf("cloakfleet: the request is larger than %d bytes", extensionMaxBytes),
+		http.Error(w, fmt.Sprintf("neverseen: the request is larger than %d bytes", extensionMaxBytes),
 			http.StatusRequestEntityTooLarge)
 		return false
 	}
 	if err := json.Unmarshal(body, into); err != nil {
-		http.Error(w, "cloakfleet: the request is not the JSON object this route takes",
+		http.Error(w, "neverseen: the request is not the JSON object this route takes",
 			http.StatusBadRequest)
 		return false
 	}

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cloakfleet/cloakfleet/internal/detector"
-	"github.com/cloakfleet/cloakfleet/pkg/telemetry"
+	"github.com/neverseen-ai/neverseen-agent/internal/detector"
+	"github.com/neverseen-ai/neverseen-agent/pkg/telemetry"
 )
 
 // Rehydrating a stream is not rehydrating a document one line at a time.

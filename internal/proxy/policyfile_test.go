@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cloakfleet/cloakfleet/internal/detector"
-	"github.com/cloakfleet/cloakfleet/internal/vault"
+	"github.com/neverseen-ai/neverseen-agent/internal/detector"
+	"github.com/neverseen-ai/neverseen-agent/internal/vault"
 )
 
 // newStoringAgent is an agent whose policy route is armed and whose changes are
@@ -120,7 +120,7 @@ func TestAPartlyRefusedChangeIsStoredAsItLanded(t *testing.T) {
 // The store used to be deferred above the applier, so a misspelled mode — refused
 // with 422, nothing applied — created the file for the first time. From then on the
 // agent read its own empty policy in preference to the environment, so
-// CLOAKFLEET_PII_LOCALE in the operator's profile did nothing, permanently, over a
+// NEVERSEEN_PII_LOCALE in the operator's profile did nothing, permanently, over a
 // request that changed nothing. It is the counterpart of the case above, and neither
 // is meaningful alone.
 func TestARequestRefusedBeforeAnythingAppliedStoresNothing(t *testing.T) {
@@ -143,7 +143,7 @@ func TestARequestRefusedBeforeAnythingAppliedStoresNothing(t *testing.T) {
 
 // Two surfaces write this file, and they interleave.
 //
-// The menu bar and `cloakfleet mask` poll, change one field and send the whole
+// The menu bar and `neverseen mask` poll, change one field and send the whole
 // state, so a click on each within the same cycle is two of these at once. Written
 // through one fixed ".tmp" path they truncated and filled the same file under each
 // other, and what landed was one writer's document inside the other's rename — or

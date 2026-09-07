@@ -33,8 +33,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cloakfleet/cloakfleet/internal/detector"
-	"github.com/cloakfleet/cloakfleet/internal/proxy"
+	"github.com/neverseen-ai/neverseen-agent/internal/detector"
+	"github.com/neverseen-ai/neverseen-agent/internal/proxy"
 )
 
 // pollEvery is how often the agent is asked.
@@ -44,7 +44,7 @@ import (
 // had stopped would be worse than no icon: somebody would trust it.
 const pollEvery = 5 * time.Second
 
-// askTimeout is short for the same reason it is short in `cloakfleet env`: on the
+// askTimeout is short for the same reason it is short in `neverseen env`: on the
 // loopback interface the answer takes a millisecond or it is not coming, and a
 // menu bar that hung on a wedged socket would look like a wedged desktop.
 const askTimeout = 2 * time.Second
@@ -183,7 +183,7 @@ type view interface {
 // render turns a status into what the menu bar shows.
 //
 // The icon follows Masking and nothing else, so the picture and the exit code of
-// `cloakfleet status` cannot disagree. Being up is not enough to earn the masking
+// `neverseen status` cannot disagree. Being up is not enough to earn the masking
 // icon: an agent with no locale selected is healthy and recognises almost nothing,
 // and an icon that called that protected would be the icon somebody trusted while
 // their traffic went out in clear.
@@ -212,7 +212,7 @@ func render(s proxy.Status) display {
 			verdict,
 			"The agent is not answering on " + s.Addr,
 			"Your tools are reaching their provider directly",
-			"Start it with: cloakfleet proxy",
+			"Start it with: neverseen proxy",
 			"",
 		}
 	case len(s.Locales) == 0:
@@ -249,7 +249,7 @@ func render(s proxy.Status) display {
 		icon: icon,
 		// The tooltip is the one thing read without clicking, so it carries the
 		// verdict and where it applies, and nothing else.
-		tooltip: fmt.Sprintf("cloakfleet — %s (%s)", strings.ToLower(verdict), s.Addr),
+		tooltip: fmt.Sprintf("neverseen — %s (%s)", strings.ToLower(verdict), s.Addr),
 		lines:   lines,
 		// Only what the agent says it is serving. A hard-coded list would go on
 		// offering a provider a deployment had pointed elsewhere, and an agent that
@@ -426,7 +426,7 @@ func watch(ctx context.Context, v view, ask func() proxy.Status, every time.Dura
 // added without this being updated with it, and six were added past it: the
 // substitution mode, the secret level, the two lists of choices, the locales and
 // the switches. None of them was compared, and what that cost is a menu that lies.
-// No line of the menu carries the secret level, so `cloakfleet mask
+// No line of the menu carries the secret level, so `neverseen mask
 // --secret-level strong` changed nothing this looked at and the ticked row stayed
 // on the old level until something else moved; the locales are named in a state
 // line only while no category is switched off, so a locale change on an agent in

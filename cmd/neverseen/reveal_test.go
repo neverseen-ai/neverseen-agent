@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cloakfleet/cloakfleet/internal/proxy"
+	"github.com/neverseen-ai/neverseen-agent/internal/proxy"
 )
 
 // What the banner prints is the whole point of -a for the first thirty seconds of a
@@ -15,7 +15,7 @@ import (
 // wrong there is traffic going out unmasked while they watch an empty console, so it
 // is asserted rather than eyeballed.
 func TestTheBannerPrintsTheCommandToRunElsewhere(t *testing.T) {
-	t.Setenv("CLOAKFLEET_PII_LOCALE", "fr")
+	t.Setenv("NEVERSEEN_PII_LOCALE", "fr")
 	t.Setenv(proxy.EnvListen, "127.0.0.1:8799")
 
 	agent, err := proxy.FromEnv(nil, proxy.Options{
@@ -56,7 +56,7 @@ func TestTheBannerPrintsTheCommandToRunElsewhere(t *testing.T) {
 // An agent with no locale is healthy and recognises almost nothing, so an empty
 // console means one of two opposite things. The banner has to say which.
 func TestTheBannerWarnsWhenNothingWouldBeMasked(t *testing.T) {
-	t.Setenv("CLOAKFLEET_PII_LOCALE", "")
+	t.Setenv("NEVERSEEN_PII_LOCALE", "")
 
 	agent, err := proxy.FromEnv(nil, proxy.Options{
 		Audit:          io.Discard,
@@ -84,7 +84,7 @@ func TestTheBannerWarnsWhenNothingWouldBeMasked(t *testing.T) {
 // stopped carrying them would leave an operator believing the MASK lines are the
 // whole story.
 func TestTheBannerSaysWhereTheBodiesAre(t *testing.T) {
-	t.Setenv("CLOAKFLEET_PII_LOCALE", "fr")
+	t.Setenv("NEVERSEEN_PII_LOCALE", "fr")
 	key := filepath.Join(t.TempDir(), "control.key")
 	const stored = proxy.NoFile
 
@@ -120,13 +120,13 @@ func TestUsageNamesTheRevealFlags(t *testing.T) {
 	printUsage(&out)
 
 	got := out.String()
-	for _, want := range []string{"cloakfleet proxy [-a] [-v]", defaultTraceDir, "service definition"} {
+	for _, want := range []string{"neverseen proxy [-a] [-v]", defaultTraceDir, "service definition"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("the usage does not carry %q:\n%s", want, got)
 		}
 	}
 	// The command it replaces must not linger in the instructions.
-	if strings.Contains(got, "cloakfleet audit") {
+	if strings.Contains(got, "neverseen audit") {
 		t.Errorf("the usage still names a command that no longer exists:\n%s", got)
 	}
 }
@@ -134,7 +134,7 @@ func TestUsageNamesTheRevealFlags(t *testing.T) {
 // With -v alone nothing is printed per exchange, so the banner must not promise
 // lines that never arrive.
 func TestTheBannerPromisesLinesOnlyWithA(t *testing.T) {
-	t.Setenv("CLOAKFLEET_PII_LOCALE", "fr")
+	t.Setenv("NEVERSEEN_PII_LOCALE", "fr")
 
 	agent, err := proxy.FromEnv(nil, proxy.Options{
 		ControlKeyFile: filepath.Join(t.TempDir(), "control.key"),
@@ -162,7 +162,7 @@ func TestTheBannerPromisesLinesOnlyWithA(t *testing.T) {
 // The hazard is said on every start rather than left in the documentation: under a
 // service definition this output is a log file.
 func TestTheBannerWarnsAgainstAServiceDefinition(t *testing.T) {
-	t.Setenv("CLOAKFLEET_PII_LOCALE", "fr")
+	t.Setenv("NEVERSEEN_PII_LOCALE", "fr")
 
 	agent, err := proxy.FromEnv(nil, proxy.Options{
 		Audit:          io.Discard,
@@ -187,7 +187,7 @@ func TestTheBannerWarnsAgainstAServiceDefinition(t *testing.T) {
 // The sentence used to say "nothing is written to a file" unconditionally, which -v
 // made false.
 func TestTheBannerDoesNotDenyTheFileItIsWriting(t *testing.T) {
-	t.Setenv("CLOAKFLEET_PII_LOCALE", "fr")
+	t.Setenv("NEVERSEEN_PII_LOCALE", "fr")
 	key := filepath.Join(t.TempDir(), "control.key")
 	const stored = proxy.NoFile
 

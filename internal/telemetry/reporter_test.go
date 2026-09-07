@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cloakfleet/cloakfleet/pkg/pii"
-	"github.com/cloakfleet/cloakfleet/pkg/telemetry"
+	"github.com/neverseen-ai/neverseen-agent/pkg/pii"
+	"github.com/neverseen-ai/neverseen-agent/pkg/telemetry"
 )
 
 // backend is a fake supervision backend that records what reached it and

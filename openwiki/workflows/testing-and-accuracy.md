@@ -112,7 +112,7 @@ halves of the claim: that no value the caller wrote reached the provider, and th
 got it back anyway.
 
 It needs the CLI signed in and it spends the operator's quota, which is why it is opt-in
-behind `CLOAKFLEET_E2E_CLAUDE=1`.
+behind `NEVERSEEN_E2E_CLAUDE=1`.
 
 ## Conventions in the tests themselves
 

@@ -3,7 +3,7 @@ package detector
 import (
 	"sort"
 
-	"github.com/cloakfleet/cloakfleet/pkg/pii"
+	"github.com/neverseen-ai/neverseen-agent/pkg/pii"
 )
 
 // resolveOverlaps keeps one match per stretch of text and returns the survivors

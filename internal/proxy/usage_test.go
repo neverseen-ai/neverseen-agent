@@ -3,7 +3,7 @@ package proxy
 import (
 	"testing"
 
-	"github.com/cloakfleet/cloakfleet/pkg/telemetry"
+	"github.com/neverseen-ai/neverseen-agent/pkg/telemetry"
 )
 
 // Reading what a request cost, from the shapes the providers actually answer in.

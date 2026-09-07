@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cloakfleet/cloakfleet/pkg/pii"
+	"github.com/neverseen-ai/neverseen-agent/pkg/pii"
 )
 
 // The agent's own source, run through the agent's own catalogue.
@@ -41,7 +41,7 @@ var expectedSecrets = map[string]string{
 	"sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789": "a fabricated Anthropic key, so the " +
 		"end-to-end fixtures exercise a credential the catalogue actually claims",
 	"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef": "a fabricated 64-byte " +
-		"control key, the shape `cloakfleet key` writes and the extension reads",
+		"control key, the shape `neverseen key` writes and the extension reads",
 	"claude:11111111-2222-3333-4444-555555555555": "a fabricated session name, behind the " +
 		"`X-Session-Id` header the extension sends. SESSION_ID is in the generic keyword list on " +
 		"purpose — identifiers.go depends on it — and the keyword now tolerates a separator between " +

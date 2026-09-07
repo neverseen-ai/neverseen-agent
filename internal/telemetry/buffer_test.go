@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cloakfleet/cloakfleet/pkg/telemetry"
+	"github.com/neverseen-ai/neverseen-agent/pkg/telemetry"
 )
 
 func bucketAt(start time.Time, requests int) bucket {
@@ -201,7 +201,7 @@ func TestTheDroppedCountSurvivesARestart(t *testing.T) {
 }
 
 // Nothing queued and nothing lost leaves nothing behind — including the temporary
-// a failed write can strand. The installer leaves ~/.cloakfleet/ alone on purpose,
+// a failed write can strand. The installer leaves ~/.neverseen/ alone on purpose,
 // so nothing else ever would.
 func TestAnEmptyQueueLeavesNoFilesBehind(t *testing.T) {
 	dir := t.TempDir()

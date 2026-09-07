@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cloakfleet/cloakfleet/pkg/pii"
+	"github.com/neverseen-ai/neverseen-agent/pkg/pii"
 )
 
 // The score baseline counts the corpus per category and commits the result as a

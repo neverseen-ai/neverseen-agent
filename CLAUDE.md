@@ -2,10 +2,10 @@
 
 Guidance for Claude Code working in this repository.
 
-Cloakfleet is an agent installed on each workstation. It proxies the AI tools
+Neverseen is an agent installed on each workstation. It proxies the AI tools
 people use to a model provider, masking personal data and credentials on the way
 out and restoring them on the way back. Module path:
-`github.com/cloakfleet/cloakfleet`. Licence: FSL-1.1-ALv2 (source available, not
+`github.com/neverseen-ai/neverseen-agent`. Licence: FSL-1.1-ALv2 (source available, not
 open source — say "source available").
 
 The paid supervision backend is a **separate, private repository**
@@ -17,7 +17,7 @@ backend at all. Read it there when a change touches the shared contract
 ## Commands
 
 ```bash
-make build            # bin/cloakfleet
+make build            # bin/neverseen
 make test             # go test -race ./...
 make test-cover       # + coverage; the CI gate is 80%
 make lint             # golangci-lint
@@ -40,9 +40,9 @@ area: the reasoning is what stops a tempting simplification being reintroduced.
 
 ### The request path — `openwiki/architecture/request-path.md`
 
-- **One entrypoint assembles the pipeline**: `cmd/cloakfleet`. Two entrypoints
+- **One entrypoint assembles the pipeline**: `cmd/neverseen`. Two entrypoints
   drifted until the same request was masked in one and answered in clear in the
-  other. `cmd/cloakfleet-tray` is the one exception: it assembles nothing — no
+  other. `cmd/neverseen-tray` is the one exception: it assembles nothing — no
   detector, no vault, no key, no configuration. A third `main` has to clear the
   same bar (assembles no pipeline, holds no secret, pays a cost the agent would
   otherwise carry).
@@ -140,7 +140,7 @@ area: the reasoning is what stops a tempting simplification being reintroduced.
   that document is still a credential. **Anthropic only, and Anthropic is the host
   the route resolves to** (`identifierHost`), not the route's code: the same
   `session_id` on the way to another vendor is a value that vendor has no business
-  seeing, and `CLOAKFLEET_PROVIDERS=anthropic=https://gateway.internal` — the
+  seeing, and `NEVERSEEN_PROVIDERS=anthropic=https://gateway.internal` — the
   override `.env.example` documents — makes the route named "anthropic" another
   vendor. Keyed on the code, every request through that gateway carried the three
   identifiers in clear.
@@ -159,14 +159,14 @@ area: the reasoning is what stops a tempting simplification being reintroduced.
 
 - **`/test` is a real tool, not a demo.** It renders one text in both
   substitution modes, using the deployment's own detector.
-- **`cloakfleet proxy -a` prints every value replaced and restored; `-v` writes
+- **`neverseen proxy -a` prints every value replaced and restored; `-v` writes
   every exchange to `traces/` — the two request bodies and the answer.** Two
   independent flags on the one command: `-a` alone keeps nothing, `-v` alone
   records and prints nothing, and `newAuditor` builds an auditor for either —
   requiring a console to record a trace would have made the quiet half silently
   do nothing.
 - **`-l` binds somewhere other than loopback, and the agent warns rather than
-  refuses.** The address already arrived by `CLOAKFLEET_LISTEN`; the flag is the
+  refuses.** The address already arrived by `NEVERSEEN_LISTEN`; the flag is the
   same setting where a one-off run can reach it, and the command's choice wins over
   the environment as it does for every option. The guard is `proxy.BeyondLoopback`
   asked at the point the agent starts listening, **not on the flag** — the variable
@@ -180,7 +180,7 @@ area: the reasoning is what stops a tempting simplification being reintroduced.
 - **These replaced a separate `audit` command, and the guarantee it carried is
   gone.** As a command, printing in clear was a *mode* somebody entered, on a
   port of its own. As a flag it can go in a service definition — and the
-  installer sends this agent's output to `~/.cloakfleet/agent.log`, so `-a`
+  installer sends this agent's output to `~/.neverseen/agent.log`, so `-a`
   there keeps every prompt in clear for as long as the service runs. The banner
   says so on every start, because documentation is not where somebody reads it.
 - **A tool call is the one thing on the console that is neither a value nor a
@@ -199,7 +199,7 @@ area: the reasoning is what stops a tempting simplification being reintroduced.
   same gap `jsonFragment` already records, because a guessed shape prints a name no
   provider sent. What it costs is real and knowingly paid: the arguments carry the
   caller's own paths and commands, so under the installer's service `-a` files every
-  tool call of every exchange in `~/.cloakfleet/agent.log`, and a `Write` of several
+  tool call of every exchange in `~/.neverseen/agent.log`, and a `Write` of several
   kilobytes scrolls the MASK lines away — the reason bodies came off this console in
   the first place. A `TODO:` names the missing ceiling.
 - **The console carries no other body**, and that is why nothing marks one any more:
@@ -259,18 +259,18 @@ area: the reasoning is what stops a tempting simplification being reintroduced.
   selected is healthy and recognises almost nothing. `Status.Level` is deliberately
   not `Masking`: an agent with a category switched off *is* masking, and reporting
   that alone is the green light over the values that are not being replaced. The
-  exit code of `cloakfleet status` and the menu bar icon both follow **Level**, so
+  exit code of `neverseen status` and the menu bar icon both follow **Level**, so
   zero means "everything this configuration loaded is being replaced".
 - **A level counts the effect, `Disabled` records the intent, and the level counts
   only what the loaded patterns can emit** (`disabledInPlay`). Against the raw
   disabled set the two disagreed: with `fr` alone and a US category switched off,
   the level said "partial" while every surface listing what is off filtered that
-  category out as unrecognisable — so `cloakfleet status` printed "masking, with 0
+  category out as unrecognisable — so `neverseen status` printed "masking, with 0
   categories in clear", the icon went amber over the same nought and the exit code
   was non-zero. The policy still remembers the switch, so loading `us` later finds
   the category still off. `TestTheLevelCountsOnlyWhatTheDetectorCanEmit` holds both
   halves: unreachable stays full, reachable still drops to partial.
-- **`cloakfleet mask` and the menu bar are the two surfaces, and both go through
+- **`neverseen mask` and the menu bar are the two surfaces, and both go through
   `proxy.SetPolicy`** — the one writer, as `proxy.Query` is the one asker. The command
   exists because the menu bar is Cocoa and a Linux workstation had the route and no
   way to reach it. It accepts a family name as well as a category code, and lists only
@@ -342,7 +342,7 @@ area: the reasoning is what stops a tempting simplification being reintroduced.
   reported as masked by `scan` and forwarded in clear by the agent beside it — the
   "two entrypoints drifted" failure, between two commands of one binary.
 - **What a surface changed survives the restart, and the file is the state**
-  (`~/.cloakfleet/policy.json`). Everything the menu bar could do lasted as long as
+  (`~/.neverseen/policy.json`). Everything the menu bar could do lasted as long as
   the process: somebody unticked a category, restarted, and the agent came back
   masking it while the menu they set said otherwise on the next click. The file holds
   the four fields `PUT /policy` carries, in the same shape, because it *is* that
@@ -352,7 +352,7 @@ area: the reasoning is what stops a tempting simplification being reintroduced.
   is not a transaction and what must survive is what the agent *is*; `off` is stored
   as the **intent**, unreachable categories included, for the reason `disabledInPlay`
   exists. **It wins over the environment** — the environment configures an agent
-  nobody has said anything to yet — so with the file present `CLOAKFLEET_PII_LOCALE`
+  nobody has said anything to yet — so with the file present `NEVERSEEN_PII_LOCALE`
   does nothing and deleting it hands the agent back; the start-up line says which of
   the two was read. A file that cannot be read leaves the environment's configuration
   alone rather than stopping the agent, and nothing is written until something changes
@@ -373,7 +373,7 @@ area: the reasoning is what stops a tempting simplification being reintroduced.
   of one.
 - **A category can be switched off, and `PUT /policy` is the only way.** It is the
   one route that changes what the agent does and the only authenticated one: a
-  secret in `~/.cloakfleet/control.key` (0600), in a custom header, which is what a
+  secret in `~/.neverseen/control.key` (0600), in a custom header, which is what a
   browser cannot set cross-origin. Left open, any local process — or a page
   somebody visits — could disable the control silently. The whole set is replaced,
   never toggled: two surfaces on one agent interleave the halves of a
@@ -502,7 +502,7 @@ area: the reasoning is what stops a tempting simplification being reintroduced.
 - **`State` says how the agent itself is exposed** — `Console`, `Tracing`,
   `Exposed`, `Rerouted`, `Allowlisted`. An agent applying its whole catalogue is
   still a risk if `-a` is filing the day's prompts under the installer's service.
-- **`cloakfleet replay` is read-only.** A bucket rebuilt from traces shares no
+- **`neverseen replay` is read-only.** A bucket rebuilt from traces shares no
   window boundary with one filed live, so the backend's `(agent, window)` key would
   not recognise a retry and every count would double. The mapping it decides
   `Restored` against is the trace's own (`recoverMapping`), because token indices
@@ -524,9 +524,9 @@ area: the reasoning is what stops a tempting simplification being reintroduced.
 - **The icons are generated and committed**
   (`go run ./internal/tray/icons/generate.go`).
 - **The installer never exports a base URL into a shell profile.** It adds
-  `eval "$(cloakfleet env)"`, which prints nothing when the agent is stopped —
+  `eval "$(neverseen env)"`, which prints nothing when the agent is stopped —
   availability over enforcement, on purpose. It touches no login file unless asked
-  (`--shell`), and `--uninstall` leaves `~/.cloakfleet/` alone.
+  (`--shell`), and `--uninstall` leaves `~/.neverseen/` alone.
 
 ## Conventions
 
@@ -629,7 +629,7 @@ The catalogue, the locales and the substitution modes in full:
   Cambridgeshire) and `42750 Mars` (a commune in the Loire), and a prefix match would
   drop `14320 May-sur-Orne` — a guessed list here forwards a real address in clear.
 - **A token prefix is not a category code, and `CatDOB` is where they differ.** The
-  code stays `DOB` — the corpus, the counters and `cloakfleet mask --off` all name it
+  code stays `DOB` — the corpus, the counters and `neverseen mask --off` all name it
   — while the prefix is `DATE`, because the token is read by a model and `[DATE_1]`
   says what the value was where `[DOB_1]` is an acronym it has to guess at.
 - **`NAME=value` is evidence in configuration and noise in source code.**
@@ -952,7 +952,7 @@ The catalogue, the locales and the substitution modes in full:
   downstream is reading it under a bound.** `Query` read `/healthz` under 8KiB; the
   second tier took the body to 10.7KiB, the read truncated, and the parse — quiet by
   design, "a body that will not parse still means something answered" — left every
-  field empty. `cloakfleet status` printed nothing, the icon drew nothing and the exit
+  field empty. `neverseen status` printed nothing, the icon drew nothing and the exit
   code said something was wrong, over an agent answering perfectly.
   `TestHealthPayloadFitsTheQueryBound` fails at *half* the bound, so the batch that
   would break it is the one that still gets to choose the number.

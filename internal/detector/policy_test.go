@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/cloakfleet/cloakfleet/pkg/pii"
+	"github.com/neverseen-ai/neverseen-agent/pkg/pii"
 )
 
 func TestASwitchedOffCategoryIsNotMasked(t *testing.T) {
@@ -123,7 +123,7 @@ func TestMaskingLevel(t *testing.T) {
 //
 // With only "fr" loaded, switching off a US-only category made Masking say
 // "partial" while every surface that lists what is off filtered that category out
-// as unrecognisable. `cloakfleet status` printed "masking, with 0 categories in
+// as unrecognisable. `neverseen status` printed "masking, with 0 categories in
 // clear", the menu bar drew the amber icon over the same nought, and the exit code
 // was non-zero — a level and a count read off two different sets.
 func TestTheLevelCountsOnlyWhatTheDetectorCanEmit(t *testing.T) {

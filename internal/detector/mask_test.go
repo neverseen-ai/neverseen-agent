@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/cloakfleet/cloakfleet/pkg/pii"
+	"github.com/neverseen-ai/neverseen-agent/pkg/pii"
 )
 
 // Masking is only half the product. The other half is that the caller gets its

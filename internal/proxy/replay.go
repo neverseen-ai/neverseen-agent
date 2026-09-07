@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cloakfleet/cloakfleet/internal/detector"
-	"github.com/cloakfleet/cloakfleet/internal/telemetry"
-	"github.com/cloakfleet/cloakfleet/pkg/pii"
-	contract "github.com/cloakfleet/cloakfleet/pkg/telemetry"
+	"github.com/neverseen-ai/neverseen-agent/internal/detector"
+	"github.com/neverseen-ai/neverseen-agent/internal/telemetry"
+	"github.com/neverseen-ai/neverseen-agent/pkg/pii"
+	contract "github.com/neverseen-ai/neverseen-agent/pkg/telemetry"
 )
 
 // Rebuilding the heartbeat from trace files.

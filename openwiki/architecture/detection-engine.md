@@ -54,7 +54,7 @@ configuration.
 
 | Field | What it decides |
 | --- | --- |
-| `Prefix` | the name inside a token — `EMAIL` gives `[EMAIL_1]`. **Not the category code**, and `CatDOB` is where the two differ: the code stays `DOB` (the corpus, the counters and `cloakfleet mask --off` all name it) while the prefix is `DATE`, because the token is read by a model and `[DATE_1]` says what the value was where `[DOB_1]` is an acronym it has to guess at |
+| `Prefix` | the name inside a token — `EMAIL` gives `[EMAIL_1]`. **Not the category code**, and `CatDOB` is where the two differ: the code stays `DOB` (the corpus, the counters and `neverseen mask --off` all name it) while the prefix is `DATE`, because the token is read by a model and `[DATE_1]` says what the value was where `[DOB_1]` is an acronym it has to guess at |
 | `Score` | confidence 1–100; orders candidates competing for the same span and gates against the reporting threshold. **Not a probability**, and no two categories' scores need to be comparable in any other sense |
 | `Verify` | the rule the regex cannot express — a checksum, almost always. Nil when the shape stands on its own |
 | `Secret` | marks a credential; credentials **outrank** the confidence scale in overlap resolution |
@@ -496,9 +496,9 @@ including both references in this tree. Neither is meaningful alone.
 `SECRET_GENERIC` is the one pattern whose evidence is a *name* beside the value, so the
 value itself may be a generated key or an ordinary word. The level says how far down
 that scale to mask, and `Detector.strongEnough` drops a match below it. The starting
-value is `CLOAKFLEET_SECRET_LEVEL` (`detector.EnvSecretLevel`, parsed by
+value is `NEVERSEEN_SECRET_LEVEL` (`detector.EnvSecretLevel`, parsed by
 `ParseSecretLevel`; `SecretLevels` lists the names a surface may offer), and the menu
-bar, `cloakfleet mask --secret-level` and `PUT /policy` move it while the agent runs.
+bar, `neverseen mask --secret-level` and `PUT /policy` move it while the agent runs.
 
 | Level | Masks | For |
 |---|---|---|
@@ -737,7 +737,7 @@ match is dropped whole rather than clipped.
 ## Substitution modes
 
 `Substitution` (`internal/detector/policy.go:118`, `ParseSubstitution` at `:142`) is `token`
-or `fake`, read from `CLOAKFLEET_PII_SUBSTITUTION`. The zero value is `token`, so a `Config` built by hand keeps
+or `fake`, read from `NEVERSEEN_PII_SUBSTITUTION`. The zero value is `token`, so a `Config` built by hand keeps
 the reversible behaviour without saying so.
 
 `Detector.render` (`mask.go:102`) applies the mode to one index:

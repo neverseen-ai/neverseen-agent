@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/cloakfleet/cloakfleet/pkg/telemetry"
+	"github.com/neverseen-ai/neverseen-agent/pkg/telemetry"
 )
 
 func TestReadCommandNamesProgramsAndClasses(t *testing.T) {

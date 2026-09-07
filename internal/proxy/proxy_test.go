@@ -13,8 +13,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/cloakfleet/cloakfleet/internal/detector"
-	"github.com/cloakfleet/cloakfleet/internal/vault"
+	"github.com/neverseen-ai/neverseen-agent/internal/detector"
+	"github.com/neverseen-ai/neverseen-agent/internal/vault"
 )
 
 // The proxy's job is a round trip, and both halves have to be asserted on bytes:

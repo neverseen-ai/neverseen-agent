@@ -23,8 +23,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cloakfleet/cloakfleet/pkg/pii"
-	"github.com/cloakfleet/cloakfleet/pkg/telemetry"
+	"github.com/neverseen-ai/neverseen-agent/pkg/pii"
+	"github.com/neverseen-ai/neverseen-agent/pkg/telemetry"
 )
 
 // SessionIdle is how long a session outlives its last request before it is

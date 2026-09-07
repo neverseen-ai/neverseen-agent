@@ -11,7 +11,7 @@ coverage.html
 # is not something to commit by reflex.
 e2e-artefacts/
 
-# What `cloakfleet proxy -v` writes: both bodies of every exchange it saw, in
+# What `neverseen proxy -v` writes: both bodies of every exchange it saw, in
 # clear. Evidence of one run and nothing else — and unlike the artefacts above,
 # these hold somebody's real data, so committing one is a leak rather than noise.
 traces/

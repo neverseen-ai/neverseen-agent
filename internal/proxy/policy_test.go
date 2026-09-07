@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cloakfleet/cloakfleet/internal/detector"
-	"github.com/cloakfleet/cloakfleet/internal/vault"
-	"github.com/cloakfleet/cloakfleet/pkg/pii"
+	"github.com/neverseen-ai/neverseen-agent/internal/detector"
+	"github.com/neverseen-ai/neverseen-agent/internal/vault"
+	"github.com/neverseen-ai/neverseen-agent/pkg/pii"
 )
 
 const testControlKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -480,7 +480,7 @@ func TestStatusNamesWhatIsInClear(t *testing.T) {
 	status.Write(&out)
 
 	got := out.String()
-	// "In clear" rather than "switched off", and the same words `cloakfleet mask`
+	// "In clear" rather than "switched off", and the same words `neverseen mask`
 	// uses: the two commands report on one agent, and the hand-written pair had
 	// drifted into describing the same category two ways. Headline is the one
 	// sentence now; see TestBothSurfacesOpenOnTheSameSentence.

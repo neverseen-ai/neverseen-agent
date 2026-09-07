@@ -30,7 +30,7 @@ providers work on one port: six of them speak the same OpenAI-compatible paths, 
 with the list of the ones that exist (`proxy.go:309-316`) — a proxy that silently picked
 a provider would send one vendor's key to another vendor.
 
-`CLOAKFLEET_PROVIDERS` applies `code=url` **overrides** onto the default set rather than
+`NEVERSEEN_PROVIDERS` applies `code=url` **overrides** onto the default set rather than
 replacing it (`ParseProviders`, `provider.go:51`): a deployment pointing one provider at
 its own gateway must not silently lose the other seven.
 
@@ -133,7 +133,7 @@ Four rules hold it narrow:
   `session_id` on the way to another vendor is a value that vendor has no business seeing,
   and it stays masked (`TestAnotherProviderStillMasksTheSameIdentifiers`). The decision is
   keyed on the host the route resolves to (`identifierHost`), not on the route's code:
-  `CLOAKFLEET_PROVIDERS=anthropic=https://gateway.internal` makes the route named
+  `NEVERSEEN_PROVIDERS=anthropic=https://gateway.internal` makes the route named
   "anthropic" another vendor, and keyed on the name it sent the identifiers there in clear
   (`TestARouteNamedAnthropicPointedElsewhereEarnsNoExemption`).
 - **Read from that field, applied by value.** The same session id also arrives inside the
@@ -305,7 +305,7 @@ that reading is unverified against a real stream.
 ## `/healthz` and the local callers
 
 `proxy.Health` (`status.go:27`) is **one type for both sides of the route**: the server
-marshals it, and every local caller — `cloakfleet status`, `cloakfleet env`, the menu bar —
+marshals it, and every local caller — `neverseen status`, `neverseen env`, the menu bar —
 unmarshals it in the same package, so the two cannot come to disagree about a field name.
 
 It carries what the agent is *applying* and nothing about who is using it: no counters, no
@@ -322,7 +322,7 @@ would call fine while the traffic went out in clear.
 further in. An agent with a category switched off *is* masking: most of the catalogue, and
 the credentials always. Reporting that as simply "masking" is the green light over the
 values that are not being replaced, so there are three answers (`detector.LevelNone`,
-`LevelPartial`, `LevelFull`), and the exit code of `cloakfleet status` and the menu bar
+`LevelPartial`, `LevelFull`), and the exit code of `neverseen status` and the menu bar
 icon both follow this rather than `Masking()`. An agent that answers without the field is
 read from what it did carry: a build with no policy route cannot have anything switched
 off, so `LevelFull` is a fact about that build rather than an assumption.
@@ -337,7 +337,7 @@ configuration — safe unauthenticated on the loopback because the worst it give
 process is that description. This one switches masking off, and left open, any local
 process could disable the control; so could a page in a browser, because a form post to
 `127.0.0.1` needs nobody's permission. What closes it is a secret in
-`~/.cloakfleet/control.key` (0600) sent in a custom header — which is precisely what a
+`~/.neverseen/control.key` (0600) sent in a custom header — which is precisely what a
 browser cannot set on a simple cross-origin request, so no page on the internet can reach
 it at all. That is the mechanism, not politeness about CORS, which the agent does not
 implement and must not.

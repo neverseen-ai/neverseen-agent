@@ -29,7 +29,7 @@ export const CONVERSATION = '9f1c0d2e-4b6a-4f31-8a5e-2c7d1e0b3a44';
 /** selfSigned mints a certificate for claude.ai. Chrome is told to ignore
  * certificate errors, so this only has to exist. */
 function selfSigned() {
-  const dir = mkdtempSync(join(tmpdir(), 'cloakfleet-e2e-'));
+  const dir = mkdtempSync(join(tmpdir(), 'neverseen-e2e-'));
   const key = join(dir, 'key.pem');
   const cert = join(dir, 'cert.pem');
   execFileSync('openssl', [
@@ -135,12 +135,12 @@ const PAGE = `<!doctype html>
       const onMessage = (event) => {
         if (event.source !== window) return;
         const message = event.data;
-        if (!message || message.source !== 'cloakfleet:relay' || message.id !== id) return;
+        if (!message || message.source !== 'neverseen:relay' || message.id !== id) return;
         window.removeEventListener('message', onMessage);
         resolve(message.reply);
       };
       window.addEventListener('message', onMessage);
-      window.postMessage({ source: 'cloakfleet:page', id, ask }, '*');
+      window.postMessage({ source: 'neverseen:page', id, ask }, '*');
       setTimeout(() => {
         window.removeEventListener('message', onMessage);
         resolve({ ok: false, reason: 'timeout', message: 'no answer' });

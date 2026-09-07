@@ -50,12 +50,12 @@ export function diagnose(
   if (!agent.ok) {
     return {
       level: 'none',
-      headline: 'Cloakfleet is not running',
+      headline: 'Neverseen is not running',
       body:
         `Nothing answered at ${baseUrl}. Your web chats reach the model directly, ` +
         'unmasked — which is deliberate: a stopped agent leaves your tools working ' +
         'rather than broken. Nothing is sent through this extension while it is down.',
-      command: 'cloakfleet proxy',
+      command: 'neverseen proxy',
     };
   }
 
@@ -66,7 +66,7 @@ export function diagnose(
       body:
         'The agent is running. It needs the control key before this extension may ' +
         'ask it to mask anything. Print it and paste it below.',
-      command: 'cloakfleet key',
+      command: 'neverseen key',
     };
   }
 
@@ -79,7 +79,7 @@ export function diagnose(
           'The agent is running and does not accept the key stored here — it was ' +
           'rotated, or it belongs to a different agent. Print the current one and ' +
           'paste it below.',
-        command: 'cloakfleet key',
+        command: 'neverseen key',
       };
     }
     return {
@@ -102,7 +102,7 @@ export function diagnose(
         'The agent is answering and this extension can reach it, but no country ' +
         'pattern set is loaded — so only the locale-independent identifiers and the ' +
         'credentials are recognised at all.',
-      command: `cloakfleet mask --locales ${(health.available_locales ?? ['fr']).join(',')}`,
+      command: `neverseen mask --locales ${(health.available_locales ?? ['fr']).join(',')}`,
     };
   }
 
@@ -117,7 +117,7 @@ export function diagnose(
       // Named, not counted. A count sends somebody looking; the names tell them
       // whether the one they care about is among them.
       details: off,
-      command: 'cloakfleet mask',
+      command: 'neverseen mask',
     };
   }
 
@@ -142,18 +142,18 @@ export function blockedMessage(reason: Reason, detail = ''): string {
   switch (reason) {
     case 'unreachable':
       return (
-        'Cloakfleet: your message was not sent, because the agent on this machine is ' +
-        'not answering and nothing would have masked it. Start it with `cloakfleet proxy`.'
+        'Neverseen: your message was not sent, because the agent on this machine is ' +
+        'not answering and nothing would have masked it. Start it with `neverseen proxy`.'
       );
     case 'unconfigured':
       return (
-        'Cloakfleet: your message was not sent, because this extension has no control ' +
-        'key yet. Run `cloakfleet key` and paste it into the extension’s options.'
+        'Neverseen: your message was not sent, because this extension has no control ' +
+        'key yet. Run `neverseen key` and paste it into the extension’s options.'
       );
     case 'unauthorised':
       return (
-        'Cloakfleet: your message was not sent, because the agent refused this ' +
-        'extension’s key. Run `cloakfleet key` and paste the current one into its options.'
+        'Neverseen: your message was not sent, because the agent refused this ' +
+        'extension’s key. Run `neverseen key` and paste the current one into its options.'
       );
     default:
       // The agent's own words when there are any. There are none when this is
@@ -161,8 +161,8 @@ export function blockedMessage(reason: Reason, detail = ''): string {
       // a sentence supplied by the page is arbitrary text behind this extension's
       // name. The options page is where the agent's answer can be read in full.
       return detail
-        ? 'Cloakfleet: your message was not sent — ' + detail
-        : 'Cloakfleet: your message was not sent, because the agent refused to mask it. ' +
+        ? 'Neverseen: your message was not sent — ' + detail
+        : 'Neverseen: your message was not sent, because the agent refused to mask it. ' +
           'The extension’s options page says what it answered.';
   }
 }
@@ -181,12 +181,12 @@ export function noteMessage(note: Note, reason: Reason): string {
       // "your message was not sent" here would send somebody looking for a message
       // that did in fact arrive.
       return (
-        'Cloakfleet: the answer below could not be turned back into your own values, ' +
+        'Neverseen: the answer below could not be turned back into your own values, ' +
         'so it shows the replacements instead. Nothing was lost, and nothing left this machine.'
       );
     case 'transport':
       return (
-        'Cloakfleet: this page tried to send over a transport that cannot be masked, ' +
+        'Neverseen: this page tried to send over a transport that cannot be masked, ' +
         'so it was blocked. Nothing left this machine in clear.'
       );
     default:

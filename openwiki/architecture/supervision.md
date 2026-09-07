@@ -1,7 +1,7 @@
 # Supervision (`pkg/telemetry` + `internal/telemetry`)
 
 Supervision is **optional, and the agent is a complete product without it**. Set
-`CLOAKFLEET_BACKEND_URL` and an enrolment token and the agent reports every five minutes:
+`NEVERSEEN_BACKEND_URL` and an enrolment token and the agent reports every five minutes:
 how many requests it proxied, how many values it masked in which categories, how many
 tokens went to which model, and what configuration it is actually applying.
 
@@ -138,7 +138,7 @@ masking oracle), `Rerouted` (provider codes whose route does not go to the vendo
 host — a gateway the masked traffic reaches that the dashboard would otherwise not know
 about), and `Allowlisted` (how many values are exempted — a count, never the values). An
 agent applying its whole catalogue is still a risk if it is keeping the day's prompts in
-`~/.cloakfleet/agent.log`, and a security officer has to see that from the row.
+`~/.neverseen/agent.log`, and a security officer has to see that from the row.
 
 `Counters` gained the control's own health: `Refused` (the fail-closed 415 — a steady rate
 is a tool that will end up pointed around the agent), `Upstream` (how the providers
@@ -155,7 +155,7 @@ A full batch of sixty of these buckets is several times the size it was;
 `TestAFullBatchFitsTheBackendsBodyBound` holds it at half the backend's 1 MiB body bound,
 the `/healthz` lesson applied to the other payload.
 
-### Rebuilding the heartbeat from traces (`cloakfleet replay`)
+### Rebuilding the heartbeat from traces (`neverseen replay`)
 
 A trace holds almost everything a heartbeat is made of, one exchange per file, and
 `internal/proxy/replay.go` reads them back through the same recorder the agent uses:
@@ -195,12 +195,12 @@ a real machine.
 
 `EnrolRequest` / `EnrolResponse` (`contract.go:495`): the operator's token is presented once
 and traded for a per-agent id and key, the way Wazuh's enrolment works, so one workstation
-can be revoked without touching the others. Requests carry `X-Cloakfleet-Agent` and
-`X-Cloakfleet-Signature`; `Sign` / `VerifySignature` (`contract.go:547`) are the HMAC pair,
+can be revoked without touching the others. Requests carry `X-Neverseen-Agent` and
+`X-Neverseen-Signature`; `Sign` / `VerifySignature` (`contract.go:547`) are the HMAC pair,
 shared by both repositories so they cannot disagree.
 
 The issued identity is stored by `internal/telemetry/identity.go` at
-`~/.cloakfleet/agent.json` by default, in a private directory
+`~/.neverseen/agent.json` by default, in a private directory
 (`TestIdentityDirectoryIsPrivate`). An incomplete identity file is refused rather than
 half-used (`TestIncompleteIdentityIsRefused`); a missing one is not an error.
 
@@ -311,7 +311,7 @@ interval; driving it to zero means writing on every request, which the request p
 pay for (`TestAKilledProcessLosesOnlyWhatWasNotSnapshotted`).
 
 At shutdown the command **waits for the last report** (`serveAgent`,
-`cmd/cloakfleet/main.go`): without it, the process exits as soon as the server has shut down
+`cmd/neverseen/main.go`): without it, the process exits as soon as the server has shut down
 and the final heartbeat is cut off mid-flight — the dashboard's last few minutes before a
 restart are simply missing. The wait is bounded at 20s, because a hung backend must not stop
 the agent from stopping (`TestTheLastWindowIsFiledBeforeTheCommandReturns`,
@@ -323,7 +323,7 @@ the agent from stopping (`TestTheLastWindowIsFiledBeforeTheCommandReturns`,
 configuration it was built with, because the question a security officer is asking is not
 "what was it told to do" but "what is it doing" — an agent running with no locale selected
 masks almost nothing while looking perfectly healthy. `proxy.Version` is a package variable
-stamped by the command at start-up (`agent.go:28`, `cmd/cloakfleet/main.go:243`), because a dashboard showing "dev" for
+stamped by the command at start-up (`agent.go:28`, `cmd/neverseen/main.go:243`), because a dashboard showing "dev" for
 every workstation is a fleet nobody can audit.
 
 ## Where to start on a change here

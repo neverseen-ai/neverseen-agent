@@ -1,4 +1,4 @@
-module github.com/cloakfleet/cloakfleet
+module github.com/neverseen-ai/neverseen-agent
 
 go 1.26
 

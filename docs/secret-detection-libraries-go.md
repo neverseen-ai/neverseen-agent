@@ -2,7 +2,7 @@
 
 Surveyed **30 August 2026**, betterleaks added **3 September 2026** (stars and push
 dates read from the public GitHub API). This is a scouting note, not an architecture
-decision: no code here is imported by cloakfleet, and none is planned. What has crossed
+decision: no code here is imported by neverseen, and none is planned. What has crossed
 over is reasoning — see betterleaks below, which is where three of this catalogue's
 patterns were fixed and two of its refusals were confirmed.
 
@@ -160,7 +160,7 @@ a file and has no file type to read, which is why `GenericSecretCheck` reaches
 the same conclusion from the shape of the value instead. Two routes to one
 insight; only one of them is open here.
 
-## What this changes for cloakfleet
+## What this changes for neverseen
 
 None of these libraries replaces `pkg/pii`: they detect credentials, not localised
 personal data, and **none of them does reversible substitution** — that is our job,
