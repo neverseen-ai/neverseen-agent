@@ -77,6 +77,12 @@ func TestTestPageOpensOnTheSample(t *testing.T) {
 	if strings.Contains(got.body, "Simulated configuration") {
 		t.Errorf("an untouched page must not say it is simulating:\n%s", excerpt(got.body))
 	}
+
+	// A row of switches carries its all/none toggle; a row of credentials, which
+	// has no switches, must not offer one.
+	if n := strings.Count(got.body, `data-set="1"`); n == 0 || n >= len(strings.Split(got.body, `class="row"`))-1 {
+		t.Errorf("want a toggle on the switchable rows only, got %d:\n%s", n, excerpt(got.body))
+	}
 }
 
 // The switches simulate; they never write. The page is unauthenticated and, under

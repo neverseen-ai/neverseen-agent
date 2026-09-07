@@ -31,9 +31,11 @@ import (
 // unmasked again and compared to the input, so the page says whether this text
 // round-trips exactly.
 //
-// Deliberately plain. A form POST re-renders server-side, no JavaScript, nothing
-// to keep in sync. The one thing it must get right is escaping, since it echoes
-// text somebody typed — hence html/template rather than concatenation.
+// Deliberately plain. A form POST re-renders server-side and nothing is kept in
+// sync in the browser; the one script on the page ticks or clears a row of
+// switches and the page is whole without it. The one thing it must get right is
+// escaping, since it echoes text somebody typed — hence html/template rather
+// than concatenation.
 
 // playgroundMaxBytes caps the submitted text. The catalogue is dozens of
 // expressions run over the whole input, and a page that accepts a POST should not

@@ -38,6 +38,10 @@
   .key { color: var(--muted); font-weight: 600; text-transform: uppercase;
          letter-spacing: .06em; font-size: .7rem; min-width: 8rem; }
   .row label { white-space: nowrap; }
+  .toggle { color: var(--muted); }
+  .toggle button { padding: 0 .2em; border: 0; font-size: inherit; color: var(--muted);
+                   text-decoration: underline; }
+  .toggle button:hover { color: inherit; }
   .row .locked { color: var(--muted); }
   mark { background: #ffd54f66; color: inherit; border-radius: 2px; padding: 0 .1em; }
   .bar { margin-bottom: 1rem; display: flex; gap: .75rem; align-items: baseline; flex-wrap: wrap; }
@@ -88,6 +92,9 @@ changed.</p>
     {{ range .Groups }}
     <div class="row">
       <span class="key">{{ .Label }}</span>
+      {{ if not .Locked }}
+      <span class="toggle"><button type="button" data-set="1">all</button> / <button type="button" data-set="0">none</button></span>
+      {{ end }}
       {{ range .Categories }}
       {{ if not .Locked }}
       <label><input type="checkbox" name="on" value="{{ .Code }}"{{ if not .Off }} checked{{ end }}> {{ .Label }}</label>
@@ -132,6 +139,19 @@ changed.</p>
   in exchange for an answer carrying values nobody can check. Tokens are restored
   in full, credentials included.</p>
 </form>
+
+<script>
+  // The one script on the page, and a convenience only: it ticks or clears the
+  // switches of the row it sits in. Without it the row is a row of checkboxes,
+  // which is what it was — nothing here is computed, nothing is sent.
+  document.querySelectorAll(".toggle button").forEach(function (b) {
+    b.addEventListener("click", function () {
+      b.closest(".row").querySelectorAll('input[name="on"]').forEach(function (c) {
+        c.checked = b.dataset.set === "1";
+      });
+    });
+  });
+</script>
 
 {{ if .Findings }}
 <table>
