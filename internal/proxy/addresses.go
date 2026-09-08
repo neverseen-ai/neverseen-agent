@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"net"
+	"os"
 	"sort"
 )
 
@@ -81,4 +82,21 @@ func localAddresses() []string {
 		all = all[:maxAddresses]
 	}
 	return all
+}
+
+// hostname is what the machine calls itself, or "" when it cannot say.
+//
+// Reported beside the addresses and for the same question — which machine is
+// this — but it answers the way an operator asks it: an address needs a directory
+// to become a machine and a name is one already.
+//
+// The error is swallowed, as it is for the addresses: an agent that refused to
+// report because it could not read its own name would be a masking proxy taken
+// down by a reporting detail, and the backend still has the agent id.
+func hostname() string {
+	name, err := os.Hostname()
+	if err != nil {
+		return ""
+	}
+	return name
 }

@@ -47,15 +47,27 @@ time one did.
 string field not on an explicit allow list, each entry carrying its reason. A new string
 field fails the build until it is listed. Do not add one to make a dashboard nicer.
 
-**`State.Addresses` is the one field in the contract that is personal data**, and it is the
-exception that shows what the rule means (`contract.go:198`). Everything else is a count, a
-category name or a build string; an IP address identifies a machine and through it a person.
-It is there because the fleet view's whole purpose collapses without it — "agt_4742be… is
-silent" sends somebody to a database, "the laptop at 10.4.2.87 is silent" sends them to a
-desk. It is still not *content*: no prompt, response or detected value can travel in it,
-which is the invariant the test defends. Its `allowedStrings` entry says so, and the README
-says so to the operator, so a customer's DPO reads it in the documentation rather than
-finding it in a database.
+**`State.Addresses` and `State.Hostname` are the two fields in the contract that are
+personal data**, and they are the exception that shows what the rule means (`contract.go`).
+Everything else is a count, a category name or a build string; an IP address identifies a
+machine and through it a person. They are there because the fleet view's whole purpose
+collapses without them — "agt_4742be… is silent" sends somebody to a database, "the laptop
+at 10.4.2.87 is silent" sends them to a desk. Neither is *content*: no prompt,
+response or detected value can travel in them, which is the invariant the test defends.
+Their `allowedStrings` entries say so, and the README says so to the operator, so a
+customer's DPO reads it in the documentation rather than finding it in a database.
+
+**The hostname is the more direct of the two, knowingly.** A workstation is very often named
+after the person using it, so it can carry a name where an address only carries a machine —
+and that is the reason to report it rather than a reason not to: it is the identifier an
+operator already recognises, and the one that stays put when a laptop moves between networks
+and its address does not. Sent as the operating system gives it (`hostname`,
+`internal/proxy/addresses.go`), never resolved — a lookup would put this agent's reporting
+on the network's DNS and let a slow resolver delay a heartbeat — and never hashed, which
+would keep the personal data and lose the use. Empty when the machine cannot say, which
+costs nothing: the backend still has the agent id and the address it observes the connection
+from. Read at each heartbeat with the addresses, because a machine renamed while the agent
+runs would otherwise report the old name until somebody restarted it.
 
 **Local addresses, deliberately, not the public one.** On a corporate network the private
 address distinguishes one workstation from another while the egress address is shared by the

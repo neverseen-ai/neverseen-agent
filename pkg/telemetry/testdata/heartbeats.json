@@ -19,6 +19,7 @@
       "192.0.2.47",
       "2001:db8::47"
     ],
+    "hostname": "workstation-47.example",
     "masking": "partial",
     "switched_off": [
       "IP_ADDRESS",

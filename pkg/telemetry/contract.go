@@ -182,13 +182,14 @@ type State struct {
 	// the question behind every row of the fleet view: "agt_4742be… is silent" is
 	// not actionable, "the laptop at 10.4.2.87 belonging to Marie is silent" is.
 	//
-	// This is the one field in this contract that is personal data. It is here
-	// deliberately and it is the exception that proves the rule: everything else
-	// is a count, a category name or a build string. An address is not content —
-	// no prompt, no response and no detected value can travel in it — but it does
-	// identify a machine and, through it, a person. It is declared in the
-	// allow-list with that reasoning, and named in the README, so a customer's DPO
-	// reads it in the documentation rather than discovering it in a database.
+	// This and Hostname below are the two fields in this contract that are
+	// personal data. They are here deliberately and they are the exception that
+	// proves the rule: everything else is a count, a category name or a build
+	// string. Neither is content — no prompt, no response and no detected value
+	// can travel in them — but both identify a machine and, through it, a person.
+	// Each is declared in the allow-list with that reasoning, and named in the
+	// README, so a customer's DPO reads them in the documentation rather than
+	// discovering them in a database.
 	//
 	// Local addresses, not the public one: on a corporate network the private
 	// address is what distinguishes one workstation from another, while the egress
@@ -196,6 +197,29 @@ type State struct {
 	// observes the connection coming from separately — which also means this field
 	// being wrong or absent costs nothing that matters.
 	Addresses []string `json:"addresses,omitempty"`
+
+	// Hostname is what the machine calls itself.
+	//
+	// The same question as Addresses, answered the way an operator actually asks
+	// it: an address needs a directory to become a machine, and a name is one
+	// already. It is also the field that survives what the address does not — a
+	// laptop moving between networks reports a different address every day and the
+	// same name throughout.
+	//
+	// The second field in this contract that is personal data, and the more direct
+	// of the two: a workstation is very often named after the person using it, so
+	// this can carry a name where an address only ever carries a machine. It is
+	// here for exactly that reason — recognising the person's machine is the point
+	// — and so it is declared in the allow-list and named in the README beside the
+	// addresses, rather than being discovered in a database. Truncating or hashing
+	// it would keep the personal data and lose the use.
+	//
+	// Reported as the operating system gives it, never resolved and never
+	// completed: a lookup would put this agent's reporting on the network's DNS,
+	// and a workstation that answers slowly would delay a heartbeat. Empty when
+	// the machine cannot say, which costs nothing that matters — the backend still
+	// has the agent id and the address it observes the connection from.
+	Hostname string `json:"hostname,omitempty"`
 
 	// Masking is how much of the catalogue the agent is applying: "full",
 	// "partial" or "none".

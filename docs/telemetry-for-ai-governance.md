@@ -116,9 +116,9 @@ clear, and the fleet view has to show that from the row.
 ## What it deliberately does not say
 
 - **No content, no identifiers.** No session id, no user, no file path, no command
-  line, no URL, no value. `state.addresses` — the machine's own local IP addresses —
-  is the one field that is personal data, argued for in the contract and named in
-  the README.
+  line, no URL, no value. `state.addresses` — the machine's own local IP addresses
+  — and `state.hostname` — the name it calls itself — are the two fields that are
+  personal data, each argued for in the contract and named in the README.
 - **No price.** Prices change; the table belongs to the backend.
 - **No average.** Histograms, so the backend chooses the statistic.
 - **No free string.** Client families, tool names, programs and classes are closed

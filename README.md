@@ -267,13 +267,22 @@ in [`pkg/telemetry`](pkg/telemetry/) — public, so anybody can read it — and 
 test walks its own type and fails on any string field that is not on an explicit
 list, each entry carrying its reason.
 
-**One thing it does report about the machine: its own IP addresses.** Stated
-plainly here because an IP address is personal data, and because the rest of this
-section would otherwise read as a stronger claim than it is. It is not content —
-nothing about the traffic travels in it — but it identifies a machine, and through
-a machine a person. It is there because a fleet view without it does not work:
-"agt_4742be… has stopped reporting" sends somebody to a database, "the laptop at
-10.4.2.87 has stopped reporting" sends them to a desk.
+**Two things it does report about the machine: its own IP addresses, and its
+name.** Stated plainly here because both are personal data, and because the rest
+of this section would otherwise read as a stronger claim than it is. Neither is
+content — nothing about the traffic travels in them — but both identify a
+machine, and through a machine a person. They are there because a fleet view
+without them does not work: "agt_4742be… has stopped reporting" sends somebody to
+a database, "the laptop at 10.4.2.87 has stopped reporting" sends them to a
+desk.
+
+The hostname is the more direct of the two, and knowingly so: a workstation is
+often named after the person using it, so `marie-macbook` names somebody where an
+address only names a machine. That is also exactly why it is reported — it is the
+identifier an operator already recognises, and one that survives a laptop moving
+between networks when the address does not. It is sent as the operating system
+gives it, never resolved and never hashed: hashing would keep the personal data
+and lose the use.
 
 The addresses reported are the machine's own local ones, not its public address:
 on a corporate network the private address is what tells one workstation from

@@ -446,9 +446,13 @@ area: the reasoning is what stops a tempting simplification being reintroduced.
   cached at start-up like the rest of `State`: they change while the process runs,
   and cached, a fleet view would show every agent applying its whole catalogue
   whatever anybody switched off.
-- **`State.Addresses` is the one field that is personal data**, and its entry says
-  why. Local addresses only, loopback and link-local dropped, stably ordered,
-  capped.
+- **`State.Addresses` and `State.Hostname` are the two fields that are personal
+  data**, and their entries say why. Local addresses only, loopback and link-local
+  dropped, stably ordered, capped. The hostname is the more direct of the two — a
+  workstation is often named after the person using it — and that is why it is
+  reported: it is the identifier an operator recognises, and the one that survives
+  a laptop moving between networks. As the OS gives it, never resolved, never
+  hashed.
 - **Adding a field means updating `testdata/heartbeats.json` in the same commit**,
   and the example must *exercise* it.
 - **Nothing in `internal/telemetry` may reach the request path.** No backend means

@@ -30,8 +30,12 @@ func (s *Server) State() contract.State {
 
 	// Read at each heartbeat rather than cached at start-up: a laptop moves
 	// between networks and a cached address would name where the machine was
-	// when it booted.
+	// when it booted. The name is read with it because a machine can be renamed
+	// while the agent runs, and one that reported the old name until somebody
+	// restarted it would be a row nobody could match to the workstation in front
+	// of them.
 	state.Addresses = localAddresses()
+	state.Hostname = hostname()
 
 	// How the agent itself is exposed — the console printing values in clear,
 	// the traces on disk, an address beyond loopback, a route pointed at a

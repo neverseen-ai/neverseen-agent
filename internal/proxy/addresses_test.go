@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"net"
+	"os"
 	"slices"
 	"sort"
 	"testing"
@@ -113,5 +114,17 @@ func TestTheReportedStateCarriesTheAddresses(t *testing.T) {
 	state := srv.State()
 	if !slices.Equal(state.Addresses, localAddresses()) {
 		t.Errorf("the reported state has %v, want %v", state.Addresses, localAddresses())
+	}
+
+	// The name beside them, for the same reason: an address needs a directory to
+	// become a machine and a name is one already. Asserted against the system's
+	// own answer rather than a literal, because a test that pinned a name would
+	// only pass on the machine it was written on.
+	want, err := os.Hostname()
+	if err != nil {
+		t.Skip("this machine cannot say what it is called")
+	}
+	if state.Hostname != want {
+		t.Errorf("the reported state is called %q, want %q", state.Hostname, want)
 	}
 }

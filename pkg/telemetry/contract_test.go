@@ -30,6 +30,7 @@ var allowedStrings = map[string]string{
 	"state.locales[]":                     "country codes from the agent's own registry",
 	"state.providers[]":                   "upstream codes from the agent's own list",
 	"state.addresses[]":                   "the machine's own IP addresses — personal data, and the one field here that is; see the field's comment",
+	"state.hostname":                      "the name the machine calls itself — personal data, as a workstation is often named after the person using it; see the field's comment",
 	"state.masking":                       "how much of the catalogue is applied: full, partial or none",
 	"state.switched_off[]":                "category names from the agent's own catalogue, never a value — the same strings counters.masked already keys on",
 	"state.secret_level":                  "one of three fixed words — weak, medium, strong — chosen from a closed set the agent itself parses, never a value",
@@ -157,6 +158,11 @@ func TestHeartbeatWireFormat(t *testing.T) {
 			// catch. One v4 and one v6, both from documentation ranges (RFC 5737,
 			// RFC 3849), so nothing here is a real machine anywhere.
 			Addresses: []string{"192.0.2.47", "2001:db8::47"},
+
+			// Present for the same reason, and deliberately a name that is not a
+			// person's: the field's own comment says a real one often is, and a
+			// golden file is not the place to write one down.
+			Hostname: "workstation-47.example",
 
 			// Both present for the same reason as the addresses above: they are
 			// omitempty, so an example that left them out would be two fields
