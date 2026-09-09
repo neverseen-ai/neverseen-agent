@@ -924,3 +924,87 @@ func TestClosingABucketClearsTheLiveEntry(t *testing.T) {
 		t.Error("an idle snapshot wrote a bucket in progress that holds nothing")
 	}
 }
+
+// A laptop that sleeps stops this agent without ending it, and the window opened
+// before the lid closed is still open when it opens again. This is the test that
+// it is not delivered as one window over the whole night: the backend drew such a
+// window as a night of coverage, on the very machine its own silence alarm was
+// firing about.
+func TestASleepIsNotAWindowOfCoverage(t *testing.T) {
+	b := newBackend(t)
+	now := epoch
+	clock := func() time.Time { return now }
+
+	r := NewRecorder(now)
+	rep, _ := reporterInHome(t, b, r, t.TempDir(), clock)
+	rep.awake = now
+
+	// Half a minute of ordinary work, then the lid closes.
+	now = now.Add(30 * time.Second)
+	r.Request("s1", "claude-code", "anthropic")
+	rep.awake = now
+	stopped := now
+
+	now = now.Add(8 * time.Hour)
+	rep.wake()
+
+	// What was measured is closed where the measuring stopped, not where it resumed.
+	if rep.queue.pending() != 1 {
+		t.Fatalf("queued %d buckets, want the one that was open", rep.queue.pending())
+	}
+	closed := rep.queue.buckets[0]
+	if !closed.Window.End.Equal(stopped) {
+		t.Errorf("the window ends at %s, want the last moment measured %s", closed.Window.End, stopped)
+	}
+	if closed.Counters.Requests != 1 {
+		t.Errorf("the closed window carries %d requests, want the one that happened",
+			closed.Counters.Requests)
+	}
+
+	// And the night is in no window at all, which is what it was: eight hours this
+	// agent cannot vouch for. The next ordinary interval opens at the wake.
+	now = now.Add(5 * time.Minute)
+	rep.collect()
+	next := rep.queue.buckets[1]
+	if !next.Window.Start.Equal(stopped.Add(8 * time.Hour)) {
+		t.Errorf("the next window starts at %s, want the wake %s",
+			next.Window.Start, stopped.Add(8*time.Hour))
+	}
+	if next.Window.Start.Sub(closed.Window.End) != 8*time.Hour {
+		t.Errorf("the gap between the two windows is %s, want the eight hours nobody watched",
+			next.Window.Start.Sub(closed.Window.End))
+	}
+}
+
+// The loop turns every snapshotInterval whether or not anything was counted, so
+// an ordinary interval is a succession of short turns and never a gap. A test that
+// jumped five minutes in one turn would be testing something the loop cannot do —
+// and would pass or fail on the threshold rather than on the behaviour.
+func TestAnOrdinaryIntervalIsNotASleep(t *testing.T) {
+	b := newBackend(t)
+	now := epoch
+	clock := func() time.Time { return now }
+
+	r := NewRecorder(now)
+	rep, _ := reporterInHome(t, b, r, t.TempDir(), clock)
+	rep.awake = now
+
+	// Five minutes of a running agent: ten turns of the loop, none of them a gap.
+	for range int(DefaultInterval / snapshotInterval) {
+		now = now.Add(snapshotInterval)
+		rep.wake()
+	}
+	if rep.queue.pending() != 0 {
+		t.Fatalf("a running five minutes closed %d buckets, want none", rep.queue.pending())
+	}
+
+	rep.collect()
+	if !rep.queue.buckets[0].Window.Start.Equal(epoch) {
+		t.Errorf("the window starts at %s, want the epoch it opened at",
+			rep.queue.buckets[0].Window.Start)
+	}
+	if rep.queue.buckets[0].Window.End.Sub(epoch) != DefaultInterval {
+		t.Errorf("the window covers %s, want the whole interval",
+			rep.queue.buckets[0].Window.End.Sub(epoch))
+	}
+}

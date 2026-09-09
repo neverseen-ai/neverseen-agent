@@ -50,6 +50,21 @@ const maxWindowAge = 7 * 24 * time.Hour
 // seconds for the life of the process.
 const snapshotInterval = 30 * time.Second
 
+// suspendAfter is how far the wall clock may move between two turns of the
+// reporter's loop before the period is treated as one this agent did not measure.
+//
+// The loop touches something every snapshotInterval, and the longest a turn can
+// hold it is the client's timeout — thirty seconds each, so a healthy agent never
+// shows a gap of more than a minute. Four snapshots is therefore not scheduling
+// jitter: the process was not running. A closed laptop is the ordinary cause, a
+// paused virtual machine, a stopped process and a wall clock stepped forward the
+// others, and the response is the same for all four because the fact is the same
+// — nothing was watching, and no window may say otherwise.
+//
+// Deliberately below the reporting interval, so an ordinary five minutes of
+// waiting can never be mistaken for one.
+const suspendAfter = 2 * time.Minute
+
 // Endpoint paths on the backend.
 const (
 	enrolPath      = "/v1/enrol"
@@ -80,6 +95,10 @@ type Reporter struct {
 
 	// now is time.Now, replaceable so a test can drive windows without waiting.
 	now func() time.Time
+
+	// awake is the last moment the loop below was known to be running, which is
+	// the moment a window is cut at when the machine turns out to have slept.
+	awake time.Time
 }
 
 // Config is what a Reporter needs.
@@ -199,6 +218,10 @@ func (r *Reporter) Run(ctx context.Context) {
 	// in seconds rather than at the next interval.
 	r.collect()
 
+	// Dated here rather than at construction: a reporter built and started later
+	// would otherwise read the delay between the two as a sleep.
+	r.awake = r.now()
+
 	// Writes the bucket in progress, so a hard kill costs at most this much.
 	snapshot := time.NewTicker(snapshotInterval)
 	defer snapshot.Stop()
@@ -220,12 +243,15 @@ func (r *Reporter) Run(ctx context.Context) {
 			return
 
 		case <-collect.C:
+			r.wake()
 			r.collect()
 
 		case <-snapshot.C:
+			r.wake()
 			r.snapshot()
 
 		case <-send.C:
+			r.wake()
 			delivered := r.drain(ctx)
 			switch {
 			case !delivered:
@@ -251,19 +277,51 @@ func (r *Reporter) Run(ctx context.Context) {
 // Queued rather than sent from here, because the two are independent: this runs on
 // the interval whether or not the backend exists, and it is what keeps a bucket
 // per five minutes through an outage.
-func (r *Reporter) collect() {
+func (r *Reporter) collect() { r.collectAt(r.now()) }
+
+// wake cuts the open window when the loop turns out not to have run for a while.
+//
+// A laptop that sleeps stops this process without ending it: no ticker fires, and
+// the window opened before the lid closed is still open when it opens again. Left
+// alone it is delivered as one window over the whole night — eight hours arriving
+// as a single report, which the backend then draws as eight hours of coverage
+// while its own silence alarm was going off about that very machine. The agent was
+// alive, but it was measuring nothing, and those are not the same claim.
+//
+// So the window is closed at the last moment this loop was known to be running,
+// and the next one opens at the wake. What lies between the two is in no window at
+// all, which is exactly what it was: a period nobody can vouch for.
+//
+// The counters lose nothing. Nothing is proxied on a sleeping machine, so the
+// bucket closed here holds every exchange there was.
+func (r *Reporter) wake() {
+	now := r.now()
+	if slept := now.Sub(r.awake); slept > suspendAfter {
+		r.log.Info("the machine was not running this agent, closing the window where it stopped",
+			"for", slept.Round(time.Second), "measured_to", r.awake)
+		r.collectAt(r.awake)
+		r.recorder.Reopen(now)
+	}
+	r.awake = now
+}
+
+// collectAt closes the current bucket at a given instant, which is now for every
+// caller but the one that has just found out the machine was asleep: that one
+// closes the window at the last moment this agent was measuring, rather than at
+// the moment it woke up.
+func (r *Reporter) collectAt(at time.Time) {
 	// Stale buckets go before the new one is taken, so the loss is folded into the
 	// bucket being closed right now rather than into the one five minutes from now.
 	// A loss nobody counted looks exactly like a quiet five minutes, which is the
 	// whole reason the figure exists.
-	r.queue.prune(r.now())
+	r.queue.prune(at)
 	if dropped := r.queue.takeDropped(); dropped > 0 {
 		r.recorder.Drop(dropped)
 		r.log.Error("abandoned buckets the backend never accepted", "count", dropped)
 	}
 
-	counters, window := r.recorder.Take(r.now())
-	r.queue.add(bucket{Window: window, Counters: counters}, r.now())
+	counters, window := r.recorder.Take(at)
+	r.queue.add(bucket{Window: window, Counters: counters}, at)
 
 	// The bucket in progress has just become a real one, so the live entry has to
 	// go with it. Left behind, the same counters would be on disk twice and the

@@ -320,6 +320,21 @@ func (r *Recorder) Take(now time.Time) (telemetry.Counters, telemetry.Window) {
 	return counters, window
 }
 
+// Reopen starts the next window at now, abandoning the period since the last one
+// was taken.
+//
+// For one caller and one situation: the reporter has just closed a window at the
+// last moment it was known to be running, having found the wall clock further
+// ahead than its own loop. What lies between that moment and now is time this
+// agent did not measure — a suspended laptop, a paused virtual machine, a stopped
+// process. Carrying it into the next window would have one report claim a period
+// nothing was watching, which is the one thing a masking record must not do.
+func (r *Recorder) Reopen(now time.Time) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.start = now
+}
+
 // Snapshot is what the open window holds right now, without closing it.
 //
 // It exists so a bucket in progress can be written to disk between the intervals
