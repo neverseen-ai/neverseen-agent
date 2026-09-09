@@ -1,0 +1,42 @@
+name: Release
+
+# On a tag, and nothing else. ci.yml already builds a snapshot on every commit —
+# that job answers "does the release configuration still work"; this one is the
+# only thing that publishes, so the two cannot disagree about what a release is.
+#
+# Without it the archives never existed, and install.sh's second branch — the one
+# that copies a binary out of an unpacked release rather than building it — could
+# never run. A path documented in the README and unreachable is the failure
+# "nothing enters the tree unexercised" is written against.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write # goreleaser creates the release and uploads the archives to it
+
+jobs:
+  release:
+    # macos-latest, forced rather than chosen, for the reason ci.yml's
+    # distribution job records: neverseen-tray links against Cocoa, so it needs
+    # cgo and frameworks that exist on no other runner. The agent itself is pure
+    # Go and is cross-compiled from here for every target.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # goreleaser reads tags to work out a version
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build and publish the release
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -19,6 +19,11 @@
 #      URL and an enrolment token, and it belongs in the config file rather than
 #      in an installer's arguments where it would land in your shell history.
 #
+# Where the binary comes from, in order: this checkout if there is a Go toolchain,
+# an unpacked release archive if this script sits beside one, and otherwise the
+# latest release, downloaded and checksum-verified. The third is what somebody
+# piping this script from the web gets, and it used to be an error message.
+#
 # Usage:
 #   ./install.sh [--shell]     install, start, and optionally wire the shell
 #   ./install.sh --status      is it running, and what is it applying
@@ -27,6 +32,15 @@
 #   ./install.sh --uninstall   stop it, remove the services, undo the shell line
 
 set -eu
+
+# An interrupted download must not leave an unpacked release behind. An `if`
+# rather than `[ … ] && …`: with set -e a false test as the last command of a
+# function makes it fail, and a trap that fails changes the exit status of a
+# script that had succeeded.
+cleanup() {
+    if [ -n "$TEMP_DIR" ]; then rm -rf "$TEMP_DIR"; fi
+}
+trap cleanup EXIT
 
 BIN_NAME=neverseen
 # The menu bar icon is its own binary, and only on macOS. Not because it cannot be
@@ -47,6 +61,17 @@ TRAY_LABEL=ai.neverseen.tray
 # one line and stay recognisable.
 SHELL_LINE='eval "$(neverseen env)"  # neverseen: prints nothing while the agent is stopped'
 
+# Where a release is fetched from, and which one. Deliberately not in
+# .env.example: these configure an installation and not the running agent, and
+# TestDocumentedEnvironmentMatchesTheCode fails on a variable documented there
+# that no code reads. NEVERSEEN_PREFIX above is the same case.
+REPO="${NEVERSEEN_REPO:-neverseen-ai/neverseen-agent}"
+
+# Where install_binary reads the binaries from: this directory, or an unpacked
+# archive fetch_release leaves in a temporary one.
+SOURCE_DIR=.
+TEMP_DIR=""
+
 say()  { printf '%s\n' "$*"; }
 warn() { printf '%s\n' "$*" >&2; }
 die()  { warn "install.sh: $*"; exit 1; }
@@ -61,21 +86,110 @@ platform() {
 
 # ---------------------------------------------------------------- the binary
 
+# latest_tag reads the tag off the redirect on /releases/latest.
+#
+# The redirect and not the REST API: anonymous API calls are capped at sixty an
+# hour per address, and behind a company NAT that budget is spent by somebody
+# else — the installer would then fail on a rate limit, which is not a sentence
+# anybody can act on. Set NEVERSEEN_VERSION to pin a tag instead, which is also
+# the way back to an older release.
+latest_tag() {
+    curl -fsSI "https://github.com/$REPO/releases/latest" \
+        | grep -i '^location:' \
+        | sed -E 's|.*/tag/([^[:space:]]+).*|\1|' \
+        | tr -d '\r'
+}
+
+# verify_checksum: the archive, the checksums file, the name to look up.
+#
+# There is no variable to switch this off, and that is deliberate. This binary
+# forwards the caller's credentials to a provider; an escape hatch on the only
+# integrity check the installation has is the line that ends up pasted into an
+# internal wiki because somebody's proxy mangled a download once.
+verify_checksum() {
+    # sha256sum on GNU systems, shasum -a 256 on macOS. One of the two is always
+    # there, and neither is on both.
+    if command -v sha256sum >/dev/null 2>&1; then
+        actual=$(sha256sum "$1" | cut -d' ' -f1)
+    elif command -v shasum >/dev/null 2>&1; then
+        actual=$(shasum -a 256 "$1" | cut -d' ' -f1)
+    else
+        die "neither sha256sum nor shasum is here, so the download cannot be verified"
+    fi
+
+    expected=$(grep -E "[[:space:]]\*?$3\$" "$2" | cut -d' ' -f1)
+    [ -n "$expected" ] || die "$3 is not listed in checksums.txt; refusing to install it"
+    [ "$expected" = "$actual" ] || die "checksum mismatch for $3: expected $expected, got $actual"
+    say "Checksum verified."
+}
+
+# fetch_release downloads a release archive and unpacks it into a temporary
+# directory, which becomes SOURCE_DIR.
+fetch_release() {
+    command -v curl >/dev/null 2>&1 || die "curl is needed to download a release"
+    command -v tar >/dev/null 2>&1 || die "tar is needed to unpack a release"
+
+    case "$(uname -m)" in
+        x86_64|amd64)  arch=amd64 ;;
+        arm64|aarch64) arch=arm64 ;;
+        *) die "unsupported architecture $(uname -m)" ;;
+    esac
+
+    # `|| true` inside the substitution, and it is not decoration: under set -e an
+    # assignment takes the status of the command substitution, so a 404 or an
+    # unreachable GitHub would end the script silently, one line above the message
+    # written to explain exactly that.
+    tag="${NEVERSEEN_VERSION:-$(latest_tag || true)}"
+    [ -n "$tag" ] || die "could not work out the latest version (no published release, or GitHub is unreachable); set NEVERSEEN_VERSION=vX.Y.Z"
+
+    # goreleaser names an archive after the version without its leading v, while
+    # the URL it sits at carries the tag with it.
+    archive="${BIN_NAME}_${tag#v}_$(platform)_${arch}.tar.gz"
+    base="https://github.com/$REPO/releases/download/$tag"
+
+    TEMP_DIR=$(mktemp -d)
+
+    say "Downloading $archive ($tag)…"
+    curl -fsSL "$base/$archive" -o "$TEMP_DIR/$archive" \
+        || die "could not download $base/$archive"
+    curl -fsSL "$base/checksums.txt" -o "$TEMP_DIR/checksums.txt" \
+        || die "could not download checksums.txt; refusing to install an unverified binary"
+
+    verify_checksum "$TEMP_DIR/$archive" "$TEMP_DIR/checksums.txt" "$archive"
+
+    # Every entry, before anything is written. An archive naming an absolute path
+    # or stepping out of the directory with .. has tar write wherever it likes,
+    # and this script runs as the person whose home directory that is (CWE-22).
+    if tar -tzf "$TEMP_DIR/$archive" | grep -qE '^/|(^|/)\.\.(/|$)'; then
+        die "the archive names paths outside itself; refusing to unpack it"
+    fi
+
+    tar -xzf "$TEMP_DIR/$archive" -C "$TEMP_DIR"
+    SOURCE_DIR="$TEMP_DIR"
+}
+
 install_binary() {
     mkdir -p "$BIN_DIR"
 
     # Built from source when this is a checkout, copied when it is an unpacked
     # release archive. One script for both, because the second case is the one
     # an operator actually runs and it must not need a Go toolchain.
-    if [ -f ./go.mod ] && command -v go >/dev/null 2>&1; then
+    # ./cmd/neverseen rather than "$SOURCE_DIR/cmd/neverseen", and it is not an
+    # oversight: this branch requires a go.mod in SOURCE_DIR, which only the
+    # checkout has, and there SOURCE_DIR is the working directory.
+    if [ -f "$SOURCE_DIR/go.mod" ] && command -v go >/dev/null 2>&1; then
         say "Building from source…"
         go build -ldflags "-s -w -X main.version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)" \
             -o "$BIN_DIR/$BIN_NAME" ./cmd/neverseen
-    elif [ -f "./$BIN_NAME" ]; then
-        say "Installing the bundled binary…"
-        cp "./$BIN_NAME" "$BIN_DIR/$BIN_NAME"
     else
-        die "no ./$BIN_NAME beside this script and no Go toolchain to build one"
+        # No toolchain and no archive beside this script: fetch one. This is the
+        # ordinary case for anybody who did not clone the repository, and it used
+        # to be where the script gave up.
+        if [ ! -f "$SOURCE_DIR/$BIN_NAME" ]; then
+            fetch_release
+        fi
+        say "Installing the released binary…"
+        cp "$SOURCE_DIR/$BIN_NAME" "$BIN_DIR/$BIN_NAME"
     fi
 
     chmod 0755 "$BIN_DIR/$BIN_NAME"
@@ -85,7 +199,7 @@ install_binary() {
     # is not in the archive, the agent is installed and masking anyway — the icon
     # is how somebody sees that, not part of it.
     if [ "$(platform)" = darwin ]; then
-        if [ -f ./go.mod ] && command -v go >/dev/null 2>&1; then
+        if [ -f "$SOURCE_DIR/go.mod" ] && command -v go >/dev/null 2>&1; then
             if go build -ldflags "-s -w -X main.version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)" \
                 -o "$BIN_DIR/$TRAY_NAME" ./cmd/neverseen-tray 2>/dev/null; then
                 chmod 0755 "$BIN_DIR/$TRAY_NAME"
@@ -93,8 +207,8 @@ install_binary() {
             else
                 say "Could not build $TRAY_NAME (it needs a C toolchain); skipping the menu bar icon"
             fi
-        elif [ -f "./$TRAY_NAME" ]; then
-            cp "./$TRAY_NAME" "$BIN_DIR/$TRAY_NAME"
+        elif [ -f "$SOURCE_DIR/$TRAY_NAME" ]; then
+            cp "$SOURCE_DIR/$TRAY_NAME" "$BIN_DIR/$TRAY_NAME"
             chmod 0755 "$BIN_DIR/$TRAY_NAME"
             say "Installed $BIN_DIR/$TRAY_NAME"
         fi
@@ -133,7 +247,7 @@ NEVERSEEN_PII_LOCALE=
 # Loopback only. Do not widen this: the agent forwards whatever credential its
 # caller sent and scopes its session mapping by a header the caller controls, so
 # it is built for one person on one machine.
-NEVERSEEN_LISTEN=127.0.0.1:8787
+NEVERSEEN_LISTEN=127.0.0.1:9787
 
 # Supervision, if you have a backend. Both blank means the agent runs standalone,
 # which is a complete product rather than a disabled one.
@@ -203,15 +317,50 @@ do_install() {
 
     [ "${WIRE_SHELL:-0}" = 1 ] && wire_shell
 
+    addr=$(grep -E '^NEVERSEEN_LISTEN' "$CONFIG_FILE" | cut -d= -f2)
+
     say ""
-    say "Done. The agent is running on $(grep -E '^NEVERSEEN_LISTEN' "$CONFIG_FILE" | cut -d= -f2)."
+    say "Done. The agent is running on $addr."
     say "Open its test page to see what it would mask, with your own text:"
-    say "  http://$(grep -E '^NEVERSEEN_LISTEN' "$CONFIG_FILE" | cut -d= -f2)/test"
+    say "  http://$addr/test"
+
+    verify_running "$addr"
+}
+
+# verify_running asks the agent what it is doing, rather than assuming the
+# service registration means it is doing anything.
+#
+# Through `neverseen status` for the reason do_status gives: one place decides
+# what "working" means, and it tells an agent that is up from one that is up and
+# actually masking, which a 200 does not.
+#
+# It never fails the installation. The config written above ships with no locale
+# chosen — on purpose, because choosing one here would be worse — so a fresh
+# install is an agent that is running and recognising almost nothing, and that is
+# a non-zero exit by design. An installer that treated it as a failure would be
+# reporting the one thing that is working as broken.
+#
+# Which is also why the wait below spends its whole budget on a first install:
+# the exit code is the only signal `status` gives, and it cannot say "not there
+# yet" apart from "there, with no locale". A few seconds is worth not parsing the
+# status prose, which is written for a person and free to change.
+verify_running() {
+    tries=0
+    while [ "$tries" -lt 5 ]; do
+        if NEVERSEEN_LISTEN="$1" "$BIN_DIR/$BIN_NAME" status >/dev/null 2>&1; then
+            break
+        fi
+        tries=$((tries + 1))
+        sleep 1
+    done
+
+    say ""
+    NEVERSEEN_LISTEN="$1" "$BIN_DIR/$BIN_NAME" status || true
 }
 
 do_status() {
     addr=$(grep -E '^NEVERSEEN_LISTEN' "$CONFIG_FILE" 2>/dev/null | cut -d= -f2)
-    addr=${addr:-127.0.0.1:8787}
+    addr=${addr:-127.0.0.1:9787}
 
     say "Service:"
     case "$(platform)" in
@@ -279,6 +428,6 @@ case "${1:---install}" in
     --restart)   do_restart ;;
     --logs)      do_logs ;;
     --uninstall) do_uninstall ;;
-    -h|--help)   sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//' ;;
+    -h|--help)   sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//' ;;
     *)           die "unknown option $1 (try --help)" ;;
 esac

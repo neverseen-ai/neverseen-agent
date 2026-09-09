@@ -14,6 +14,25 @@ and registers a background service.
 ./install.sh --uninstall   stop it, remove the services, undo the shell line
 ```
 
+**Where the binary comes from, in order** (`install.sh:22-25`): this checkout when there is a
+Go toolchain, an unpacked release archive when the script sits beside one, and otherwise the
+latest release, downloaded from GitHub and **checksum-verified** — the third is what somebody
+piping this script from the web gets, and it used to be an error message. There is no variable
+that switches the verification off: this binary forwards the caller's credentials to a
+provider, so an escape hatch on the only integrity check an installation has is the line that
+ends up pasted into an internal wiki. Every entry in the archive is read before anything is
+written, so one naming an absolute path or stepping out with `..` is refused rather than
+unpacked into the home directory the script runs as. The tag is read off the redirect on
+`/releases/latest` rather than through the REST API, whose sixty anonymous calls an hour are
+spent by somebody else behind a company NAT — a rate limit is not a sentence anybody can act
+on; `NEVERSEEN_VERSION` pins one instead, and is the way back to an older release.
+
+**It ends by asking `neverseen status`** rather than treating a registered service as an agent
+that is masking, and never fails the installation on the answer: the config it writes chooses
+no locale on purpose, so a fresh install is running and recognising almost nothing, which is a
+non-zero exit by design. An installer that read that as a failure would report the one thing
+that is working as broken.
+
 **Three things it deliberately does not do** (`install.sh:3-20`):
 
 1. **It never exports a base URL into a shell profile.** Agent Veil did, and the day
@@ -110,6 +129,13 @@ Two build ids. `neverseen` (`./cmd/neverseen`) builds for darwin and linux; `nev
 carry both binaries, the Linux archives only the agent. CI runs `goreleaser check` and builds
 a snapshot on every run, so a broken release configuration fails before a tag does
 (`.github/workflows/ci.yml`).
+
+**One workflow publishes** (`.github/workflows/release.yml`), on a `v*` tag and nothing else.
+The snapshot in `ci.yml` answers whether the configuration still works; this is the only job
+that uploads archives, so the two cannot disagree about what a release is. It runs on macOS
+because `neverseen-tray` links Cocoa and needs cgo and frameworks no other runner has — the
+agent itself is pure Go and cross-compiles from there. Without it the archives never existed,
+and the branch of `install.sh` that unpacks one had nothing to fetch.
 
 **`version` is a `var`, not a `const`** in both `main` packages. Declared `const`, the
 `-ldflags "-X main.version=…"` stamp is silently inert and every release reports the same
