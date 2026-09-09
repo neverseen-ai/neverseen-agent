@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -126,6 +127,73 @@ func PointAt(code, addr string) string {
 // nothing if it is not. That is the whole point of the command: a profile line
 // evaluating it has to be a no-op on a machine where the agent is stopped.
 func ShellEnv(ctx context.Context, w io.Writer, addr string, force bool) error {
+	return ShellEnvFor(ctx, w, addr, force, DefaultShell())
+}
+
+// Shell is a way of spelling an assignment. It is not a preference: a line written for
+// the wrong one is a line that does nothing, silently, and the traffic goes out
+// unmasked with no symptom in the terminal.
+type Shell string
+
+const (
+	// ShellPosix is sh, bash and zsh: `export NAME=value`, evaluated with
+	// `eval "$(neverseen env)"`.
+	ShellPosix Shell = "posix"
+
+	// ShellPowerShell is `$env:NAME = "value"`, evaluated with
+	// `neverseen env | Invoke-Expression`.
+	//
+	// cmd is deliberately absent. It has no eval: the equivalent is a `for /f`
+	// incantation nobody can read, and one that is subtly wrong points no tool at the
+	// agent while looking as though it did. That is the same reason six providers are
+	// printed as comments rather than as guessed variable names.
+	ShellPowerShell Shell = "powershell"
+)
+
+// DefaultShell is what the platform's own shell is, since that is what will be
+// evaluating this.
+func DefaultShell() Shell {
+	if runtime.GOOS == "windows" {
+		return ShellPowerShell
+	}
+	return ShellPosix
+}
+
+// ParseShell reads the --shell argument, refusing what it cannot write.
+func ParseShell(name string) (Shell, error) {
+	switch Shell(strings.ToLower(strings.TrimSpace(name))) {
+	case "":
+		return DefaultShell(), nil
+	case ShellPosix:
+		return ShellPosix, nil
+	case ShellPowerShell:
+		return ShellPowerShell, nil
+	default:
+		// Named rather than fallen back on, and cmd is named explicitly because it is
+		// what somebody on Windows will try first.
+		return "", fmt.Errorf("unknown shell %q; use posix or powershell (cmd has no eval, so it cannot be supported)", name)
+	}
+}
+
+// assignment writes one variable the way the named shell reads it.
+//
+// One function rather than a branch at each call site: the two spellings differ in
+// three places on one line, and a table of them written twice is two chances to point
+// somebody's traffic nowhere.
+func (s Shell) assignment(name, value string) string {
+	if s == ShellPowerShell {
+		return fmt.Sprintf("$env:%s = %q\n", name, value)
+	}
+	return fmt.Sprintf("export %s=%s\n", name, value)
+}
+
+// ShellEnvFor is ShellEnv for a named shell.
+//
+// The comment marker is "#" in both, which is what keeps the property that matters
+// intact on Windows: with the agent stopped this prints only comments, so evaluating
+// it changes nothing and the tools reach their provider directly — working, unmasked
+// — instead of failing on a line nobody wrote.
+func ShellEnvFor(ctx context.Context, w io.Writer, addr string, force bool, shell Shell) error {
 	if addr == "" {
 		addr = DefaultListen
 	}
@@ -139,7 +207,7 @@ func ShellEnv(ctx context.Context, w io.Writer, addr string, force bool) error {
 	}
 
 	for _, code := range ToolCodes() {
-		fmt.Fprintf(w, "export %s=%s/%s\n", shellTools[code].Variable, base, code)
+		fmt.Fprint(w, shell.assignment(shellTools[code].Variable, base+"/"+code))
 
 		// Right under the line it qualifies, and as a comment because this output is
 		// evaluated by a shell. Said here as well as wherever else the line is handed

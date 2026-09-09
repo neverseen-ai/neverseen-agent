@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>ai.neverseen.tray</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string><string>-c</string>
+    <string>set -a; . "/Users/o'brien/.neverseen/.env"; set +a; exec "/Users/o'brien/.local/bin/neverseen-tray"</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <!-- No KeepAlive, unlike the agent's. The icon's own menu offers "Quit the
+       icon", and launchd would put it straight back — the person would click it
+       and watch nothing happen. The agent keeps KeepAlive because nobody is meant
+       to be able to stop the masking by accident; the icon is only a window onto
+       it, and closing a window has to work. It returns at the next login. -->
+  <key>StandardOutPath</key><string>/Users/o'brien/.neverseen/agent.log</string>
+  <key>StandardErrorPath</key><string>/Users/o'brien/.neverseen/agent.log</string>
+</dict>
+</plist>

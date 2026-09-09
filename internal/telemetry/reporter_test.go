@@ -15,6 +15,8 @@ import (
 
 	"github.com/neverseen-ai/neverseen-agent/pkg/pii"
 	"github.com/neverseen-ai/neverseen-agent/pkg/telemetry"
+
+	"github.com/neverseen-ai/neverseen-agent/internal/secure"
 )
 
 // backend is a fake supervision backend that records what reached it and
@@ -207,12 +209,11 @@ func TestReporterEnrolsOnceThenReports(t *testing.T) {
 	// The identity was persisted, readable only by its owner: it holds a signing
 	// key, and one that is world-readable on a shared machine is a key anybody
 	// can file reports with.
-	info, err := os.Stat(identity)
-	if err != nil {
+	if _, err := os.Stat(identity); err != nil {
 		t.Fatalf("the identity was not written: %v", err)
 	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Errorf("the identity file is %o, want 600", perm)
+	if ok, why := secure.IsRestricted(identity); !ok {
+		t.Errorf("the identity file is readable by more than its owner: %s", why)
 	}
 }
 

@@ -19,3 +19,8 @@ traces/
 # The browser extension's dependencies. Its lockfile is committed — CI installs
 # from it with `npm ci` — and what that installs is not.
 node_modules/
+
+# An enrolment token, or anything else pasted beside the tree while working on
+# supervision. The same reason `.env` is here: `git add -A` is one keystroke, and a
+# token committed is a token to rotate.
+.secrets

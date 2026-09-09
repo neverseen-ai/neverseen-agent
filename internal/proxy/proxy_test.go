@@ -234,7 +234,7 @@ func TestMaskedBodyIsStillValidJSON(t *testing.T) {
 
 	// And the values that genuinely are values still are masked, so the fix did
 	// not turn masking off.
-	if strings.Contains(bodies[0], "claire@example.fr") || strings.Contains(bodies[0], "06 12 34 56 78") {
+	if strings.Contains(bodies[0], "benoit@example.fr") || strings.Contains(bodies[0], "06 12 34 56 78") {
 		t.Errorf("a real value reached the provider: %s", bodies[0])
 	}
 
@@ -392,7 +392,7 @@ func TestGzippedRequestBodyIsMasked(t *testing.T) {
 	if len(bodies) != 1 {
 		t.Fatalf("the provider saw %d requests, want 1", len(bodies))
 	}
-	if strings.Contains(bodies[0], "claire@example.fr") {
+	if strings.Contains(bodies[0], "benoit@example.fr") {
 		t.Errorf("the value reached the provider unmasked: %s", bodies[0])
 	}
 	if !strings.Contains(bodies[0], "[EMAIL_") {
@@ -612,5 +612,80 @@ func TestAngleBracketsSurviveTheRoundTrip(t *testing.T) {
 	}
 	if string(got) != body {
 		t.Errorf("got %s, want %s", got, body)
+	}
+}
+
+// An image pasted into a prompt is a base64 payload, and masking it destroys it.
+//
+// The catalogue is measured against prose. Over the few hundred kilobytes of
+// random base64 a picture is, a vendor prefix fires by chance — two of them over
+// 200KB, measured — and the handful of characters replaced by a token are in the
+// middle of the picture. Anthropic then answers "an image in the conversation
+// could not be processed and was removed", on every request carrying one, and
+// nothing in the exchange says why.
+//
+// Both halves: the payload leaves byte for byte, and the text beside it is still
+// masked, so the exemption is the payload rather than the whole message.
+func TestAPastedImageReachesTheProviderIntact(t *testing.T) {
+	up := newUpstream(t, echoJSON)
+	agent := newAgent(t, up, []string{"fr"})
+
+	// A payload holding values the catalogue does mask, which is the strongest
+	// form of the assertion: not "nothing happened to be found in it" but "what
+	// was found in it was left alone".
+	payload := "iVBORw0KGgoAAAANSUhEUg" +
+		"sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" +
+		"claire@example.fr" +
+		"AAAAAAAAAAAAAAAAAAAAAAAA"
+	uri := "data:image/png;base64," + payload
+
+	body, err := json.Marshal(map[string]any{
+		"messages": []any{
+			map[string]any{"role": "user", "content": []any{
+				// Anthropic's shape: the object says its data member is bytes.
+				map[string]any{"type": "image", "source": map[string]any{
+					"type": "base64", "media_type": "image/png", "data": payload,
+				}},
+				// And the OpenAI-compatible one, where the value says it itself.
+				map[string]any{"type": "image_url", "image_url": map[string]any{"url": uri}},
+				map[string]any{"type": "text", "text": "Écrire à benoit@example.fr"},
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	post(t, agent, "/anthropic/v1/messages", "s-image", string(body))
+
+	bodies, _ := up.received()
+	if len(bodies) != 1 {
+		t.Fatalf("the provider saw %d requests, want 1", len(bodies))
+	}
+	if !strings.Contains(bodies[0], payload) {
+		t.Errorf("the image was rewritten on the way out:\n%s", bodies[0])
+	}
+	if !strings.Contains(bodies[0], uri) {
+		t.Errorf("the data URI was rewritten on the way out:\n%s", bodies[0])
+	}
+	if strings.Contains(bodies[0], "benoit@example.fr") {
+		t.Errorf("the text beside the image was not masked:\n%s", bodies[0])
+	}
+}
+
+// The name alone is no evidence. A `data` member outside an object declaring
+// base64 is the caller's own text — a tool called with one carries a prompt in
+// it — and exempting it by name would forward whatever it holds in clear.
+func TestADataMemberThatDeclaresNothingIsStillMasked(t *testing.T) {
+	out, ok := mapJSONStrings([]byte(`{"input":{"data":"x"},"s":{"type":"base64","data":"y"}}`),
+		func(string) string { return "MASKED" })
+	if !ok {
+		t.Fatal("a valid document was rejected")
+	}
+	if !strings.Contains(string(out), `"input":{"data":"MASKED"}`) {
+		t.Errorf("a plain data member was exempted: %s", out)
+	}
+	if !strings.Contains(string(out), `"data":"y"`) {
+		t.Errorf("a declared payload was masked: %s", out)
 	}
 }

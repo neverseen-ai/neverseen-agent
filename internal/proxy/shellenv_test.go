@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -187,5 +188,60 @@ func TestEveryOfferedToolHasAVariable(t *testing.T) {
 			t.Errorf("the line for %s does not carry %s: %q",
 				code, shellTools[code].Variable, line)
 		}
+	}
+}
+
+// TestPowerShellGetsItsOwnSpelling: an `export` line in PowerShell is not an error, it
+// is a command that does nothing — so the tool goes to its provider unmasked while the
+// person watching the terminal sees no symptom at all. That is why this is a rendering
+// rather than a preference.
+func TestPowerShellGetsItsOwnSpelling(t *testing.T) {
+	var out strings.Builder
+	if err := ShellEnvFor(context.Background(), &out, "127.0.0.1:8787", true, ShellPowerShell); err != nil {
+		t.Fatalf("ShellEnvFor: %v", err)
+	}
+
+	got := out.String()
+	if !strings.Contains(got, `$env:ANTHROPIC_BASE_URL = "http://127.0.0.1:8787/anthropic"`) {
+		t.Errorf("no PowerShell assignment in:\n%s", got)
+	}
+	if strings.Contains(got, "export ") {
+		t.Errorf("a POSIX export reached the PowerShell rendering:\n%s", got)
+	}
+}
+
+// TestAStoppedAgentPrintsOnlyCommentsInEveryShell holds the property that makes the
+// profile line safe to leave in place — in both shells, because it is the whole reason
+// `eval "$(neverseen env)"` was chosen over exporting a base URL. Evaluated against a
+// stopped agent it must change nothing, so the tools keep working unmasked rather than
+// failing on a line nobody wrote.
+func TestAStoppedAgentPrintsOnlyCommentsInEveryShell(t *testing.T) {
+	// An address nothing is listening on. Query fails, and the timeout is short.
+	const dead = "127.0.0.1:1"
+
+	for _, shell := range []Shell{ShellPosix, ShellPowerShell} {
+		var out strings.Builder
+		if err := ShellEnvFor(context.Background(), &out, dead, false, shell); err != nil {
+			t.Fatalf("%s: %v", shell, err)
+		}
+		for _, line := range strings.Split(strings.TrimSpace(out.String()), "\n") {
+			if line != "" && !strings.HasPrefix(line, "#") {
+				t.Errorf("%s: a stopped agent printed something evaluable: %q", shell, line)
+			}
+		}
+	}
+}
+
+// TestParseShellRefusesCmdByName. Somebody on Windows will try it first, so the refusal
+// says why rather than listing what is allowed and leaving them to guess.
+func TestParseShellRefusesCmdByName(t *testing.T) {
+	if _, err := ParseShell("cmd"); err == nil {
+		t.Fatal("cmd was accepted; it has no eval and cannot be supported")
+	} else if !strings.Contains(err.Error(), "eval") {
+		t.Errorf("the refusal does not say why: %v", err)
+	}
+
+	if got, err := ParseShell(""); err != nil || got != DefaultShell() {
+		t.Errorf(`ParseShell("") = %q, %v; want the platform default`, got, err)
 	}
 }

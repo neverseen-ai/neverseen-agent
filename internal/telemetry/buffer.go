@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/neverseen-ai/neverseen-agent/pkg/telemetry"
+
+	"github.com/neverseen-ai/neverseen-agent/internal/secure"
 )
 
 // maxBufferedBuckets caps the queue however long the outage and however short the
@@ -296,17 +298,17 @@ func (b *buffer) saveLive() error {
 // was added to keep.
 func writeFile(path string, content any) error {
 	clean := filepath.Clean(path)
-	if err := os.MkdirAll(filepath.Dir(clean), 0o700); err != nil {
-		return fmt.Errorf("create the state directory: %w", err)
-	}
 
 	raw, err := json.MarshalIndent(content, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode: %w", err)
 	}
 
+	// A queued bucket holds no content — counts and category names only — but it does
+	// hold the identity a backend knows this machine by, and it sits beside the
+	// control key in the same directory. One rule for the whole of ~/.neverseen.
 	temporary := clean + ".tmp"
-	if err := os.WriteFile(temporary, append(raw, '\n'), 0o600); err != nil {
+	if err := secure.WriteFile(temporary, append(raw, '\n')); err != nil {
 		return err
 	}
 	if err := os.Rename(temporary, clean); err != nil {

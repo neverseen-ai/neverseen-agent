@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/neverseen-ai/neverseen-agent/internal/secure"
 )
 
 // A trace is one exchange written to a file: the body that arrived, the body that
@@ -36,11 +38,12 @@ import (
 // The directory is 0700 and each file 0600, the same treatment the control key gets,
 // because both are things only their owner may read.
 
-// traceDirPerm and traceFilePerm keep a trace readable by its owner and nobody else.
-const (
-	traceDirPerm  = 0o700
-	traceFilePerm = 0o600
-)
+// traceFilePerm is the mode the append reopens an existing trace with.
+//
+// The guarantee itself lives in internal/secure, which is what created the file; this
+// is only what os.OpenFile wants to be handed and is never what grants the access —
+// the file is already there.
+const traceFilePerm = 0o600
 
 // tracer writes one file per exchange into a directory.
 type tracer struct {
@@ -70,13 +73,12 @@ func newTracer(dir string) (*tracer, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(resolved, traceDirPerm); err != nil {
-		return nil, fmt.Errorf("create %s: %w", resolved, err)
-	}
-	// Tightened even when the directory already existed, because a trace in a
-	// world-readable directory is a prompt anybody on the machine can read.
-	if err := os.Chmod(resolved, traceDirPerm); err != nil {
-		return nil, fmt.Errorf("set the permissions on %s: %w", resolved, err)
+	// secure.MkdirAll tightens an existing directory as well as a new one, because a
+	// trace in a world-readable directory is a prompt anybody on the machine can
+	// read — and this is the one path in the agent that can be pointed outside the
+	// home directory, where on Windows nothing else would protect it.
+	if err := secure.MkdirAll(resolved); err != nil {
+		return nil, err
 	}
 
 	return &tracer{dir: resolved, now: time.Now}, nil
@@ -108,8 +110,15 @@ func (t *tracer) write(session, provider, received, sent string, count int, repl
 	path := filepath.Join(t.dir, name)
 
 	body := traceBody(session, provider, received, sent, count, replaced)
+	// os.WriteFile plus an explicit restrict, not secure.WriteFile: that would secure
+	// the directory again on every exchange — a DACL rewrite per request on Windows,
+	// and two concurrent exchanges rewriting the same directory's access list at once.
+	// newTracer secured it, once.
 	if err := os.WriteFile(path, []byte(body), traceFilePerm); err != nil {
 		return "", fmt.Errorf("write %s: %w", path, err)
+	}
+	if err := secure.Restrict(path); err != nil {
+		return "", err
 	}
 
 	t.last = path

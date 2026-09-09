@@ -277,8 +277,6 @@ func (r *Reporter) Run(ctx context.Context) {
 // Queued rather than sent from here, because the two are independent: this runs on
 // the interval whether or not the backend exists, and it is what keeps a bucket
 // per five minutes through an outage.
-func (r *Reporter) collect() { r.collectAt(r.now()) }
-
 // wake cuts the open window when the loop turns out not to have run for a while.
 //
 // A laptop that sleeps stops this process without ending it: no ticker fires, and
@@ -304,6 +302,8 @@ func (r *Reporter) wake() {
 	}
 	r.awake = now
 }
+
+func (r *Reporter) collect() { r.collectAt(r.now()) }
 
 // collectAt closes the current bucket at a given instant, which is now for every
 // caller but the one that has just found out the machine was asleep: that one
@@ -417,9 +417,18 @@ func (r *Reporter) drain(ctx context.Context) bool {
 		State:   r.state(),
 		Buckets: make([]telemetry.Bucket, 0, len(sending)),
 	}
+	// Summed while the batch is built, for the line below. A count of buckets alone
+	// cannot tell a heartbeat carrying an exchange from the empty one an idle agent
+	// files every interval, and those are the two cases somebody comparing this log
+	// against an empty dashboard has to separate.
+	var requests, masked int
 	for _, queued := range sending {
 		batch.Buckets = append(batch.Buckets,
 			telemetry.Bucket{Window: queued.Window, Counters: queued.Counters})
+		requests += queued.Counters.Requests
+		for _, count := range queued.Counters.Masked {
+			masked += count
+		}
 	}
 
 	if err := r.send(ctx, id, batch); err != nil {
@@ -434,7 +443,17 @@ func (r *Reporter) drain(ctx context.Context) bool {
 	// never delivered.
 	r.queue.delivered(len(sending))
 	r.persist()
-	r.log.Debug("batch sent", "buckets", len(sending), "queued", r.queue.pending())
+	// Info rather than Debug: this is the only line that says the supervision path
+	// actually works end to end, and at Debug it was invisible under the level every
+	// command builds its logger with — so an agent reporting nothing and an agent
+	// reporting emptily read identically, which is how a silent dashboard came to be
+	// investigated from the backend's side first.
+	r.log.Info("heartbeat delivered to the backend",
+		"buckets", len(sending),
+		"requests", requests,
+		"masked", masked,
+		"through", r.baseURL,
+		"queued", r.queue.pending())
 	return true
 }
 

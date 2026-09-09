@@ -11,6 +11,8 @@ import (
 
 	"github.com/neverseen-ai/neverseen-agent/internal/detector"
 	"github.com/neverseen-ai/neverseen-agent/pkg/pii"
+
+	"github.com/neverseen-ai/neverseen-agent/internal/secure"
 )
 
 // What a surface changed survives the restart, and the file is the state.
@@ -89,8 +91,8 @@ func writePolicyFile(path string, state policyRequest) error {
 	}
 
 	dir := filepath.Dir(resolved)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("create %s: %w", dir, err)
+	if err := secure.MkdirAll(dir); err != nil {
+		return err
 	}
 
 	// A name of its own for each write, and not a fixed ".tmp".
@@ -108,12 +110,12 @@ func writePolicyFile(path string, state policyRequest) error {
 	}
 	defer func() { _ = os.Remove(tmp.Name()) }()
 
-	// 0600 explicitly: CreateTemp already makes it, but the file says which
-	// categories this workstation stopped masking, and that is a description of
-	// what its user handles.
-	if err := tmp.Chmod(0o600); err != nil {
+	// Restricted explicitly: CreateTemp already makes a 0600 file on Unix, but the
+	// file says which categories this workstation stopped masking — a description of
+	// what its user handles — and on Windows a mode is not a restriction at all.
+	if err := secure.Restrict(tmp.Name()); err != nil {
 		_ = tmp.Close()
-		return fmt.Errorf("write %s: %w", tmp.Name(), err)
+		return err
 	}
 	if _, err := tmp.Write(append(body, '\n')); err != nil {
 		_ = tmp.Close()

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 
@@ -404,4 +405,94 @@ func excerpt(page string) string {
 		return page
 	}
 	return page[:limit] + "\n… truncated"
+}
+
+// TestTestPageResubmittedUnchangedIsNotSimulated is the other half of the banner.
+//
+// It was decided by `det != s.det`, a pointer comparison, and simulated() returns a
+// fresh detector whenever the form carries secret_level — which the rendered form
+// always does. So "Run it again" on an untouched page raised "this is not what the
+// agent is doing" over a rendering that was exactly what the agent is doing, and a
+// warning that is always on is one nobody reads on the visit where it is true.
+func TestTestPageResubmittedUnchangedIsNotSimulated(t *testing.T) {
+	up := newUpstream(t, echoJSON)
+	agent := newAgent(t, up, []string{"fr", "us"})
+
+	// The form as the page drew it: the agent's locales and level, every switch it
+	// showed left ticked. This is the submission a person makes by pressing the
+	// button without touching anything.
+	page := get(t, agent, "/test")
+	shown := hiddenShown(t, page.body)
+	form := url.Values{
+		"text":         {"nothing in particular"},
+		"locale":       {"fr", "us"},
+		"secret_level": {"weak"},
+		"shown":        {shown},
+		"on":           strings.Split(shown, ","),
+	}
+
+	got := submitForm(t, agent, form)
+	if got.status != http.StatusOK {
+		t.Fatalf("status %d, want 200", got.status)
+	}
+	if strings.Contains(got.body, "Simulated configuration") {
+		t.Errorf("a submission reproducing the agent's own configuration must not raise the banner:\n%s",
+			excerpt(got.body))
+	}
+
+	// And one switch off still does, or the fix above would have removed the banner
+	// rather than aimed it.
+	first, _, _ := strings.Cut(shown, ",")
+	form["on"] = slices.DeleteFunc(strings.Split(shown, ","), func(c string) bool { return c == first })
+	if off := submitForm(t, agent, form); !strings.Contains(off.body, "Simulated configuration") {
+		t.Errorf("%s switched off and the page does not say it is simulating:\n%s", first, excerpt(off.body))
+	}
+}
+
+// TestTestPageSampleFollowsTheSimulatedLocales is the failure that reads as the
+// opposite of the truth.
+//
+// pii.Sample is locale-dependent, and the default text was read from the agent's
+// detector before the simulation was applied. So clearing the box and ticking `us` on
+// an agent configured for `fr` rendered the *French* sample under a US configuration:
+// every US column comes back empty, which reads as "loading `us` masks nothing".
+func TestTestPageSampleFollowsTheSimulatedLocales(t *testing.T) {
+	up := newUpstream(t, echoJSON)
+	agent := newAgent(t, up, []string{"fr"})
+
+	got := submitForm(t, agent, url.Values{
+		"text":         {"   "}, // cleared, so the page falls back to its sample
+		"locale":       {"us"},
+		"secret_level": {"weak"},
+	})
+	if got.status != http.StatusOK {
+		t.Fatalf("status %d, want 200", got.status)
+	}
+	if !strings.Contains(got.body, "123-45-6789") {
+		t.Errorf("the sample is not the one `us` would be judged on:\n%s", excerpt(got.body))
+	}
+	if strings.Contains(got.body, "184037511600176") {
+		t.Errorf("the page shows the French sample under a US configuration:\n%s", excerpt(got.body))
+	}
+	if !strings.Contains(got.body, "[SSN_") {
+		t.Errorf("the US sample rendered under `us` and nothing was masked:\n%s", excerpt(got.body))
+	}
+}
+
+// hiddenShown reads the codes the page drew switches for, which is what the next
+// submission needs in order to tell an unticked switch from one it never drew.
+func hiddenShown(t *testing.T, body string) string {
+	t.Helper()
+
+	const open = `name="shown" value="`
+	i := strings.Index(body, open)
+	if i < 0 {
+		t.Fatalf("the page carries no shown field:\n%s", excerpt(body))
+	}
+	rest := body[i+len(open):]
+	end := strings.IndexByte(rest, '"')
+	if end <= 0 {
+		t.Fatalf("the shown field is empty:\n%s", excerpt(body))
+	}
+	return rest[:end]
 }

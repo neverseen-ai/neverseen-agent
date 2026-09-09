@@ -52,9 +52,12 @@ Usage:
   neverseen mask          list what is masked, and switch a category or a family
                            off for this run
   neverseen key           print the control key, for the browser extension
-  neverseen env [--force] print the shell exports that point a tool at the agent
+  neverseen env [--force] [--shell posix|powershell]
+                          print the lines that point a tool at the agent
   neverseen replay <dir>  rebuild the heartbeat batch from the traces in a
                            directory and print it; nothing is sent or queued
+  neverseen service <cmd> register the agent to start at login, or take it back
+                           off: install, uninstall, restart
   neverseen version       print the version
 
 Point a client at the agent by naming the provider in the path:
@@ -99,6 +102,30 @@ Every variable is documented in .env.example.
 var errQuiet = errors.New("")
 
 func main() {
+	// The operator's configuration, into this process's environment, before any
+	// command reads a setting.
+	//
+	// Ahead of the dispatch, because there is more than one door: the agent goes
+	// through proxy.FromEnv, `scan` through proxy.DetectorFromEnv, `status` and `env`
+	// through proxy.ListenAddress. Loaded behind one of those, a command reached
+	// through another would read a different configuration from the same binary —
+	// the drift that already had `scan` reporting a category as masked while the
+	// agent beside it forwarded it in clear.
+	//
+	// In main and not in run, and that distinction is not cosmetic: run is what the
+	// unit tests call. Put there, every test on a developer's own machine read
+	// whatever ~/.neverseen/.env happened to say and set it into the test binary —
+	// so `scan`'s expected output became machine-dependent, and the values leaked
+	// into every later test in the package. Green in CI, unreproducible locally,
+	// which is the worst shape a test failure can take.
+	//
+	// This is not `cmd/` reading an environment variable, which is the rule it looks
+	// like it bends: it names no setting and asks for no value.
+	if err := proxy.LoadConfigFile(""); err != nil {
+		fmt.Fprintln(os.Stderr, "neverseen:", err)
+		os.Exit(1)
+	}
+
 	err := run(os.Args[1:], os.Stdin, os.Stdout)
 	switch {
 	case err == nil:
@@ -132,6 +159,8 @@ func run(args []string, stdin io.Reader, stdout io.Writer) error {
 		return runKey(stdout)
 	case "env":
 		return runEnv(args[1:], stdout)
+	case "service":
+		return runService(args[1:], stdout)
 	case "replay":
 		return runReplay(args[1:], stdout)
 	case "version":
@@ -225,8 +254,18 @@ func runProxy(args []string, stdout io.Writer) error {
 	// the two set it.
 	listen := fs.String("l", "",
 		"address to listen on (default "+proxy.DefaultListen+"); 0.0.0.0:8787 serves every interface")
+	// Passed by the Windows logon task and by nothing a person types. It hides the
+	// console this process was handed, which a console binary started by Task
+	// Scheduler otherwise shows at every login. It does nothing on macOS and Linux,
+	// deliberately: a flag that existed on one platform would be a service definition
+	// that could not be rendered on another.
+	detach := fs.Bool("detach", false,
+		"hide the console window this was given (Windows logon task; no effect elsewhere)")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	if *detach {
+		proxy.HideConsole()
 	}
 
 	opts := proxy.Options{Listen: *listen}
@@ -445,11 +484,17 @@ func runEnv(args []string, stdout io.Writer) error {
 	fs.SetOutput(stdout)
 	force := fs.Bool("force", false,
 		"print the exports even when the agent is not answering")
+	shell := fs.String("shell", "",
+		"which shell to write for: posix or powershell; empty follows the platform")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
-	return proxy.ShellEnv(context.Background(), stdout, proxy.ListenAddress(), *force)
+	which, err := proxy.ParseShell(*shell)
+	if err != nil {
+		return err
+	}
+	return proxy.ShellEnvFor(context.Background(), stdout, proxy.ListenAddress(), *force, which)
 }
 
 func runScan(args []string, stdin io.Reader, stdout io.Writer) error {

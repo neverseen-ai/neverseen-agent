@@ -1,3 +1,16 @@
+//go:build !windows
+
+// The graceful shutdown this file asserts is a Unix signal path: the test sends
+// SIGTERM to its own process and checks that the agent files its final heartbeat
+// before returning. Windows has no SIGTERM to send — os.Process.Signal refuses it —
+// so the test cannot run there rather than merely being expected to fail.
+//
+// What that leaves untested is also untrue on Windows, which is worse than a gap in
+// coverage and is recorded as a TODO on internal/service.renderSchtasks: Task
+// Scheduler's /End terminates the process, so the bucket in progress is lost up to
+// the last snapshot. The 30-second snapshot interval bounds it, which is what that
+// interval is for, but it is a real difference in behaviour between platforms.
+
 package main
 
 import (

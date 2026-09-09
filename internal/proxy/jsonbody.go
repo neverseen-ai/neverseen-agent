@@ -3,6 +3,7 @@ package proxy
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 )
 
 // A request body is a JSON document, and it has to be treated as one.
@@ -50,10 +51,14 @@ func encodeMasked(doc any, decodeErr error, f func(string) string) ([]byte, erro
 	return encodeJSONBody(mapStrings(doc, f))
 }
 
-// mapStrings walks a decoded document and applies f to every string it holds.
+// mapStrings walks a decoded document and applies f to every string it holds,
+// except the ones that are not text.
 func mapStrings(v any, f func(string) string) any {
 	switch t := v.(type) {
 	case string:
+		if isDataURI(t) {
+			return t
+		}
 		return f(t)
 	case []any:
 		for i, item := range t {
@@ -61,7 +66,11 @@ func mapStrings(v any, f func(string) string) any {
 		}
 		return t
 	case jsonObject:
+		binary := declaresBase64(t)
 		for i, m := range t {
+			if binary && m.key == "data" {
+				continue
+			}
 			t[i].value = mapStrings(m.value, f)
 		}
 		return t
@@ -70,6 +79,43 @@ func mapStrings(v any, f func(string) string) any {
 		// keeps the numbers exactly as they were written.
 		return v
 	}
+}
+
+// A base64 payload is not text, and masking it destroys it.
+//
+// An image pasted into a prompt travels as one JSON string of a few hundred
+// kilobytes, and the catalogue is measured against prose: over that much random
+// base64 a vendor prefix fires by chance — two of them over 200KB, measured — so
+// a handful of characters in the middle of the picture were replaced by a token.
+// The provider then answered "an image in the conversation could not be processed
+// and was removed", on every request carrying an image, and nothing said why. The
+// same holds for a PDF, which Anthropic carries in the same shape.
+//
+// Nothing is given up. The catalogue reads text; it has never read a picture, so
+// a value inside one was never masked — before this it was only corrupted.
+//
+// The anchor is what the document says about itself, not a field name: an object
+// declaring `"type":"base64"` says its `data` member is bytes, which is Anthropic's
+// shape for an image and for a document. A `data` member anywhere else is still
+// masked — the name alone is no evidence, and a tool called with a `data` argument
+// carries the caller's own text in it.
+//
+// TODO: the OpenAI-compatible families carry audio as {"data":…,"format":"wav"}
+// with no such marker, and that shape is not read. The gap is the one jsonFragment
+// already records: a guessed shape exempts a field no provider sent.
+func declaresBase64(o jsonObject) bool {
+	kind, ok := o.value("type")
+	return ok && kind == "base64"
+}
+
+// isDataURI reports whether a string is a whole data: URI.
+//
+// That is the other shape an image arrives in — {"image_url":{"url":"data:image/png;base64,…"}},
+// which the OpenAI-compatible families use — and it needs no anchor in the
+// document, because the value declares what it is. Matched whole, so a URI quoted
+// inside a sentence somebody wrote is still masked with the sentence around it.
+func isDataURI(s string) bool {
+	return strings.HasPrefix(s, "data:") && strings.Contains(s, ";base64,")
 }
 
 // decodeJSONBody parses a document, keeping numbers exactly as written.

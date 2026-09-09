@@ -20,6 +20,9 @@
 package main
 
 import (
+	"bytes"
+	"encoding/binary"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
@@ -28,6 +31,10 @@ import (
 	"os"
 	"path/filepath"
 )
+
+// iconDir is where both formats are written, named once so the two writers cannot
+// drift apart.
+var iconDir = filepath.Join("internal", "tray", "icons")
 
 // The drawing is in the mark's own 24-unit space, so the numbers below can be read
 // against the SVG line by line, and the box below is cropped to the glyph rather
@@ -58,14 +65,72 @@ const (
 
 func main() {
 	for name, state := range map[string]state{
-		"masking.png":  stateMasking,
-		"partial.png":  statePartial,
-		"unmasked.png": stateUnmasked,
+		"masking":  stateMasking,
+		"partial":  statePartial,
+		"unmasked": stateUnmasked,
 	} {
-		if err := write(name, glyph(state)); err != nil {
+		img := glyph(state)
+		if err := write(name+".png", img); err != nil {
+			log.Fatal(err)
+		}
+		if err := writeICO(name+".ico", img); err != nil {
 			log.Fatal(err)
 		}
 	}
+}
+
+// writeICO writes the same glyph in the format Windows needs, in a colour it can
+// actually show.
+//
+// Two things differ from the PNG beside it, and neither is cosmetic.
+//
+// **Format.** The systray backend on Windows hands the bytes to the shell as an icon
+// resource, and the shell reads ICO. A PNG there is not a wrong-looking icon, it is no
+// icon at all.
+//
+// **Colour.** The PNG is black with coverage in the alpha because macOS is handed it as
+// a *template* and recolours it for a light or a dark bar. Windows does no such thing:
+// it draws exactly what it is given, so the template would be a black shape on the
+// black taskbar that is the Windows 11 default — an icon that is working and invisible,
+// which reads as an agent that is not running. Drawn in a mid grey that carries against
+// both, since one file has to serve both themes.
+func writeICO(name string, mask *image.NRGBA) error {
+	b := mask.Bounds()
+	coloured := image.NewNRGBA(b)
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			if a := mask.NRGBAAt(x, y).A; a != 0 {
+				const grey = 0x9A
+				coloured.SetNRGBA(x, y, color.NRGBA{R: grey, G: grey, B: grey, A: a})
+			}
+		}
+	}
+
+	var body bytes.Buffer
+	if err := png.Encode(&body, coloured); err != nil {
+		return fmt.Errorf("encode %s: %w", name, err)
+	}
+
+	// An ICO holding a single PNG, which every Windows since Vista reads. The
+	// alternative is a BMP with its upside-down rows and its separate AND mask, for no
+	// gain on any system this agent runs on.
+	var out bytes.Buffer
+	// ICONDIR: reserved, type 1 (icon), one image.
+	_ = binary.Write(&out, binary.LittleEndian, [3]uint16{0, 1, 1})
+	// ICONDIRENTRY: width, height (0 would mean 256), colours, reserved, planes, bpp.
+	out.Write([]byte{byte(pixels), byte(pixels), 0, 0})
+	_ = binary.Write(&out, binary.LittleEndian, [2]uint16{1, 32})
+	_ = binary.Write(&out, binary.LittleEndian, uint32(body.Len()))
+	// The image data begins straight after this six-byte header and one sixteen-byte
+	// entry.
+	_ = binary.Write(&out, binary.LittleEndian, uint32(6+16))
+	out.Write(body.Bytes())
+
+	if err := os.WriteFile(filepath.Join(iconDir, name), out.Bytes(), 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", name, err)
+	}
+	log.Printf("wrote %s", filepath.Join(iconDir, name))
+	return nil
 }
 
 // state is how much of the catalogue is being applied, in the three answers the
@@ -215,7 +280,7 @@ func toSegment(x, y, x1, y1, x2, y2 float64) float64 {
 }
 
 func write(name string, img image.Image) error {
-	path := filepath.Join("internal", "tray", "icons", name)
+	path := filepath.Join(iconDir, name)
 	file, err := os.Create(filepath.Clean(path))
 	if err != nil {
 		return err

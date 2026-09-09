@@ -1,13 +1,18 @@
 version: 2
 
-# The agent for four targets, the menu bar icon for the two macOS ones, and no
+# The agent for six targets, the icon for the macOS and Windows ones, and no
 # packaging cleverness. The install script below unpacks an archive and puts the
 # binaries somewhere; anything more elaborate is a second way to install that
 # would drift from the first.
 #
 # The macOS archives carry both binaries and the Linux ones carry only the agent,
-# which is not an oversight: the icon is Cocoa, and Linux has no menu bar to put it
-# in. See internal/tray for what a Linux tray would actually cost.
+# which is not an oversight — but the reason is not the one that used to be written
+# here. It said the icon is Cocoa and Linux has no menu bar for it. Only the first
+# half is true: in fyne.io/systray, cgo is darwin's alone, and Linux is
+# StatusNotifierItem over dbus in pure Go. GOOS=linux CGO_ENABLED=0 builds the tray
+# today. What stops it shipping is the desktop: Plasma hosts a StatusNotifierItem
+# natively and GNOME needs the AppIndicator extension, so a Linux archive carrying
+# the icon would put one on most machines that draws nothing.
 
 project_name: neverseen
 
@@ -27,7 +32,7 @@ builds:
     binary: neverseen
     env:
       - CGO_ENABLED=0
-    goos: [darwin, linux]
+    goos: [darwin, linux, windows]
     goarch: [amd64, arm64]
     ldflags:
       # The version the agent reports about itself. It is a var rather than a
@@ -64,8 +69,33 @@ builds:
       - -s -w -X main.version={{ .Version }}
     mod_timestamp: "{{ .CommitTimestamp }}"
 
+  # The icon on Windows, which needs no cgo at all: fyne.io/systray speaks win32
+  # syscalls there, exactly as it speaks dbus on Linux. Its own build id rather than a
+  # goos added to the entry above, because that one is CGO_ENABLED=1 for AppKit and
+  # cross-compiling cgo to Windows from a Mac runner is a toolchain nobody wants to
+  # own.
+  #
+  # -H windowsgui, and only here: this binary has no console output to lose, while the
+  # agent is a CLI and a GUI-subsystem build of it would print nothing into the
+  # terminal somebody ran `neverseen status` in.
+  - id: neverseen-tray-windows
+    main: ./cmd/neverseen-tray
+    binary: neverseen-tray
+    env:
+      - CGO_ENABLED=0
+    goos: [windows]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -H windowsgui -X main.version={{ .Version }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
 archives:
   - formats: [tar.gz]
+    # Zip on Windows, because tar is not something a stock Windows install unpacks by
+    # double-clicking and the first step of an installation must not be finding a tool.
+    format_overrides:
+      - goos: windows
+        formats: [zip]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     files:
       - README.md
@@ -73,6 +103,7 @@ archives:
       - NOTICE
       - .env.example
       - install.sh
+      - install.ps1
 
 checksums:
   name_template: checksums.txt

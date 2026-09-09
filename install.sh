@@ -29,8 +29,10 @@
 set -eu
 
 BIN_NAME=neverseen
-# The menu bar icon is its own binary, and only on macOS: it is Cocoa, and Linux
-# has no menu bar to put it in. See internal/tray for what a Linux tray would cost.
+# The menu bar icon is its own binary, and only on macOS. Not because it cannot be
+# built elsewhere — it is cgo on darwin alone, and it cross-compiles to Linux and
+# Windows in pure Go — but because on Linux whether it is shown depends on the
+# desktop: GNOME needs the AppIndicator extension for it. See internal/tray.
 TRAY_NAME=neverseen-tray
 PREFIX="${NEVERSEEN_PREFIX:-$HOME/.local}"
 BIN_DIR="$PREFIX/bin"
@@ -39,10 +41,7 @@ CONFIG_FILE="$CONFIG_DIR/.env"
 LOG_FILE="$CONFIG_DIR/agent.log"
 
 SERVICE_LABEL=ai.neverseen.agent
-LAUNCH_AGENT="$HOME/Library/LaunchAgents/$SERVICE_LABEL.plist"
 TRAY_LABEL=ai.neverseen.tray
-TRAY_AGENT="$HOME/Library/LaunchAgents/$TRAY_LABEL.plist"
-SYSTEMD_UNIT="$HOME/.config/systemd/user/neverseen.service"
 
 # The line added to a profile. Matched verbatim on uninstall, so it has to stay
 # one line and stay recognisable.
@@ -146,86 +145,19 @@ EOF
 }
 
 # ---------------------------------------------------------------- the service
+#
+# Not written here. The launchd plist, the systemd unit and the Windows scheduled
+# task all live in the agent, behind `neverseen service` — one owner of the service
+# definition. As heredocs in this script they could only be copied by anything else
+# that wanted to install this agent, and the two that drifted would be the one that
+# installed it and the one that restarted it.
+#
+# What stays here is what this script genuinely owns: placing the binaries, writing
+# the config, wiring the shell, and observing (--status, --logs) which authors
+# nothing.
 
-install_service_darwin() {
-    mkdir -p "$(dirname "$LAUNCH_AGENT")"
-    cat > "$LAUNCH_AGENT" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key><string>$SERVICE_LABEL</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>/bin/sh</string><string>-c</string>
-    <string>set -a; . "$CONFIG_FILE"; set +a; exec "$BIN_DIR/$BIN_NAME" proxy</string>
-  </array>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>$LOG_FILE</string>
-  <key>StandardErrorPath</key><string>$LOG_FILE</string>
-</dict>
-</plist>
-EOF
-    launchctl unload "$LAUNCH_AGENT" 2>/dev/null || true
-    launchctl load -w "$LAUNCH_AGENT"
-    say "Loaded the launchd agent $SERVICE_LABEL"
-
-    install_tray_darwin
-}
-
-install_tray_darwin() {
-    [ -x "$BIN_DIR/$TRAY_NAME" ] || return 0
-
-    mkdir -p "$(dirname "$TRAY_AGENT")"
-    cat > "$TRAY_AGENT" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key><string>$TRAY_LABEL</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>/bin/sh</string><string>-c</string>
-    <string>set -a; . "$CONFIG_FILE"; set +a; exec "$BIN_DIR/$TRAY_NAME"</string>
-  </array>
-  <key>RunAtLoad</key><true/>
-  <!-- No KeepAlive, unlike the agent's. The icon's own menu offers "Quit the
-       icon", and launchd would put it straight back — the person would click it
-       and watch nothing happen. The agent keeps KeepAlive because nobody is meant
-       to be able to stop the masking by accident; the icon is only a window onto
-       it, and closing a window has to work. It returns at the next login. -->
-  <key>StandardOutPath</key><string>$LOG_FILE</string>
-  <key>StandardErrorPath</key><string>$LOG_FILE</string>
-</dict>
-</plist>
-EOF
-    launchctl unload "$TRAY_AGENT" 2>/dev/null || true
-    launchctl load -w "$TRAY_AGENT"
-    say "Loaded the launchd agent $TRAY_LABEL (the menu bar icon)"
-}
-
-install_service_linux() {
-    command -v systemctl >/dev/null 2>&1 || die "systemctl not found; run \`neverseen proxy\` yourself"
-
-    mkdir -p "$(dirname "$SYSTEMD_UNIT")"
-    cat > "$SYSTEMD_UNIT" <<EOF
-[Unit]
-Description=Neverseen agent
-After=network-online.target
-
-[Service]
-EnvironmentFile=$CONFIG_FILE
-ExecStart=$BIN_DIR/$BIN_NAME proxy
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=default.target
-EOF
-    systemctl --user daemon-reload
-    systemctl --user enable --now neverseen.service
-    say "Enabled the systemd user service neverseen.service"
+service_cmd() {
+    "$BIN_DIR/$BIN_NAME" service "$1" --prefix "$PREFIX"
 }
 
 # ---------------------------------------------------------------- the shell
@@ -267,10 +199,7 @@ do_install() {
     install_binary
     write_config
 
-    case "$(platform)" in
-        darwin) install_service_darwin ;;
-        linux)  install_service_linux ;;
-    esac
+    service_cmd install
 
     [ "${WIRE_SHELL:-0}" = 1 ] && wire_shell
 
@@ -291,7 +220,10 @@ do_status() {
             # An `if`, not `[ … ] && …`: with set -e a false test at the end of this
             # branch is a failing compound, and the script would exit on a machine
             # that simply has no icon installed.
-            if [ -f "$TRAY_AGENT" ]; then
+            # The same condition `neverseen service install` uses to decide whether
+            # to register an icon at all, so the two cannot disagree about whether
+            # one was expected.
+            if [ -x "$BIN_DIR/$TRAY_NAME" ]; then
                 launchctl list | grep -F "$TRAY_LABEL" || say "  the menu bar icon is not loaded"
             fi
             ;;
@@ -310,18 +242,7 @@ do_status() {
 }
 
 do_restart() {
-    case "$(platform)" in
-        darwin)
-            launchctl unload "$LAUNCH_AGENT" 2>/dev/null || true
-            launchctl load -w "$LAUNCH_AGENT"
-            if [ -f "$TRAY_AGENT" ]; then
-                launchctl unload "$TRAY_AGENT" 2>/dev/null || true
-                launchctl load -w "$TRAY_AGENT"
-            fi
-            ;;
-        linux) systemctl --user restart neverseen.service ;;
-    esac
-    say "Restarted."
+    service_cmd restart
 }
 
 do_logs() {
@@ -332,20 +253,9 @@ do_logs() {
 }
 
 do_uninstall() {
-    case "$(platform)" in
-        darwin)
-            launchctl unload "$LAUNCH_AGENT" 2>/dev/null || true
-            rm -f "$LAUNCH_AGENT"
-            launchctl unload "$TRAY_AGENT" 2>/dev/null || true
-            rm -f "$TRAY_AGENT"
-            ;;
-        linux)
-            systemctl --user disable --now neverseen.service 2>/dev/null || true
-            rm -f "$SYSTEMD_UNIT"
-            systemctl --user daemon-reload 2>/dev/null || true
-            ;;
-    esac
-    say "Stopped and removed the service."
+    # Before the binaries go, because it is the agent that owns the definition and
+    # removing it first would leave the registration behind with nothing to remove it.
+    service_cmd uninstall || warn "could not remove the service; continuing"
 
     unwire_shell
     rm -f "$BIN_DIR/$BIN_NAME" "$BIN_DIR/$TRAY_NAME"

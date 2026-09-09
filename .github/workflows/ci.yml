@@ -54,6 +54,75 @@ jobs:
             exit 1
           }
 
+  # Its own job rather than a matrix over `build`, because that job also gates
+  # coverage and checks gofmt — one 80% number is a fact about the Go packages and
+  # producing it twice on two runners would either double the gate or make it
+  # ambiguous which run it came from. What Windows adds is the only thing it can:
+  # whether the code runs there at all.
+  #
+  # It exists ahead of the Windows port rather than after it. The suite is expected
+  # to fail here at first, and those failures are the specification: file modes are
+  # asserted in several packages and a mode is a no-op on NTFS. A port with no runner
+  # rots between releases, invisibly, and the rot is found by whoever downloads it.
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        run: go build ./...
+
+      - name: Test
+        run: go test ./...
+
+      # The installer for this platform, parsed rather than run. There is no runner
+      # anywhere else that can parse it, and a script that is only ever read at the
+      # moment somebody installs is one whose syntax error is found by them.
+      - name: Check the installer parses
+        shell: pwsh
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path ./install.ps1), [ref]$null, [ref]$errors) | Out-Null
+          if ($errors) { $errors | ForEach-Object { $_.Message }; exit 1 }
+          Write-Host "install.ps1 parses"
+
+  # Every target the release names, built from one runner. Cheap, and it is what
+  # catches a build tag that excluded every platform or a package that quietly
+  # stopped cross-compiling — neither of which any single-platform job can see.
+  cross-compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build the agent for every target
+        run: |
+          for os in darwin linux windows; do
+            for arch in amd64 arm64; do
+              echo "--- $os/$arch"
+              GOOS=$os GOARCH=$arch CGO_ENABLED=0 go build -o /dev/null ./cmd/neverseen
+            done
+          done
+
+      # The icon is cgo on darwin alone; everywhere else it is pure Go. Building it
+      # for Linux and Windows here is what keeps that true — and what would have
+      # caught the claim, written in four places in this tree for a long time, that
+      # it could not be built off macOS at all.
+      - name: Build the icon where it needs no cgo
+        run: |
+          GOOS=linux CGO_ENABLED=0 go build -o /dev/null ./cmd/neverseen-tray
+          GOOS=windows CGO_ENABLED=0 go build -o /dev/null ./cmd/neverseen-tray
+
   lint:
     runs-on: ubuntu-latest
     steps:

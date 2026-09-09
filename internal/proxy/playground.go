@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/neverseen-ai/neverseen-agent/internal/detector"
@@ -52,7 +53,7 @@ func (s *Server) handleTest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	det := s.det
-	text := det.Sample()
+	var text string
 	if r.Method == http.MethodPost {
 		form, err := submittedForm(r)
 		if err != nil {
@@ -63,9 +64,15 @@ func (s *Server) handleTest(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), err.status())
 			return
 		}
-		if submitted := form.Get("text"); strings.TrimSpace(submitted) != "" {
-			text = submitted
-		}
+		text = form.Get("text")
+	}
+	if strings.TrimSpace(text) == "" {
+		// Asked of the detector the page is about to render with, not of the agent's.
+		// pii.Sample is locale-dependent, so read before the simulation was applied it
+		// showed the French sample under a configuration with `us` ticked: every US
+		// column comes back empty, which reads as "loading `us` masks nothing" — the
+		// page answering the opposite of the question it was asked.
+		text = det.Sample()
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -149,6 +156,23 @@ func (s *Server) simulated(form url.Values) (*detector.Detector, *playgroundErro
 		return nil, &playgroundError{err.Error(), http.StatusUnprocessableEntity}
 	}
 	return det, nil
+}
+
+// sameConfiguration reports whether two detectors would mask the same way.
+//
+// The banner this decides says "what you are looking at is not what the agent is
+// doing", and it was raised on a pointer comparison: simulated() returns a fresh
+// detector whenever the form carries secret_level, which the rendered form always
+// does — so it appeared on the plain "run it again" submission too, over a rendering
+// that *was* exactly what the agent is doing. A warning that is always on is one
+// nobody reads on the visit where it is true.
+//
+// The three fields are the whole of what simulated() can change, and each is read in
+// a deterministic order: Locales() is registry order and Disabled() is sorted.
+func sameConfiguration(a, b *detector.Detector) bool {
+	return a.SecretLevel() == b.SecretLevel() &&
+		slices.Equal(a.Locales(), b.Locales()) &&
+		slices.Equal(a.Disabled(), b.Disabled())
 }
 
 type playgroundError struct {
@@ -269,7 +293,7 @@ func (s *Server) playgroundView(det *detector.Detector, text string) playgroundV
 		SecretLevels: levels,
 		Groups:       groups,
 		Shown:        strings.Join(shown, ","),
-		Simulated:    det != s.det,
+		Simulated:    !sameConfiguration(det, s.det),
 		Token:        playgroundColumn{Output: masked, Count: replaced, Marked: markTokens(masked)},
 		Fake:         playgroundColumn{Output: fakeMasked, Count: fakeReplaced},
 		RoundTrips:   detector.Unmask(masked, mapping) == text,

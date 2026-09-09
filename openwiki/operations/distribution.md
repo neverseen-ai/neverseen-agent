@@ -43,6 +43,51 @@ any buckets not yet delivered: deleting the identity silently would have the nex
 enrol as a **second agent and count twice** against what they pay for, and deleting the
 buffer would throw away the record of an outage still in progress.
 
+### One owner of the service definition
+
+`internal/service` renders and registers them; `install.sh` calls it. Before that the
+plist and the unit were heredocs in the script, which meant anything else that wanted
+to install this agent could only write a fourth copy of them — and of the copies that
+drifted, the pair that mattered would be the one that *installed* the agent and the one
+that *restarted* it.
+
+```
+neverseen service install     register both jobs and start the agent now
+neverseen service uninstall   stop and deregister; leaves ~/.neverseen alone
+neverseen service restart     reload the definition and restart
+```
+
+**Three verbs, because each writes or removes a definition** — a restart is an unload
+and a load of the same one. `--status` and `--logs` stay in `install.sh`: they observe
+and author nothing, so moving them would grow the command without closing any drift.
+
+**It is not a second entrypoint.** It is a subcommand of `cmd/neverseen`; it assembles
+no pipeline, holds no secret and reads no environment. What differs between
+installations arrives as `--prefix`, which is an argument rather than a variable read
+here because `NEVERSEEN_PREFIX` configures an *installation* and not the running agent
+— read here, it would owe `.env.example` a line documenting a setting that changes
+nothing about what the agent does, and `TestDocumentedEnvironmentMatchesTheCode` fails
+in both directions.
+
+**`Render` takes the platform as a field, not `runtime.GOOS`.** That is what lets every
+rendering be asserted on every runner: the plist is checked on Linux and the Windows
+scheduled task on macOS. A definition only its own platform can test is a definition CI
+sees once a release. Only `Apply`, `Uninstall` and `Restart` — which shell out to
+`launchctl`, `systemctl` and `schtasks` — are build-tagged.
+
+**The two definitions that already existed are reproduced byte for byte**, verified
+against the script's own heredocs before they were deleted. Somebody has these loaded
+right now: a plist differing in anything but whitespace is a second definition of the
+same job rather than the same one moved. The only bytes that may differ are the ones
+that were malformed — paths are XML-escaped now, which the heredocs never did, so a
+home directory carrying an ampersand no longer produces a plist launchd silently
+refuses.
+
+**The agent is restarted and the icon is not**, on every platform that registers one:
+`KeepAlive` on launchd, `RestartOnFailure` on Task Scheduler, and neither for the icon.
+`TestOnlyTheAgentIsRestarted` holds both halves rather than leaving them to the golden
+files — a golden file records what the code does, and this records what it must.
+
 ### Services
 
 - **macOS** — a launchd agent at `~/Library/LaunchAgents/ai.neverseen.agent.plist`, with
@@ -50,8 +95,13 @@ buffer would throw away the record of an outage still in progress.
 - **macOS, the icon** — a second launchd agent, `ai.neverseen.tray.plist`, deliberately
   **without** `KeepAlive`: the menu offers "Quit the icon", and launchd would put it straight
   back while the person watched nothing happen. Closing a window has to work.
-- **Linux** — a systemd user unit at `~/.config/systemd/user/neverseen.service`. No tray:
-  the icon is Cocoa, and Linux has no menu bar to put it in.
+- **Linux** — a systemd user unit at `~/.config/systemd/user/neverseen.service`. No tray,
+  and the reason recorded here for years was wrong: the icon is cgo on **darwin alone**, and
+  `GOOS=linux CGO_ENABLED=0 go build ./cmd/neverseen-tray` succeeds today —
+  `fyne.io/systray` speaks StatusNotifierItem over dbus in pure Go. What actually stops it
+  is the desktop. Plasma hosts a StatusNotifierItem natively; GNOME needs the AppIndicator
+  extension. Shipping the icon would put one on most Linux machines that silently draws
+  nothing, which reads as an agent that is not running.
 
 ## Release (`.goreleaser.yml`)
 

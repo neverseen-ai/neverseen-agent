@@ -14,6 +14,8 @@ import (
 	"github.com/neverseen-ai/neverseen-agent/internal/detector"
 	"github.com/neverseen-ai/neverseen-agent/internal/vault"
 	"github.com/neverseen-ai/neverseen-agent/pkg/pii"
+
+	"github.com/neverseen-ai/neverseen-agent/internal/secure"
 )
 
 const testControlKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -269,19 +271,12 @@ func TestTheControlKeyIsCreatedOnceAndKeptPrivate(t *testing.T) {
 		t.Fatalf("key is %d characters, want 64", len(first))
 	}
 
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatal(err)
+	if ok, why := secure.IsRestricted(path); !ok {
+		t.Errorf("the key file is readable by more than its owner: %s", why)
 	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Errorf("the key file is %o, want 600", perm)
-	}
-	if dir, err := os.Stat(filepath.Dir(path)); err != nil {
-		t.Fatal(err)
-	} else if perm := dir.Mode().Perm(); perm != 0o700 {
-		// A 0600 file in a world-readable directory is a secret anybody can watch
-		// appear.
-		t.Errorf("the directory is %o, want 700", perm)
+	// A held file in a world-readable directory is a secret anybody can watch appear.
+	if ok, why := secure.IsRestricted(filepath.Dir(path)); !ok {
+		t.Errorf("the directory is readable by more than its owner: %s", why)
 	}
 
 	again, err := loadControlKey(path)

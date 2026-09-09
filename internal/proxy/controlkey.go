@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/neverseen-ai/neverseen-agent/internal/secure"
 )
 
 // The secret that closes the one route which changes what this agent masks.
@@ -84,14 +86,13 @@ func newControlKey() (string, error) {
 // telemetry buffer is: a torn key file on the next start reads as no key, which
 // silently turns the route off.
 func writeControlKey(path, key string) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("create %s: %w", dir, err)
+	if err := secure.MkdirAll(filepath.Dir(path)); err != nil {
+		return err
 	}
 
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(key+"\n"), 0o600); err != nil {
-		return fmt.Errorf("write %s: %w", tmp, err)
+	if err := secure.WriteFile(tmp, []byte(key+"\n")); err != nil {
+		return err
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		_ = os.Remove(tmp)

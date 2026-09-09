@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/neverseen-ai/neverseen-agent/pkg/telemetry"
+
+	"github.com/neverseen-ai/neverseen-agent/internal/secure"
 )
 
 func bucketAt(start time.Time, requests int) bucket {
@@ -50,12 +52,8 @@ func TestBufferRoundTrip(t *testing.T) {
 
 	// Readable only by its owner, like the identity beside it: it is a record of
 	// what one person's workstation did, on a machine that may have other users.
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Errorf("the buffer file is %o, want 600", perm)
+	if ok, why := secure.IsRestricted(path); !ok {
+		t.Errorf("the buffer file is readable by more than its owner: %s", why)
 	}
 
 	// Emptied, the file goes: an agent whose backend is answering leaves nothing

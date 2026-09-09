@@ -272,8 +272,9 @@ area: the reasoning is what stops a tempting simplification being reintroduced.
   halves: unreachable stays full, reachable still drops to partial.
 - **`neverseen mask` and the menu bar are the two surfaces, and both go through
   `proxy.SetPolicy`** — the one writer, as `proxy.Query` is the one asker. The command
-  exists because the menu bar is Cocoa and a Linux workstation had the route and no
-  way to reach it. It accepts a family name as well as a category code, and lists only
+  exists because a Linux workstation had the route and no way to reach it — not
+  because the icon cannot be built there (it is cgo on darwin alone) but because
+  GNOME will not show it without an extension. It accepts a family name as well as a category code, and lists only
   what the detector can actually emit (`Detector.Categories`): a switch for a category
   no loaded locale can find would say the agent is masking it.
 - **Four things change while the agent runs: the switched-off categories, the
@@ -516,6 +517,27 @@ area: the reasoning is what stops a tempting simplification being reintroduced.
 
 - **One type answers `/healthz`** (`proxy.Health`) and **one function asks it**
   (`proxy.Query`). Two ways to ask are two ways to answer differently.
+- **One owner of the service definition** (`internal/service`), and `install.sh` is a
+  caller. The launchd plist, the systemd user unit and the Windows logon tasks were
+  heredocs in that script, so anything else that wanted to install this agent — a
+  package, a disk image, a first-run pane in the icon — could only write a fourth
+  copy, and the two that drifted would be the one that installed the agent and the
+  one that restarted it. `neverseen service install|uninstall|restart` is the whole
+  surface: **three verbs, because each writes or removes a definition** and a restart
+  is an unload and a load of the same one. `--status` and `--logs` stay in the script,
+  because they observe and author nothing. **`Render` takes the platform as a field,
+  not `runtime.GOOS`**, so the plist is asserted on Linux and the scheduled task on
+  macOS — a definition only its own platform can test is one CI sees once a release.
+  Only `Apply`, `Uninstall` and `Restart` are build-tagged. The two definitions that
+  already existed are reproduced **byte for byte**: somebody has them loaded right
+  now, and a plist differing in anything is a second definition of the same job
+  rather than the same one moved.
+- **The agent is restarted and the icon is not, on every platform.** `KeepAlive` on
+  launchd, `RestartOnFailure` on Task Scheduler, and deliberately neither for the
+  icon: its menu offers "Quit the icon", and a supervisor that put it straight back
+  would have the person click it and watch nothing happen.
+  `TestOnlyTheAgentIsRestarted` holds both halves rather than leaving them to the
+  golden files, which record what the code does where the test records what it must.
 - **The menu bar is a separate process on purpose.** An icon inside the proxy
   vanishes at the moment it becomes useful. Its launchd agent has no `KeepAlive`
   — the menu offers "Quit the icon" — while the agent's keeps it.

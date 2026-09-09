@@ -3,8 +3,6 @@ package tray
 import (
 	"bytes"
 	"context"
-	"image"
-	_ "image/png"
 	"reflect"
 	"runtime"
 	"slices"
@@ -121,19 +119,20 @@ func TestTheIcons(t *testing.T) {
 		"masking": maskingIcon, "partial": partialIcon, "unmasked": unmaskedIcon,
 	}
 	for name, raw := range icons {
-		cfg, format, err := image.DecodeConfig(bytes.NewReader(raw))
+		// Read through iconSize, which is per-platform: these are PNGs everywhere but
+		// Windows, where systray calls CreateIconFromResourceEx and only an .ico will
+		// do. Asserted here with image/png alone, the new Windows runner failed on
+		// "image: unknown format" — a red job over icons that are perfectly correct
+		// for the platform they ship to.
+		width, height, err := iconSize(raw)
 		if err != nil {
-			t.Fatalf("%s does not decode: %v", name, err)
-		}
-		if format != "png" {
-			t.Errorf("%s is %s, want png — the toolkit is handed bytes and decodes them itself",
-				name, format)
+			t.Fatalf("%s is not the format this platform's toolkit is handed: %v", name, err)
 		}
 		// Thirty-two because the darwin backend sets the image to sixteen points and
 		// macOS is a @2x world. A different size is not broken, but it is soft or
 		// wasteful, and neither is intended.
-		if cfg.Width != 32 || cfg.Height != 32 {
-			t.Errorf("%s is %dx%d, want 32x32", name, cfg.Width, cfg.Height)
+		if width != 32 || height != 32 {
+			t.Errorf("%s is %dx%d, want 32x32", name, width, height)
 		}
 	}
 

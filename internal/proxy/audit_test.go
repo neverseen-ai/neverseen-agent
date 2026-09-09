@@ -19,6 +19,8 @@ import (
 
 	"github.com/neverseen-ai/neverseen-agent/internal/detector"
 	"github.com/neverseen-ai/neverseen-agent/internal/vault"
+
+	"github.com/neverseen-ai/neverseen-agent/internal/secure"
 )
 
 // Audit mode is the one surface in this agent that prints a real value, so what
@@ -682,20 +684,16 @@ func TestATraceIsPrivate(t *testing.T) {
 
 	post(t, agent, "/anthropic/v1/messages", "perm", `{"prompt":"pierre.paul@example.fr"}`)
 
-	if info, err := os.Stat(dir); err != nil {
-		t.Fatal(err)
-	} else if perm := info.Mode().Perm(); perm != 0o700 {
-		t.Errorf("the trace directory is %o, want 700", perm)
+	if ok, why := secure.IsRestricted(dir); !ok {
+		t.Errorf("the trace directory is readable by more than its owner: %s", why)
 	}
 
 	names, err := filepath.Glob(filepath.Join(dir, "*.txt"))
 	if err != nil || len(names) == 0 {
 		t.Fatalf("no trace to check: %v", err)
 	}
-	if info, err := os.Stat(names[0]); err != nil {
-		t.Fatal(err)
-	} else if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Errorf("the trace file is %o, want 600", perm)
+	if ok, why := secure.IsRestricted(names[0]); !ok {
+		t.Errorf("the trace file is readable by more than its owner: %s", why)
 	}
 }
 

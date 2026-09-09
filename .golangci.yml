@@ -60,6 +60,15 @@ linters:
           - unparam
           - gocritic
 
+      # internal/service dispatches to launchctl, systemctl or schtasks — one
+      # per build-tagged file, sharing one `run` helper. The linter analyses a
+      # single GOOS at a time, so it only ever sees that helper called with one
+      # command name and reports the parameter as constant. It is wrong on every
+      # platform, and it is wrong differently on each.
+      - path: internal/service/
+        linters:
+          - unparam
+
 formatters:
   enable:
     - gofmt

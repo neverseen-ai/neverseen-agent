@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/neverseen-ai/neverseen-agent/pkg/telemetry"
+
+	"github.com/neverseen-ai/neverseen-agent/internal/secure"
 )
 
 func TestIdentityRoundTrip(t *testing.T) {
@@ -67,12 +69,8 @@ func TestIdentityDirectoryIsPrivate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	info, err := os.Stat(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if perm := info.Mode().Perm(); perm != 0o700 {
-		t.Errorf("the identity directory is %o, want 700", perm)
+	if ok, why := secure.IsRestricted(dir); !ok {
+		t.Errorf("the identity directory is readable by more than its owner: %s", why)
 	}
 }
 
