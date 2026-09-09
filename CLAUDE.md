@@ -5,8 +5,22 @@ Guidance for Claude Code working in this repository.
 Neverseen is an agent installed on each workstation. It proxies the AI tools
 people use to a model provider, masking personal data and credentials on the way
 out and restoring them on the way back. Module path:
-`github.com/neverseen-ai/neverseen-agent`. Licence: FSL-1.1-ALv2 (source available, not
-open source — say "source available").
+`github.com/neverseen-ai/neverseen-agent`. Licence: FSL-1.1-ALv2.
+
+**How to describe the licence**: "source available today, open source on a
+two-year delay" — what the Open Source Initiative calls delayed open source
+publication. Say **source available** for the state a release is in now, and name
+the future grant whenever there is room for it: the trajectory is the reassuring
+half and a bare "source available" hides it.
+
+Three things the licence text actually says, and all three are load-bearing. It is
+an **additional** licence, not a conversion — the Apache 2.0 grant sits beside the
+FSL terms rather than replacing them, so "becomes Apache 2.0" is shorthand and
+"converts" is wrong. It is granted **irrevocably**, on the day the release ships,
+so nothing about it depends on a decision anybody takes later — never write it as
+a promise or a plan. And it is effective on the **second anniversary of that
+release**, per release rather than per project. Never write that the current
+release **is** open source: the FSL is not OSI-approved.
 
 The paid supervision backend is a **separate, private repository**
 (`cloakfleet-cloud`), checked out alongside this one — `../cloakfleet-cloud`. It
@@ -170,7 +184,7 @@ area: the reasoning is what stops a tempting simplification being reintroduced.
   same setting where a one-off run can reach it, and the command's choice wins over
   the environment as it does for every option. The guard is `proxy.BeyondLoopback`
   asked at the point the agent starts listening, **not on the flag** — the variable
-  exposes exactly as much and warned nowhere. `:8787` counts as reachable: it reads
+  exposes exactly as much and warned nowhere. `:9787` counts as reachable: it reads
   as "no address" and binds every interface. A warning rather than a refusal because
   serving a container or a VM on this workstation is a real thing to want, and an
   agent that refused is one somebody patches out. What it costs is the reason
