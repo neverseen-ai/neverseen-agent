@@ -8,7 +8,7 @@ LDFLAGS := -X main.version=$(VERSION)
 
 # Mirrors proxy.DefaultListen, for the URL to open. The agent logs the address it
 # actually took, so a drift here shows up next to the wrong URL.
-LISTEN  ?= 127.0.0.1:8787
+LISTEN  ?= 127.0.0.1:9787
 
 help: ## Show this help
 	@grep -hE '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "};{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'

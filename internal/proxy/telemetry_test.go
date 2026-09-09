@@ -592,7 +592,7 @@ func TestStateReportsTheAgentsOwnExposure(t *testing.T) {
 		},
 		Audit:  io.Discard,
 		Traces: traces,
-		Listen: ":8787",
+		Listen: ":9787",
 	}, det, v)
 	if err != nil {
 		t.Fatal(err)

@@ -14,7 +14,7 @@ it, which is how Agent Veil ended up applying a default on one path and not the 
 | `NEVERSEEN_PII_ALLOWLIST` | `detector.EnvAllowList` | empty | values never to mask, comma-separated; compared ignoring case and spacing |
 | `NEVERSEEN_PII_SUBSTITUTION` | `detector.EnvSubstitution` | `token` | `token` or `fake` |
 | `NEVERSEEN_SECRET_LEVEL` | `detector.EnvSecretLevel` | `weak` | `weak`, `medium` or `strong`; grades the catch-all named-secret pattern only — see [the secret level](../architecture/detection-engine.md#the-secret-level) |
-| `NEVERSEEN_LISTEN` | `proxy.EnvListen` | `127.0.0.1:8787` | loopback on purpose — see below |
+| `NEVERSEEN_LISTEN` | `proxy.EnvListen` | `127.0.0.1:9787` | loopback on purpose — see below |
 | `NEVERSEEN_PROVIDERS` | `proxy.EnvProviders` | none | `code=url` pairs, applied as **overrides** onto the default set |
 | `NEVERSEEN_ENCRYPTION_KEY` | `proxy.EnvEncryptionKey` | generated per process | 32 bytes, hex, for the session mapping |
 | `NEVERSEEN_BACKEND_URL` | `proxy.EnvBackendURL` | unset = **no supervision at all** | no reporter is built; a whole feature rather than a disabled one |
@@ -77,7 +77,7 @@ caller today (see [what replacing the `audit` command cost](#what-replacing-the-
 
 #### `-l`, and what leaves the loopback default behind
 
-`neverseen proxy -l 0.0.0.0:8787` serves every interface. The address was already
+`neverseen proxy -l 0.0.0.0:9787` serves every interface. The address was already
 reachable through `NEVERSEEN_LISTEN`; the flag is the same setting where a one-off run
 can reach it, and `Options.Listen` wins over the variable — the command's choice does,
 for every option, so an operator serving a container for one run does not have to unset
@@ -88,7 +88,7 @@ in `serveAgent`, where the agent starts listening, so both routes to a reachable
 go through one predicate and one message. Written on the flag, the variable — which
 exposes exactly as much — would have gone on warning nowhere.
 
-`:8787` counts as reachable, and that case is the reason the predicate is a function
+`:9787` counts as reachable, and that case is the reason the predicate is a function
 rather than a comparison against `DefaultListen`: it reads as "no address given" and
 binds every interface. A bare name counts too, because it resolves to whatever DNS says.
 
@@ -99,7 +99,7 @@ scolding, because the person reading the log six months later is not the person 
 it:
 
 ```
-level=WARN msg="this agent is reachable beyond this workstation" address=0.0.0.0:8787
+level=WARN msg="this agent is reachable beyond this workstation" address=0.0.0.0:9787
   unauthenticated="/healthz and /test"
   why_it_matters="/test masks any text on request, and a session is named by a header
   the caller chooses, so a caller that guesses one is handed its replacements"
@@ -301,7 +301,7 @@ expected to see named, missing from it, is a gap in the catalogue for their data
 
 ## `/test` — a real tool, not a demo
 
-While the agent runs, `http://127.0.0.1:8787/test` renders one text three ways: as written,
+While the agent runs, `http://127.0.0.1:9787/test` renders one text three ways: as written,
 masked with tokens, and masked with stand-ins — **using the deployment's own detector**, its
 locales and its allow list, rather than a demonstration built on defaults, which would answer
 a different question than the one being asked.

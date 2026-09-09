@@ -42,7 +42,7 @@ func (r *recorder) last() display {
 // The icon follows Masking and nothing else, so the picture and the exit code of
 // `neverseen status` cannot disagree about the same agent.
 func TestTheIconFollowsWhetherValuesAreReplaced(t *testing.T) {
-	masking := proxy.Status{Addr: "127.0.0.1:8787", Answering: true,
+	masking := proxy.Status{Addr: "127.0.0.1:9787", Answering: true,
 		Health: proxy.Health{Version: "1.4.2", Locales: []string{"fr", "gb"}, Substitution: "token"}}
 
 	tests := map[string]struct {
@@ -56,12 +56,12 @@ func TestTheIconFollowsWhetherValuesAreReplaced(t *testing.T) {
 		// clear. An icon that called this protected would be the icon somebody
 		// trusted while it did not.
 		"no locale": {
-			proxy.Status{Addr: "127.0.0.1:8787", Answering: true,
+			proxy.Status{Addr: "127.0.0.1:9787", Answering: true,
 				Health: proxy.Health{Version: "1.4.2", Substitution: "token"}},
 			unmaskedIcon, "Not masking",
 		},
 		"not answering": {
-			proxy.Status{Addr: "127.0.0.1:8787"},
+			proxy.Status{Addr: "127.0.0.1:9787"},
 			unmaskedIcon, "Not masking",
 		},
 	}
@@ -92,7 +92,7 @@ func TestTheIconFollowsWhetherValuesAreReplaced(t *testing.T) {
 // The words have to name the consequence, not the process state. "Not answering"
 // alone tells somebody nothing about what it costs them.
 func TestTheMenuSaysWhatIsHappeningToTheTraffic(t *testing.T) {
-	lines := render(proxy.Status{Addr: "127.0.0.1:8787"}).lines
+	lines := render(proxy.Status{Addr: "127.0.0.1:9787"}).lines
 	joined := strings.Join(lines, "\n")
 
 	for _, want := range []string{"clear", "not answering", "neverseen proxy"} {
@@ -101,7 +101,7 @@ func TestTheMenuSaysWhatIsHappeningToTheTraffic(t *testing.T) {
 		}
 	}
 
-	lines = render(proxy.Status{Addr: "127.0.0.1:8787", Answering: true,
+	lines = render(proxy.Status{Addr: "127.0.0.1:9787", Answering: true,
 		Health: proxy.Health{Locales: []string{"fr"}, Substitution: "fake", Version: "9.9.9"}}).lines
 	joined = strings.Join(lines, "\n")
 	for _, want := range []string{"fr", "fake", "9.9.9"} {
@@ -153,7 +153,7 @@ func TestTheIcons(t *testing.T) {
 // main thread.
 func TestWatchAppliesOnlyWhatChanged(t *testing.T) {
 	var mu sync.Mutex
-	answer := proxy.Status{Addr: "127.0.0.1:8787", Answering: true,
+	answer := proxy.Status{Addr: "127.0.0.1:9787", Answering: true,
 		Health: proxy.Health{Locales: []string{"fr"}, Substitution: "token"}}
 
 	view := &recorder{}
@@ -181,7 +181,7 @@ func TestWatchAppliesOnlyWhatChanged(t *testing.T) {
 	}
 
 	mu.Lock()
-	answer = proxy.Status{Addr: "127.0.0.1:8787"} // the agent stops
+	answer = proxy.Status{Addr: "127.0.0.1:9787"} // the agent stops
 	mu.Unlock()
 
 	waitFor(t, func() bool { return view.updates() >= 2 })
@@ -226,14 +226,14 @@ func TestItReadsARealAgent(t *testing.T) {
 // hard-coded one would go on offering a provider a deployment had pointed
 // elsewhere, and would offer all eight while the agent was down.
 func TestTheProvidersOfferedAreTheOnesTheAgentServes(t *testing.T) {
-	serving := render(proxy.Status{Addr: "127.0.0.1:8787", Answering: true,
+	serving := render(proxy.Status{Addr: "127.0.0.1:9787", Answering: true,
 		Health: proxy.Health{Locales: []string{"fr"}, Providers: []string{"anthropic", "gemini"}}})
 	if want := []string{"anthropic", "gemini"}; !slices.Equal(serving.providers, want) {
 		t.Errorf("providers = %v, want %v", serving.providers, want)
 	}
 
 	// Nothing answering serves nothing, so there is no line worth handing over.
-	stopped := render(proxy.Status{Addr: "127.0.0.1:8787"})
+	stopped := render(proxy.Status{Addr: "127.0.0.1:9787"})
 	if len(stopped.providers) != 0 {
 		t.Errorf("a stopped agent offered %v", stopped.providers)
 	}
@@ -245,7 +245,7 @@ func TestTheProvidersOfferedAreTheOnesTheAgentServes(t *testing.T) {
 // the life of the icon.
 func TestWatchNoticesAProviderListChange(t *testing.T) {
 	var mu sync.Mutex
-	answer := proxy.Status{Addr: "127.0.0.1:8787", Answering: true,
+	answer := proxy.Status{Addr: "127.0.0.1:9787", Answering: true,
 		Health: proxy.Health{Locales: []string{"fr"}, Providers: []string{"anthropic"}}}
 
 	view := &recorder{}
@@ -276,20 +276,20 @@ func TestTheLineIsTheAgentsOwn(t *testing.T) {
 	// A provider whose variable *and* CLI are both de-facto gets a line somebody
 	// can paste and press return on. A prefixed assignment, not an export: it
 	// applies to that one run and leaves the shell as it was.
-	if got, want := proxy.PointAt("anthropic", "127.0.0.1:8787"),
-		"ANTHROPIC_BASE_URL=http://127.0.0.1:8787/anthropic claude"; got != want {
+	if got, want := proxy.PointAt("anthropic", "127.0.0.1:9787"),
+		"ANTHROPIC_BASE_URL=http://127.0.0.1:9787/anthropic claude"; got != want {
 		t.Errorf("PointAt = %q, want %q", got, want)
 	}
-	if got, want := proxy.PointAt("openai", "127.0.0.1:8787"),
-		"OPENAI_BASE_URL=http://127.0.0.1:8787/openai codex"; got != want {
+	if got, want := proxy.PointAt("openai", "127.0.0.1:9787"),
+		"OPENAI_BASE_URL=http://127.0.0.1:9787/openai codex"; got != want {
 		t.Errorf("PointAt = %q, want %q", got, want)
 	}
 	// A provider with no agreed variable gets the URL and nothing invented: neither
 	// a variable name nor a command name, because either would fail after somebody
 	// had already pasted it and believed it. Six of the eight are in this case, and
 	// the table is where that stops being true, one verified pair at a time.
-	if got, want := proxy.PointAt("gemini", "127.0.0.1:8787"),
-		"http://127.0.0.1:8787/gemini"; got != want {
+	if got, want := proxy.PointAt("gemini", "127.0.0.1:9787"),
+		"http://127.0.0.1:9787/gemini"; got != want {
 		t.Errorf("PointAt = %q, want %q", got, want)
 	}
 }
@@ -363,7 +363,7 @@ func healthWithGroups(off ...string) proxy.Health {
 // own copy of the catalogue would go on offering a switch a rebuilt agent had
 // stopped honouring.
 func TestTheSwitchesAreTheAgentsOwn(t *testing.T) {
-	d := render(proxy.Status{Addr: "127.0.0.1:8787", Answering: true, Health: healthWithGroups()})
+	d := render(proxy.Status{Addr: "127.0.0.1:9787", Answering: true, Health: healthWithGroups()})
 
 	if len(d.switches) != 3 {
 		t.Fatalf("drew %d families, want 3", len(d.switches))
@@ -392,7 +392,7 @@ func TestTheSwitchesAreTheAgentsOwn(t *testing.T) {
 // An agent that is not answering offers nothing: a menu whose clicks reach nothing
 // is worse than a menu with no clicks.
 func TestNoSwitchesWhenTheAgentIsAbsent(t *testing.T) {
-	d := render(proxy.Status{Addr: "127.0.0.1:8787"})
+	d := render(proxy.Status{Addr: "127.0.0.1:9787"})
 	if d.switches != nil {
 		t.Errorf("drew %d families for an agent that is not there", len(d.switches))
 	}
@@ -694,7 +694,7 @@ func TestAClickCarriesTheWholeState(t *testing.T) {
 // the locales are named in a state line only while no category is switched off,
 // which is why the second case pins an agent in the partial state.
 func TestSameSeesTheSettingsNoStateLineCarries(t *testing.T) {
-	masking := proxy.Status{Addr: "127.0.0.1:8787", Answering: true, Health: proxy.Health{
+	masking := proxy.Status{Addr: "127.0.0.1:9787", Answering: true, Health: proxy.Health{
 		Version: "1.0.0", Masking: "full", Substitution: "token", SecretLevel: "weak",
 		Locales: []string{"fr"}, AvailableLocales: []string{"fr", "gb"},
 	}}
@@ -733,7 +733,7 @@ func TestSameSeesTheSettingsNoStateLineCarries(t *testing.T) {
 // perturb fails loudly rather than passing quietly — an unperturbed field is a
 // field this test is not checking, which is exactly how the last one got through.
 func TestSameComparesEveryFieldOfADisplay(t *testing.T) {
-	base := render(proxy.Status{Addr: "127.0.0.1:8787", Answering: true, Health: proxy.Health{
+	base := render(proxy.Status{Addr: "127.0.0.1:9787", Answering: true, Health: proxy.Health{
 		Version: "1.0.0", Masking: "full", Substitution: "token", SecretLevel: "weak",
 		Locales: []string{"fr"}, AvailableLocales: []string{"fr", "gb"},
 		Providers: []string{"anthropic"},

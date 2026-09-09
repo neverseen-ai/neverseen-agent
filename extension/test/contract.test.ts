@@ -35,7 +35,7 @@ const contract = JSON.parse(
 ) as Contract;
 
 const cfg: AgentConfig = {
-  baseUrl: 'http://127.0.0.1:8787',
+  baseUrl: 'http://127.0.0.1:9787',
   key: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
 };
 

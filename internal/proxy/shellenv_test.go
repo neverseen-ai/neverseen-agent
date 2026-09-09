@@ -197,12 +197,12 @@ func TestEveryOfferedToolHasAVariable(t *testing.T) {
 // rather than a preference.
 func TestPowerShellGetsItsOwnSpelling(t *testing.T) {
 	var out strings.Builder
-	if err := ShellEnvFor(context.Background(), &out, "127.0.0.1:8787", true, ShellPowerShell); err != nil {
+	if err := ShellEnvFor(context.Background(), &out, "127.0.0.1:9787", true, ShellPowerShell); err != nil {
 		t.Fatalf("ShellEnvFor: %v", err)
 	}
 
 	got := out.String()
-	if !strings.Contains(got, `$env:ANTHROPIC_BASE_URL = "http://127.0.0.1:8787/anthropic"`) {
+	if !strings.Contains(got, `$env:ANTHROPIC_BASE_URL = "http://127.0.0.1:9787/anthropic"`) {
 		t.Errorf("no PowerShell assignment in:\n%s", got)
 	}
 	if strings.Contains(got, "export ") {

@@ -7,7 +7,7 @@ import { load, looksLikeAKey, save, type Storage } from '../src/settings.ts';
 
 // What the options page says, held apart from the page that says it.
 
-const BASE = 'http://127.0.0.1:8787';
+const BASE = 'http://127.0.0.1:9787';
 
 function healthy(over: Partial<Health> = {}): Health {
   return {

@@ -172,11 +172,11 @@ cases:
   # this kind, and IP_ADDRESS — the largest category — was majority reserved.
 
   - id: intl-prec-loopback
-    text: "The agent listens on 127.0.0.1:8787 by default."
+    text: "The agent listens on 127.0.0.1:9787 by default."
     expect: []
 
   - id: intl-prec-unspecified
-    text: "Binding 0.0.0.0:8787 serves every interface."
+    text: "Binding 0.0.0.0:9787 serves every interface."
     expect: []
 
   - id: intl-prec-documentation-block

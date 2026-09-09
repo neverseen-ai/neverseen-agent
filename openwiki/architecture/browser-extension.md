@@ -278,7 +278,7 @@ The indicator follows **`Level`**, not `Masking`, for the reason the menu bar ic
 `neverseen status` exit code do: an agent with a category switched off *is* masking, and
 a green light over that is a green light over the values that are not being replaced.
 
-The base URL is **discovered, not asked for** — `http://127.0.0.1:8787` by default; the
+The base URL is **discovered, not asked for** — `http://127.0.0.1:9787` by default; the
 manual field exists only for an agent moved by `NEVERSEEN_LISTEN`. Match patterns ignore
 ports, so `http://127.0.0.1/*` covers whichever one it took.
 

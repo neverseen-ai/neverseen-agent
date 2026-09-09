@@ -467,15 +467,15 @@ func TestMaskSaysWhenNoCountryIsLoaded(t *testing.T) {
 // sentence is each command's own — only this one is about to list the catalogue.
 func TestMaskOpensOnTheSharedSentence(t *testing.T) {
 	for name, status := range map[string]proxy.Status{
-		"no locale": {Addr: "127.0.0.1:8787", Answering: true, Health: proxy.Health{
+		"no locale": {Addr: "127.0.0.1:9787", Answering: true, Health: proxy.Health{
 			Masking: "none"}},
-		"partial": {Addr: "127.0.0.1:8787", Answering: true, Health: proxy.Health{
+		"partial": {Addr: "127.0.0.1:9787", Answering: true, Health: proxy.Health{
 			Locales: []string{"fr"}, Masking: "partial",
 			Groups: []proxy.HealthGroup{{Code: "technical", Label: "Technical identifiers",
 				Categories: []proxy.HealthCategory{
 					{Code: "IP_ADDRESS", Label: "IP address", Off: true}}}},
 		}},
-		"full": {Addr: "127.0.0.1:8787", Answering: true, Health: proxy.Health{
+		"full": {Addr: "127.0.0.1:9787", Answering: true, Health: proxy.Health{
 			Locales: []string{"fr"}, Masking: "full"}},
 	} {
 		t.Run(name, func(t *testing.T) {

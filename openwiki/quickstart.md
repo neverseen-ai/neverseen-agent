@@ -69,9 +69,9 @@ Run it and point a tool at it by naming the provider in the first path segment:
 
 ```console
 $ NEVERSEEN_PII_LOCALE=fr,gb,us neverseen proxy
-level=INFO msg=listening address=127.0.0.1:8787 providers=anthropic,deepinfra,gemini,...
+level=INFO msg=listening address=127.0.0.1:9787 providers=anthropic,deepinfra,gemini,...
 
-$ ANTHROPIC_BASE_URL=http://127.0.0.1:8787/anthropic claude -p "…"
+$ ANTHROPIC_BASE_URL=http://127.0.0.1:9787/anthropic claude -p "…"
 ```
 
 ## The load-bearing rules

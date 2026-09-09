@@ -9,7 +9,7 @@ import (
 
 // A provider is an upstream the agent forwards to, addressed by the first
 // segment of the path: a caller pointing its SDK at
-// "http://localhost:8787/anthropic" reaches api.anthropic.com, and one pointing
+// "http://localhost:9787/anthropic" reaches api.anthropic.com, and one pointing
 // at ".../openai" reaches api.openai.com.
 //
 // Routing on an explicit segment rather than guessing from the path is what makes

@@ -20,7 +20,7 @@ response →  expand the masked values back (buffered or streamed)
 ## Provider routing
 
 A provider is an upstream addressed by the **first path segment**: a caller pointed at
-`http://127.0.0.1:8787/anthropic` reaches `api.anthropic.com`, one pointed at `/openai`
+`http://127.0.0.1:9787/anthropic` reaches `api.anthropic.com`, one pointed at `/openai`
 reaches `api.openai.com` (`provider.go:10-18`). Eight providers ship in
 `DefaultProviders` (`provider.go:34`).
 

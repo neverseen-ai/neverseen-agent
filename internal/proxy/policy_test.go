@@ -462,7 +462,7 @@ func TestLevelIsReadFromTheAgent(t *testing.T) {
 // The status text names what is in clear rather than counting it: a name is what
 // tells somebody whether the category they care about is among them.
 func TestStatusNamesWhatIsInClear(t *testing.T) {
-	status := Status{Addr: "127.0.0.1:8787", Answering: true, Health: Health{
+	status := Status{Addr: "127.0.0.1:9787", Answering: true, Health: Health{
 		Locales: []string{"fr"}, Masking: "partial", Version: "1.4.2", Substitution: "token",
 		Groups: []HealthGroup{{Code: "technical", Label: "Technical identifiers",
 			Categories: []HealthCategory{

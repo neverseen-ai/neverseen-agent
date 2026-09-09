@@ -69,7 +69,7 @@ func TestQueryReportsAnAbsentAgent(t *testing.T) {
 // Answering is not the question. An agent with no locale selected is up, healthy,
 // and recognises almost nothing — the state a green light would call fine.
 func TestAnAgentWithNoLocaleIsNotMasking(t *testing.T) {
-	answering := Status{Addr: "127.0.0.1:8787", Answering: true,
+	answering := Status{Addr: "127.0.0.1:9787", Answering: true,
 		Health: Health{Status: "ok", Substitution: "token"}}
 	if answering.Masking() {
 		t.Error("an agent with no locale reports itself masking")
@@ -113,15 +113,15 @@ func TestABadBodyStillCountsAsAnswering(t *testing.T) {
 // by TestMaskOpensOnTheSharedSentence.
 func TestWriteOpensOnTheHeadline(t *testing.T) {
 	for name, status := range map[string]Status{
-		"stopped": {Addr: "127.0.0.1:8787"},
-		"no locale": {Addr: "127.0.0.1:8787", Answering: true, Health: Health{
+		"stopped": {Addr: "127.0.0.1:9787"},
+		"no locale": {Addr: "127.0.0.1:9787", Answering: true, Health: Health{
 			Masking: "none"}},
-		"partial": {Addr: "127.0.0.1:8787", Answering: true, Health: Health{
+		"partial": {Addr: "127.0.0.1:9787", Answering: true, Health: Health{
 			Locales: []string{"fr"}, Masking: "partial",
 			Groups: []HealthGroup{{Code: "technical", Label: "Technical identifiers",
 				Categories: []HealthCategory{{Code: "IP_ADDRESS", Label: "IP address", Off: true}}}},
 		}},
-		"full": {Addr: "127.0.0.1:8787", Answering: true, Health: Health{
+		"full": {Addr: "127.0.0.1:9787", Answering: true, Health: Health{
 			Locales: []string{"fr"}, Masking: "full"}},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -144,7 +144,7 @@ func TestWriteOpensOnTheHeadline(t *testing.T) {
 // them would send "Email address" to the agent, which fails with "no category named"
 // — an error that reads as a bug in the agent rather than in the caller.
 func TestPolicyOfCarriesCodesNotLabels(t *testing.T) {
-	status := Status{Addr: "127.0.0.1:8787", Answering: true, Health: Health{
+	status := Status{Addr: "127.0.0.1:9787", Answering: true, Health: Health{
 		Locales: []string{"fr", "gb"}, Substitution: "fake", SecretLevel: "strong",
 		Masking: "partial",
 		Groups: []HealthGroup{{Code: "technical", Label: "Technical identifiers",

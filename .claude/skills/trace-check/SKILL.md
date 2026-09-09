@@ -75,7 +75,7 @@ the provider — for you to read. Then:
 2. `[CATEGORY_n]` is a value the catalogue *did* recognise. Not a finding.
 3. Before reporting anything as a detector gap, check the policy — a switched-off
    category explains a value in clear completely:
-   `curl -s localhost:8787/healthz | python3 -m json.tool`, and remember
+   `curl -s localhost:9787/healthz | python3 -m json.tool`, and remember
    `~/.neverseen/policy.json` wins over the environment.
 4. A real gap is a new corpus case first, then a pattern. The procedure is
    `openwiki/workflows/extending-the-catalogue.md` — and a corpus case that must

@@ -46,7 +46,18 @@ const DefaultIdentityFile = "~/.neverseen/agent.json"
 // forwards their credentials and it scopes the mapping by a header they
 // control — so it is built for one person on one workstation. Bound to a
 // reachable interface it becomes a way to read another user's session.
-const DefaultListen = "127.0.0.1:8787"
+//
+// The port is not arbitrary either. This agent is installed as a session service
+// that binds at login, before anything else starts, and it was on 8787 — which is
+// `wrangler dev`'s default and RStudio Server's, at exactly this audience. Whichever
+// of the two lost, the loss was silent: the agent first, and `wrangler dev` reports
+// EADDRINUSE against a port its user never chose; wrangler first, and the agent
+// never binds, `neverseen env` prints nothing by design, and every tool on the
+// workstation talks to the provider in clear. A port conflict must not be a way to
+// switch the masking off, so this one is registered to nothing and claimed by no
+// tool — and it stays out of the ephemeral range, which is where the OS would hand
+// it to somebody else before login.
+const DefaultListen = "127.0.0.1:9787"
 
 // BeyondLoopback reports whether an address puts this agent on an interface
 // something other than this workstation can reach.
@@ -72,7 +83,7 @@ func BeyondLoopback(addr string) bool {
 
 	switch strings.TrimSpace(host) {
 	case "":
-		// ":8787" binds every interface. This is the shape where saying nothing
+		// ":9787" binds every interface. This is the shape where saying nothing
 		// would be worst: it reads as "no address given" and means "all of them".
 		return true
 	case "localhost":

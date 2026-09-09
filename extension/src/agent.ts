@@ -14,7 +14,7 @@ import {
 // site loads can read, and it opens /unmask — token in, original out.
 
 /** DEFAULT_BASE_URL mirrors proxy.DefaultListen. */
-export const DEFAULT_BASE_URL = 'http://127.0.0.1:8787';
+export const DEFAULT_BASE_URL = 'http://127.0.0.1:9787';
 
 /** The header proxy.controlHeader reads. A custom header is what a page cannot set
  * on a simple cross-origin request, which is what keeps the internet out of these

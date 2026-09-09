@@ -253,7 +253,7 @@ func runProxy(args []string, stdout io.Writer) error {
 	// — and the agent warns on every start when the result is reachable, whichever of
 	// the two set it.
 	listen := fs.String("l", "",
-		"address to listen on (default "+proxy.DefaultListen+"); 0.0.0.0:8787 serves every interface")
+		"address to listen on (default "+proxy.DefaultListen+"); 0.0.0.0:9787 serves every interface")
 	// Passed by the Windows logon task and by nothing a person types. It hides the
 	// console this process was handed, which a console binary started by Task
 	// Scheduler otherwise shows at every login. It does nothing on macOS and Linux,

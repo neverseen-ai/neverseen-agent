@@ -100,7 +100,7 @@ function Write-Config {
 # Unset means none, which is an agent that answers and recognises almost nothing.
 NEVERSEEN_PII_LOCALE=
 
-NEVERSEEN_LISTEN=127.0.0.1:8787
+NEVERSEEN_LISTEN=127.0.0.1:9787
 
 # Supervision is optional and the agent is complete without it.
 # NEVERSEEN_BACKEND_URL=
@@ -203,7 +203,7 @@ if ($Shell) { Set-ShellLine }
 
 Write-Host ""
 Write-Host "Done. Open the test page to see what it would mask, with your own text:"
-Write-Host "  http://127.0.0.1:8787/test"
+Write-Host "  http://127.0.0.1:9787/test"
 Write-Host ""
 Write-Host "Two things to expect on Windows:"
 Write-Host "  - SmartScreen will warn on first run; these builds are not signed yet."
