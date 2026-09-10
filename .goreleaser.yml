@@ -100,6 +100,7 @@ archives:
     files:
       - README.md
       - LICENSE.md
+      - THIRD_PARTY_LICENSES
       - NOTICE
       - .env.example
       - install.sh
