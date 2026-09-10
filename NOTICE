@@ -45,19 +45,29 @@ The MIT License text of that work is reproduced below, as its terms require.
 Vendor credential patterns
 --------------------------
 
-The second tier of vendor prefixes in `pkg/pii/patterns_secret.go`
-(`vendorPrefixes`) is derived from the rule catalogue of betterleaks
-(https://github.com/betterleaks/betterleaks), itself a fork of gitleaks, which
-is licensed under the MIT License.
+The vendor-prefix rules in `pkg/pii/patterns_secret.go` are derived from the
+rule catalogue of betterleaks (https://github.com/betterleaks/betterleaks),
+itself a fork of gitleaks, which is licensed under the MIT License. That is the
+`vendorPrefixes` table and one rule outside it, `clickhouseRe`; the rest of the
+catalogue's first tier is this project's own.
 
 What is reused is the set of documented vendor token prefixes and the lengths
 each vendor issues -- facts about other companies' credential formats, gathered
 there and verifiable against each vendor's own documentation. The expressions
 were rewritten for this engine rather than copied: RE2 rather than a boundary
-assertion, no case folding over a literal prefix, and no trailing group that
-consumes a character. The rules that identify a credential by the *name* beside
-it, rather than by the value, are not reused at all -- this engine already reads
-that shape.
+assertion, no case folding over a literal prefix, and, in the table, no trailing
+group that consumes a character.
+
+`clickhouseRe` is the exception to that last point, and the reason the scope
+above is written by origin rather than by table. Its prefix is four hex
+characters, which occur inside any long hash, so the length is the whole of the
+evidence and both ends of the span have to be bounded. RE2 has no lookaround, so
+each boundary is consumed and the match points at a capture group instead -- and
+a rule needing a capture group cannot sit in `vendorPrefixes`, which has no
+field for one. Same origin, different table.
+
+The rules that identify a credential by the *name* beside it, rather than by the
+value, are not reused at all -- this engine already reads that shape.
 
 The MIT License text of that work is reproduced below, as its terms require.
 
