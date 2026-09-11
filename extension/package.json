@@ -4,6 +4,9 @@
   "private": true,
   "description": "Neverseen for web chats: the page's traffic, masked by the local agent.",
   "type": "module",
+  "engines": {
+    "node": ">=22.6"
+  },
   "scripts": {
     "build": "node build.mjs",
     "typecheck": "tsc --noEmit",
@@ -13,8 +16,8 @@
   },
   "devDependencies": {
     "@types/chrome": "^0.0.287",
-    "@types/node": "^22.10.2",
-    "esbuild": "^0.24.2",
+    "@types/node": "^24.0.0",
+    "esbuild": "^0.28.2",
     "puppeteer": "^25.9.0",
     "typescript": "^5.7.2"
   }
