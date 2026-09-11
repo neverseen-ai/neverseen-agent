@@ -19,9 +19,9 @@
 #      URL and an enrolment token, and it belongs in the config file rather than
 #      in an installer's arguments where it would land in your shell history.
 #
-# Where the binary comes from, in order: this checkout if there is a Go toolchain,
-# an unpacked release archive if this script sits beside one, and otherwise the
-# latest release, downloaded and checksum-verified. The third is what somebody
+# Where the binary comes from, in order: the checkout this script lives in if
+# there is a Go toolchain, an unpacked release archive if it sits beside one, and
+# otherwise the latest release, downloaded and verified. The third is what somebody
 # piping this script from the web gets, and it used to be an error message.
 #
 # Usage:
@@ -58,7 +58,10 @@ SERVICE_LABEL=ai.neverseen.agent
 TRAY_LABEL=ai.neverseen.tray
 
 # The line added to a profile. Matched verbatim on uninstall, so it has to stay
-# one line and stay recognisable.
+# one line and stay recognisable. The single quotes are the point: the command
+# substitution must reach the profile unexpanded, to run at every login rather
+# than once here — which is what shellcheck's SC2016 reads as a mistake.
+# shellcheck disable=SC2016
 SHELL_LINE='eval "$(neverseen env)"  # neverseen: prints nothing while the agent is stopped'
 
 # Where a release is fetched from, and which one. Deliberately not in
@@ -67,9 +70,17 @@ SHELL_LINE='eval "$(neverseen env)"  # neverseen: prints nothing while the agent
 # that no code reads. NEVERSEEN_PREFIX above is the same case.
 REPO="${NEVERSEEN_REPO:-neverseen-ai/neverseen-agent}"
 
-# Where install_binary reads the binaries from: this directory, or an unpacked
-# archive fetch_release leaves in a temporary one.
-SOURCE_DIR=.
+# Where install_binary reads the binaries from: the directory this script lives
+# in, or an unpacked archive fetch_release leaves in a temporary one. The script's
+# own directory rather than the working one, because run from anywhere else the
+# checkout went unseen and a release was downloaded over the code in front of it.
+# Piped from the web, $0 is the shell's own name and not a file, and the working
+# directory is all there is.
+if [ -f "$0" ]; then
+    SOURCE_DIR=$(cd "$(dirname "$0")" && pwd)
+else
+    SOURCE_DIR=.
+fi
 TEMP_DIR=""
 
 say()  { printf '%s\n' "$*"; }
@@ -94,7 +105,7 @@ platform() {
 # anybody can act on. Set NEVERSEEN_VERSION to pin a tag instead, which is also
 # the way back to an older release.
 latest_tag() {
-    curl -fsSI "https://github.com/$REPO/releases/latest" \
+    curl --proto '=https' --tlsv1.2 -fsSI "https://github.com/$REPO/releases/latest" \
         | grep -i '^location:' \
         | sed -E 's|.*/tag/([^[:space:]]+).*|\1|' \
         | tr -d '\r'
@@ -149,10 +160,13 @@ fetch_release() {
 
     TEMP_DIR=$(mktemp -d)
 
+    # --proto '=https' on every fetch: -L follows redirects, and without it a
+    # redirect could hand the download to plain http, in front of the checksum
+    # that is meant to be the only integrity check here.
     say "Downloading $archive ($tag)…"
-    curl -fsSL "$base/$archive" -o "$TEMP_DIR/$archive" \
+    curl --proto '=https' --tlsv1.2 -fsSL "$base/$archive" -o "$TEMP_DIR/$archive" \
         || die "could not download $base/$archive"
-    curl -fsSL "$base/checksums.txt" -o "$TEMP_DIR/checksums.txt" \
+    curl --proto '=https' --tlsv1.2 -fsSL "$base/checksums.txt" -o "$TEMP_DIR/checksums.txt" \
         || die "could not download checksums.txt; refusing to install an unverified binary"
 
     verify_checksum "$TEMP_DIR/$archive" "$TEMP_DIR/checksums.txt" "$archive"
@@ -174,13 +188,13 @@ install_binary() {
     # Built from source when this is a checkout, copied when it is an unpacked
     # release archive. One script for both, because the second case is the one
     # an operator actually runs and it must not need a Go toolchain.
-    # ./cmd/neverseen rather than "$SOURCE_DIR/cmd/neverseen", and it is not an
-    # oversight: this branch requires a go.mod in SOURCE_DIR, which only the
-    # checkout has, and there SOURCE_DIR is the working directory.
+    # Built from inside SOURCE_DIR, in a subshell: go needs the module's own
+    # directory as its working one, and so does the git describe that stamps the
+    # version — run from elsewhere it described whatever repository was there.
     if [ -f "$SOURCE_DIR/go.mod" ] && command -v go >/dev/null 2>&1; then
         say "Building from source…"
-        go build -ldflags "-s -w -X main.version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)" \
-            -o "$BIN_DIR/$BIN_NAME" ./cmd/neverseen
+        (cd "$SOURCE_DIR" && go build -ldflags "-s -w -X main.version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)" \
+            -o "$BIN_DIR/$BIN_NAME" ./cmd/neverseen)
     else
         # No toolchain and no archive beside this script: fetch one. This is the
         # ordinary case for anybody who did not clone the repository, and it used
@@ -200,8 +214,8 @@ install_binary() {
     # is how somebody sees that, not part of it.
     if [ "$(platform)" = darwin ]; then
         if [ -f "$SOURCE_DIR/go.mod" ] && command -v go >/dev/null 2>&1; then
-            if go build -ldflags "-s -w -X main.version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)" \
-                -o "$BIN_DIR/$TRAY_NAME" ./cmd/neverseen-tray 2>/dev/null; then
+            if (cd "$SOURCE_DIR" && go build -ldflags "-s -w -X main.version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)" \
+                -o "$BIN_DIR/$TRAY_NAME" ./cmd/neverseen-tray 2>/dev/null); then
                 chmod 0755 "$BIN_DIR/$TRAY_NAME"
                 say "Installed $BIN_DIR/$TRAY_NAME"
             else
@@ -301,8 +315,14 @@ unwire_shell() {
 
         # Written to a temporary file and moved, so an interrupted uninstall
         # cannot leave a truncated login file behind.
+        # cp -p first so the copy carries the profile's own mode, which is the
+        # portable spelling of it. `|| :` because grep -v exits 1 when it selects
+        # nothing — a profile holding only that line — and under set -e that
+        # skipped the move and left the temporary file beside an untouched profile.
         tmp="$profile.neverseen.$$"
-        grep -vF 'neverseen env' "$profile" > "$tmp" && mv "$tmp" "$profile"
+        cp -p "$profile" "$tmp"
+        grep -vF 'neverseen env' "$profile" > "$tmp" || :
+        mv "$tmp" "$profile"
         say "Removed the export line from $profile"
     done
 }
@@ -317,14 +337,12 @@ do_install() {
 
     [ "${WIRE_SHELL:-0}" = 1 ] && wire_shell
 
-    addr=$(grep -E '^NEVERSEEN_LISTEN' "$CONFIG_FILE" | cut -d= -f2)
-
+    # The address and the test page are in the status below, which reads them
+    # from the agent itself rather than from this script's reading of the config.
     say ""
-    say "Done. The agent is running on $addr."
-    say "Open its test page to see what it would mask, with your own text:"
-    say "  http://$addr/test"
+    say "Done."
 
-    verify_running "$addr"
+    verify_running
 }
 
 # verify_running asks the agent what it is doing, rather than assuming the
@@ -347,7 +365,7 @@ do_install() {
 verify_running() {
     tries=0
     while [ "$tries" -lt 5 ]; do
-        if NEVERSEEN_LISTEN="$1" "$BIN_DIR/$BIN_NAME" status >/dev/null 2>&1; then
+        if "$BIN_DIR/$BIN_NAME" status >/dev/null 2>&1; then
             break
         fi
         tries=$((tries + 1))
@@ -355,13 +373,10 @@ verify_running() {
     done
 
     say ""
-    NEVERSEEN_LISTEN="$1" "$BIN_DIR/$BIN_NAME" status || true
+    "$BIN_DIR/$BIN_NAME" status || true
 }
 
 do_status() {
-    addr=$(grep -E '^NEVERSEEN_LISTEN' "$CONFIG_FILE" 2>/dev/null | cut -d= -f2)
-    addr=${addr:-127.0.0.1:9787}
-
     say "Service:"
     case "$(platform)" in
         darwin)
@@ -383,11 +398,12 @@ do_status() {
     # decides what "working" means, and it distinguishes an agent that is up from
     # one that is up and actually masking, which a 200 does not.
     #
-    # The address is passed in because the command reads it from the environment
-    # and this script is not the service: the variable lives in the config file,
-    # which nothing has sourced here.
+    # Called bare: the command reads ~/.neverseen/.env itself, so the address is
+    # not scraped out of the file here. That scrape was a second reader of the
+    # config with its own idea of the syntax — it broke on a quoted value the
+    # agent accepted, and reported the wrong port as not answering.
     say "Health:"
-    NEVERSEEN_LISTEN="$addr" "$BIN_DIR/$BIN_NAME" status || true
+    "$BIN_DIR/$BIN_NAME" status || true
 }
 
 do_restart() {

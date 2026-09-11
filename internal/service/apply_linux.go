@@ -6,7 +6,7 @@ import (
 	"os/exec"
 )
 
-// Install writes the systemd user unit and enables it.
+// Install writes the systemd user unit, enables it and restarts it.
 func Install(l Layout) error {
 	if err := requireSystemd(); err != nil {
 		return err
@@ -28,7 +28,14 @@ func Install(l Layout) error {
 	if err := run("systemctl", "--user", "daemon-reload"); err != nil {
 		return err
 	}
-	return run("systemctl", "--user", "enable", "--now", SystemdUnit)
+	if err := run("systemctl", "--user", "enable", SystemdUnit); err != nil {
+		return err
+	}
+	// restart rather than enable --now: --now leaves an active unit as it is, so a
+	// second install after editing the configuration reported success while the
+	// agent kept running the old one — where macOS unloads and loads. restart also
+	// starts a unit that is inactive, so a first install is served the same way.
+	return run("systemctl", "--user", "restart", SystemdUnit)
 }
 
 // Uninstall disables the unit and deletes it.

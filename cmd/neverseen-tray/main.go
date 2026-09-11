@@ -60,6 +60,17 @@ func main() {
 		}
 	}
 
+	// The operator's configuration, before the agent's address is asked for. The
+	// agent reads ~/.neverseen/.env itself, and this has to as well: the Windows
+	// logon task sources nothing, so a NEVERSEEN_LISTEN set only in that file had
+	// the icon polling the default address for an agent that was never on it.
+	// Not `cmd/` reading a setting, for the reason cmd/neverseen gives: it names no
+	// variable and asks for no value.
+	if err := proxy.LoadConfigFile(""); err != nil {
+		_, _ = os.Stderr.WriteString("neverseen-tray: " + err.Error() + "\n")
+		os.Exit(1)
+	}
+
 	// Cancelled on the way out, so the icon leaves the bar when the session ends
 	// rather than sitting there dead until the user logs out.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

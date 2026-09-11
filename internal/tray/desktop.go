@@ -30,7 +30,12 @@ func openTestPage(addr string) {
 	default:
 		cmd = exec.Command("xdg-open", url)
 	}
-	_ = cmd.Start()
+	if err := cmd.Start(); err != nil {
+		return
+	}
+	// Reaped on a goroutine of its own: a child nobody waits for stays a zombie
+	// until this process exits, and the icon outlives sessions — one per click.
+	go func() { _ = cmd.Wait() }()
 }
 
 // copyToClipboard puts text where the next paste will find it.

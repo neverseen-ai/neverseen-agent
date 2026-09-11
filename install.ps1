@@ -107,7 +107,7 @@ NEVERSEEN_LISTEN=127.0.0.1:9787
 # NEVERSEEN_ENROLMENT_TOKEN=
 '@ | Set-Content -Path $ConfigFile -Encoding UTF8
 
-    Write-Host "Wrote $ConfigFile - set NEVERSEEN_PII_LOCALE in it, then re-run with -Status"
+    Write-Host "Wrote $ConfigFile - set NEVERSEEN_PII_LOCALE in it, then ``neverseen service restart``"
 }
 
 function Set-ShellLine {
@@ -179,7 +179,14 @@ if ($Uninstall) {
     # Before the binaries go, because it is the agent that owns the definition and
     # removing it first would leave the two tasks registered with nothing to remove
     # them.
-    try { & $Agent service uninstall --prefix $Prefix } catch { Write-Warning "could not remove the tasks: $_" }
+    # The exit code is read by hand, as it is for install below: the catch only sees
+    # a binary that is not there, never a registration the agent refused to remove.
+    # Warned and continued rather than thrown, as install.sh does — uninstalling has
+    # to work on a half-installed machine.
+    try {
+        & $Agent service uninstall --prefix $Prefix
+        if ($LASTEXITCODE -ne 0) { Write-Warning "could not remove the tasks (exit code $LASTEXITCODE); continuing" }
+    } catch { Write-Warning "could not remove the tasks: $_" }
 
     Remove-ShellLine
     Remove-Item -Path $Agent, $Tray -Force -ErrorAction SilentlyContinue
@@ -199,6 +206,10 @@ if ($Uninstall) {
 Install-Binaries
 Write-Config
 & $Agent service install --prefix $Prefix
+# PowerShell 5.1 does not stop on a native command's exit code, whatever
+# ErrorActionPreference says, so a refused registration fell through to "Done" and
+# the person believed their traffic was masked.
+if ($LASTEXITCODE -ne 0) { throw "neverseen service install failed with exit code $LASTEXITCODE" }
 if ($Shell) { Set-ShellLine }
 
 Write-Host ""

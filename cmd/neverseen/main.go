@@ -132,6 +132,11 @@ func main() {
 		return
 	case errors.Is(err, errQuiet):
 		os.Exit(1)
+	case errors.Is(err, flag.ErrHelp):
+		// The flag set has already printed the usage. Falling through to the
+		// default had `neverseen scan -h` exit 1 with "flag: help requested" on
+		// stderr — a command asked to explain itself, reported as a failure.
+		return
 	default:
 		fmt.Fprintln(os.Stderr, "neverseen:", err)
 		os.Exit(1)
@@ -462,6 +467,12 @@ func serveAgent(logger *slog.Logger, agent *proxy.Agent) error {
 	case err := <-errs:
 		return err
 	case <-ctx.Done():
+		// Released now rather than by the defer at the return, so a second Ctrl-C
+		// during the bounded waits below takes the signal's default action and ends
+		// the process. With the signal still captured it was swallowed, and an
+		// operator who had asked twice sat through up to 35 seconds for a backend
+		// that was not going to answer. The deferred call is kept; it is idempotent.
+		stop()
 		logger.Info("stopping, letting requests in flight finish")
 
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

@@ -32,7 +32,14 @@ func Install(l Layout) error {
 	}
 	// The agent is started now rather than at the next logon, so that installing and
 	// then running `neverseen status` does not report an agent that is not there.
-	// The icon is not: it would appear over a session the person did not ask it into.
+	// /End first, as Restart does: /Create /F replaces the definition but leaves the
+	// running instance in place, and its policy is IgnoreNew — so on a second install
+	// after editing the configuration the /Run was dropped and the old agent kept
+	// running, where macOS unloads and loads. The stop is tolerated because on a first
+	// install there is nothing to end.
+	// The icon is not touched: it would appear over a session the person did not ask
+	// it into.
+	_ = run("schtasks", "/End", "/TN", WindowsAgentTask)
 	return run("schtasks", "/Run", "/TN", WindowsAgentTask)
 }
 

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"flag"
 	"os"
 	"path/filepath"
 	"strings"
@@ -192,5 +193,19 @@ func TestRunStatusWithNoAgent(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "not answering on 127.0.0.1:1") {
 		t.Errorf("the report does not name where it looked:\n%s", out.String())
+	}
+}
+
+// -h on a subcommand is an answer, not a failure. main exits zero on flag.ErrHelp,
+// so run has to hand that error back unwrapped, with the usage already printed —
+// wrapped, `neverseen scan -h` was back to exiting 1 with "flag: help requested".
+func TestRunSubcommandHelpIsNotAnError(t *testing.T) {
+	var out strings.Builder
+	err := run([]string{"scan", "-h"}, strings.NewReader(""), &out)
+	if !errors.Is(err, flag.ErrHelp) {
+		t.Fatalf("err = %v, want flag.ErrHelp", err)
+	}
+	if !strings.Contains(out.String(), "Usage of scan") {
+		t.Errorf("the usage was not printed:\n%s", out.String())
 	}
 }
