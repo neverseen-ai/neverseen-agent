@@ -1,6 +1,7 @@
 package telemetry
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -312,5 +313,39 @@ func TestAnUnreadableQueueCountsItsLoss(t *testing.T) {
 	}
 	if got := b.takeDropped(); got != 1 {
 		t.Errorf("an unreadable live bucket reported %d losses, want 1", got)
+	}
+}
+
+// A torn queue is the very event the live file exists for: the crash that tore
+// it is the one whose last minutes the live file holds. Returning on the queue's
+// error left that file unread, and the first save then removed it — one loss
+// counted while a bucket that had survived was erased uncounted.
+func TestATornQueueDoesNotLoseTheLiveBucketBesideIt(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "buffer.json")
+	if err := os.WriteFile(path, []byte(`{"buckets":[{"window":`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	live := bucket{Window: telemetry.Window{Start: epoch, End: epoch.Add(time.Minute)}}
+	live.Counters.Requests = 7
+	raw, err := json.Marshal(liveFile{Live: live})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(livePathFor(path), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	b, err := loadBuffer(path)
+	if err == nil {
+		t.Fatal("a torn queue was read without complaint")
+	}
+	if got := b.pending(); got != 1 {
+		t.Fatalf("queued %d buckets, want the live one that survived the crash", got)
+	}
+	if got := b.buckets[0].Counters.Requests; got != 7 {
+		t.Errorf("the surviving bucket carries %d requests, want 7", got)
+	}
+	if got := b.takeDropped(); got != 1 {
+		t.Errorf("a torn queue beside a good live bucket reported %d losses, want 1", got)
 	}
 }

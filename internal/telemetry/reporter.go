@@ -243,8 +243,13 @@ func (r *Reporter) Run(ctx context.Context) {
 			return
 
 		case <-collect.C:
-			r.wake()
-			r.collect()
+			// A wake has just closed the window at the moment the machine stopped
+			// and opened a fresh one; closing that one too would file an empty
+			// bucket over a zero-length window, which a backend computing a rate
+			// divides by.
+			if !r.wake() {
+				r.collect()
+			}
 
 		case <-snapshot.C:
 			r.wake()
@@ -272,11 +277,6 @@ func (r *Reporter) Run(ctx context.Context) {
 	}
 }
 
-// collect closes the current bucket and queues it.
-//
-// Queued rather than sent from here, because the two are independent: this runs on
-// the interval whether or not the backend exists, and it is what keeps a bucket
-// per five minutes through an outage.
 // wake cuts the open window when the loop turns out not to have run for a while.
 //
 // A laptop that sleeps stops this process without ending it: no ticker fires, and
@@ -292,17 +292,33 @@ func (r *Reporter) Run(ctx context.Context) {
 //
 // The counters lose nothing. Nothing is proxied on a sleeping machine, so the
 // bucket closed here holds every exchange there was.
-func (r *Reporter) wake() {
-	now := r.now()
-	if slept := now.Sub(r.awake); slept > suspendAfter {
-		r.log.Info("the machine was not running this agent, closing the window where it stopped",
-			"for", slept.Round(time.Second), "measured_to", r.awake)
-		r.collectAt(r.awake)
-		r.recorder.Reopen(now)
-	}
+//
+// TODO: the sleep is noticed on the first timer to fire after the resume, up to
+// snapshotInterval later, and a request proxied in that gap lands in the window
+// closed here — dated before it happened. Bounded at thirty seconds; closing the
+// gap means reading the clock on the request path.
+//
+// Reports whether it closed a window, so the caller does not close the fresh one
+// on top of it.
+func (r *Reporter) wake() bool {
+	now, last := r.now(), r.awake
 	r.awake = now
+	slept := now.Sub(last)
+	if slept <= suspendAfter {
+		return false
+	}
+	r.log.Info("the machine was not running this agent, closing the window where it stopped",
+		"for", slept.Round(time.Second), "measured_to", last)
+	r.collectAt(last)
+	r.recorder.Reopen(now)
+	return true
 }
 
+// collect closes the current bucket and queues it.
+//
+// Queued rather than sent from here, because the two are independent: this runs on
+// the interval whether or not the backend exists, and it is what keeps a bucket
+// per five minutes through an outage.
 func (r *Reporter) collect() { r.collectAt(r.now()) }
 
 // collectAt closes the current bucket at a given instant, which is now for every

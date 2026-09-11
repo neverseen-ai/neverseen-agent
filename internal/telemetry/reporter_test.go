@@ -137,6 +137,11 @@ func newTestReporter(t *testing.T, b *backend, r *Recorder) (*Reporter, string) 
 func reporterInHome(t *testing.T, b *backend, r *Recorder, home string, now func() time.Time) (*Reporter, string) {
 	t.Helper()
 
+	// The recorder dates its sessions by its own clock, so it is pinned to the
+	// same one as the reporter: left on the wall clock, a sweep at a pinned instant
+	// would find every session either never idle or idle since before it began.
+	r.WithClock(now)
+
 	identity := filepath.Join(home, "agent.json")
 	rep, err := NewReporter(Config{
 		BaseURL:        b.server.URL,
@@ -465,7 +470,7 @@ func waitForHeartbeats(t *testing.T, b *backend, n int) {
 func TestReporterRequiresItsInputs(t *testing.T) {
 	valid := Config{
 		BaseURL:      "http://example.invalid",
-		IdentityFile: "/tmp/agent.json",
+		IdentityFile: filepath.Join(t.TempDir(), "agent.json"),
 		BufferFile:   filepath.Join(t.TempDir(), "buffer.json"),
 		Recorder:     NewRecorder(epoch),
 		State:        func() telemetry.State { return telemetry.State{} },
@@ -529,7 +534,7 @@ func TestNoTokenMeansNoReportAndNoLoss(t *testing.T) {
 func TestRetryLadderGrowsAndIsCapped(t *testing.T) {
 	rep, err := NewReporter(Config{
 		BaseURL:      "http://example.invalid",
-		IdentityFile: "/tmp/agent.json",
+		IdentityFile: filepath.Join(t.TempDir(), "agent.json"),
 		BufferFile:   filepath.Join(t.TempDir(), "buffer.json"),
 		Recorder:     NewRecorder(epoch),
 		State:        func() telemetry.State { return telemetry.State{} },
@@ -1007,5 +1012,81 @@ func TestAnOrdinaryIntervalIsNotASleep(t *testing.T) {
 	if rep.queue.buckets[0].Window.End.Sub(epoch) != DefaultInterval {
 		t.Errorf("the window covers %s, want the whole interval",
 			rep.queue.buckets[0].Window.End.Sub(epoch))
+	}
+}
+
+// The collect ticker closes a bucket every interval whatever the backend is doing.
+// Fused with the send — one timer that both closed the window and sent it — an
+// outage came back as one bucket covering it. This drives Run itself, because the
+// test helper report() fuses the two on purpose and cannot see them come apart.
+func TestRunClosesABucketEveryIntervalWhileTheBackendIsDown(t *testing.T) {
+	b := newBackend(t)
+	b.setFailing(true)
+
+	home := t.TempDir()
+	rep, err := NewReporter(Config{
+		BaseURL:        b.server.URL,
+		EnrolmentToken: "enrol-me",
+		IdentityFile:   filepath.Join(home, "agent.json"),
+		BufferFile:     filepath.Join(home, "buffer.json"),
+		Recorder:       NewRecorder(time.Now()),
+		State:          func() telemetry.State { return telemetry.State{} },
+		Interval:       20 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		rep.Run(ctx)
+	}()
+	time.Sleep(150 * time.Millisecond)
+	cancel()
+	<-done
+
+	// The queue is the reporter goroutine's alone, so it is read once Run has
+	// returned. Seven intervals passed and every send was refused; the buckets kept
+	// coming regardless.
+	if got := b.attemptCount(); got == 0 {
+		t.Fatal("Run never tried the backend")
+	}
+	if got := rep.queue.pending(); got < 4 {
+		t.Errorf("Run queued %d buckets over seven intervals with the backend down, want at least 4", got)
+	}
+}
+
+// A wake closes the window where the machine stopped and opens a fresh one at the
+// resume. The collect tick that noticed the sleep must not close that fresh window
+// too: it would file an empty bucket over a zero-length window, which a backend
+// computing a rate divides by.
+func TestAWakeOnTheIntervalDoesNotFileAnEmptyWindow(t *testing.T) {
+	b := newBackend(t)
+	now := epoch
+	clock := func() time.Time { return now }
+
+	r := NewRecorder(now)
+	rep, _ := reporterInHome(t, b, r, t.TempDir(), clock)
+	rep.awake = now
+
+	now = now.Add(snapshotInterval)
+	if rep.wake() {
+		t.Fatal("an ordinary turn of the loop was taken for a sleep")
+	}
+
+	now = now.Add(8 * time.Hour)
+	if !rep.wake() {
+		t.Fatal("eight hours were not taken for a sleep")
+	}
+	// What Run does on the collect tick, given that answer.
+	if rep.queue.pending() != 1 {
+		t.Fatalf("the wake queued %d buckets, want the one that was open", rep.queue.pending())
+	}
+	for _, closed := range rep.queue.buckets {
+		if !closed.Window.End.After(closed.Window.Start) {
+			t.Errorf("a bucket covers [%s, %s], a window of no length", closed.Window.Start, closed.Window.End)
+		}
 	}
 }

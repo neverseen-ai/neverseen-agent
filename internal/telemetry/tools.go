@@ -3,6 +3,7 @@ package telemetry
 import (
 	"encoding/json"
 	"path"
+	"slices"
 	"strings"
 
 	"github.com/neverseen-ai/neverseen-agent/pkg/telemetry"
@@ -292,12 +293,7 @@ func hasFlag(words []string, letters ...rune) bool {
 }
 
 func hasWord(words []string, want string) bool {
-	for _, w := range words {
-		if w == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(words, want)
 }
 
 // ClientFamily reduces a User-Agent to KnownClients.

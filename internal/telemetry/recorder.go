@@ -20,6 +20,7 @@ package telemetry
 
 import (
 	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -372,12 +373,7 @@ func (r *Recorder) Snapshot(now time.Time) (telemetry.Counters, telemetry.Window
 }
 
 func cloneHistogram(h telemetry.Histogram) telemetry.Histogram {
-	if h == nil {
-		return nil
-	}
-	out := make(telemetry.Histogram, len(h))
-	copy(out, h)
-	return out
+	return slices.Clone(h)
 }
 
 // Drop records that n buckets were abandoned without being delivered.
@@ -416,10 +412,8 @@ func count(m *map[string]int, key string, n ...int) {
 
 // inVocabulary returns word if the vocabulary lists it, and Other if not.
 func inVocabulary(word string, vocabulary []string) string {
-	for _, known := range vocabulary {
-		if word == known {
-			return word
-		}
+	if slices.Contains(vocabulary, word) {
+		return word
 	}
 	return telemetry.Other
 }

@@ -116,20 +116,27 @@ func loadBuffer(path string) (*buffer, error) {
 	// live file five lines below had it while this one did not: the caller logs the
 	// error and carries on, save() then finds nothing queued and no loss declared,
 	// and deletes the evidence.
+	// The queue failing does not end the read: the live file beside it is a separate
+	// record, and it is the one that holds the last minutes before the crash that
+	// tore the queue. Returning here left it on disk unread with b.live nil, and the
+	// first save() then removed it — the loss counted once for the queue while the
+	// bucket that had survived was erased uncounted.
+	var queueErr error
 	raw, err := os.ReadFile(filepath.Clean(path))
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 	case err != nil:
 		b.dropped++
-		return b, fmt.Errorf("read the buffered buckets: %w", err)
+		queueErr = fmt.Errorf("read the buffered buckets: %w", err)
 	default:
 		var stored bufferFile
 		if err := json.Unmarshal(raw, &stored); err != nil {
 			b.dropped++
-			return b, fmt.Errorf("parse %s: %w", path, err)
+			queueErr = fmt.Errorf("parse %s: %w", path, err)
+		} else {
+			b.dropped = stored.Dropped
+			b.buckets = b.keepUsable(stored.Buckets)
 		}
-		b.dropped = stored.Dropped
-		b.buckets = b.keepUsable(stored.Buckets)
 	}
 
 	// The bucket the previous process did not survive to close, filed as one of its
@@ -141,21 +148,21 @@ func loadBuffer(path string) (*buffer, error) {
 	// A live file that cannot be read costs only that one bucket, so it is counted
 	// and stepped over rather than failing the whole recovery.
 	live, err := os.ReadFile(livePathFor(b.path))
-	if errors.Is(err, os.ErrNotExist) {
-		return b, nil
-	}
-	if err != nil {
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return b, queueErr
+	case err != nil:
 		b.dropped++
-		return b, fmt.Errorf("read the bucket in progress: %w", err)
+		return b, errors.Join(queueErr, fmt.Errorf("read the bucket in progress: %w", err))
 	}
 
 	var stored liveFile
 	if err := json.Unmarshal(live, &stored); err != nil {
 		b.dropped++
-		return b, fmt.Errorf("parse %s: %w", livePathFor(b.path), err)
+		return b, errors.Join(queueErr, fmt.Errorf("parse %s: %w", livePathFor(b.path), err))
 	}
 	b.buckets = append(b.buckets, b.keepUsable([]bucket{stored.Live})...)
-	return b, nil
+	return b, queueErr
 }
 
 // livePathFor names the live file beside the queue it belongs to.
