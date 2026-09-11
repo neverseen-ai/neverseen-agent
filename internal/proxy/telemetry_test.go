@@ -111,6 +111,32 @@ func TestStreamedExchangeFeedsTheCounters(t *testing.T) {
 	}
 }
 
+// Anthropic's message_delta usage is cumulative: it repeats the input and cache
+// counts from message_start beside the final output count. Added across the two
+// events, the input was billed twice on every streamed exchange.
+func TestACumulativeUsageDeltaIsNotAddedToTheStart(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, event := range []string{
+			`{"type":"message_start","message":{"model":"claude-sonnet-4","usage":{"input_tokens":12,"cache_read_input_tokens":9000,"output_tokens":1}}}`,
+			`{"type":"content_block_delta","delta":{"type":"text_delta","text":"ok"}}`,
+			`{"type":"message_delta","usage":{"input_tokens":12,"cache_read_input_tokens":9000,"output_tokens":98}}`,
+		} {
+			fmt.Fprintf(w, "data: %s\n\n", event)
+		}
+	})
+	agent, recorder := newCountingAgent(t, up, nil)
+
+	post(t, agent, "/anthropic/v1/messages", "s1", `{"c":"hello"}`)
+
+	counters, _ := recorder.Take(time.Now())
+
+	want := contract.TokenUsage{Input: 12, Output: 98, CacheRead: 9000}
+	if got := counters.Models["claude-sonnet-4"]; got != want {
+		t.Errorf("usage = %+v, want %+v — the delta's usage is a snapshot, not an increment", got, want)
+	}
+}
+
 // An exchange that masked nothing still cost tokens, and the heartbeat is what
 // those counts are for.
 //

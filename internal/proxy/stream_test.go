@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -103,6 +104,33 @@ func TestStreamRehydratorHandlesTheOpenAIShape(t *testing.T) {
 	}
 }
 
+// A tail held back from the last piece of text has to go out before "[DONE]".
+//
+// The OpenAI family has no stop event and its deltas carry no block index, so
+// nothing closed the block before the end of the stream: the tail was flushed
+// after the sentinel, where every SDK has already stopped reading, and the
+// characters the caller wrote were delivered to nobody.
+func TestAnOpenAITailIsReleasedBeforeTheDoneSentinel(t *testing.T) {
+	known := map[string]string{"[NIR_1]": "184037511600176"}
+
+	stream := "data: " + openAIDelta("dossier [NIR") + "\n\n" +
+		"data: " + `{"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}` + "\n\n" +
+		"data: [DONE]\n\n"
+
+	got := rehydrate(t, stream, known)
+
+	done := strings.Index(got, "data: [DONE]")
+	if done < 0 {
+		t.Fatalf("the [DONE] sentinel was lost:\n%s", got)
+	}
+	if text := concatenatedText(t, got[:done]); text != "dossier [NIR" {
+		t.Errorf("before [DONE] the caller would read %q, want the held tail back verbatim:\n%s", text, got)
+	}
+	if strings.Contains(got[done:], "[NIR") {
+		t.Errorf("the tail was delivered a second time, after [DONE]:\n%s", got)
+	}
+}
+
 // A tail held back when the stream ends still has to reach the caller. It travels
 // in a copy of the last delta event, because a bare fragment is not a valid event
 // and a client would drop it.
@@ -187,6 +215,31 @@ func TestStreamingRoundTripThroughTheProxy(t *testing.T) {
 	// And the provider never had the value in the first place.
 	if bodies, _ := up.received(); strings.Contains(strings.Join(bodies, ""), "claire@example.fr") {
 		t.Errorf("the value reached the provider: %v", bodies)
+	}
+}
+
+// A gateway that declares a Content-Length on an event stream declares the length
+// of the body it sent, not of the one the agent rewrites. Forwarded, the restored
+// body was cut at the provider's length — or, shorter, left the client waiting for
+// bytes that never came.
+func TestAStreamDeclaringAContentLengthIsDeliveredWhole(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		body := "event: content_block_delta\ndata: " + anthropicDelta("mail [EMAIL_1] now") + "\n\n" +
+			"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+		_, _ = io.WriteString(w, body)
+	})
+	agent := newAgent(t, up, []string{"fr"})
+
+	// An original longer than its token, so the rewritten body outgrows the length.
+	reply := post(t, agent, "/anthropic/v1/messages", "s1", `{"c":"mail claire-la-plus-longue@example.fr"}`)
+
+	if text := concatenatedText(t, reply.body); text != "mail claire-la-plus-longue@example.fr now" {
+		t.Errorf("the caller read %q, want the whole restored text", text)
+	}
+	if !strings.Contains(reply.body, "message_stop") {
+		t.Errorf("the stream was cut before its end:\n%s", reply.body)
 	}
 }
 

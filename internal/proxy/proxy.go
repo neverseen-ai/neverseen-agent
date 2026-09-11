@@ -188,6 +188,13 @@ func (s *Server) reverseProxy(base *url.URL) *httputil.ReverseProxy {
 		},
 		ModifyResponse: s.unmask,
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			// A caller that hung up before the provider answered is not a
+			// provider that failed: counted as one, every abandoned prompt
+			// showed up on the fleet view as an outage, and the 502 has nobody
+			// left to read it.
+			if errors.Is(err, context.Canceled) {
+				return
+			}
 			s.recorder.Upstream(0)
 			s.log.Error("upstream failed", "path", r.URL.Path, "error", err)
 			http.Error(w, "neverseen: the provider could not be reached", http.StatusBadGateway)
@@ -515,6 +522,12 @@ func (s *Server) unmask(resp *http.Response) error {
 			stream.onExpanded = func(spent time.Duration) { ref.expanding = spent }
 		}
 		resp.Body = stream
+		// The rewritten stream is not the length the provider declared: a
+		// gateway that puts a Content-Length on text/event-stream had the
+		// restored body cut at the original length, or the client waiting for
+		// bytes that never came. Dropped, as the buffered path below replaces it.
+		resp.Header.Del("Content-Length")
+		resp.ContentLength = -1
 		return nil
 	}
 

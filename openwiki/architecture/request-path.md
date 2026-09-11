@@ -254,7 +254,10 @@ Anthropic shapes — `delta.text` and `delta.thinking` — and the OpenAI
 `choices[].delta.content` (`TestStreamRehydratorHandlesTheOpenAIShape`). Structure and
 numbers are left alone (`TestStreamRehydratorLeavesStructureAlone`,
 `TestStreamRehydratorDoesNotRewriteNumbers`), and a dangling tail at end of stream is
-flushed (`flush`).
+flushed (`flush`). On the OpenAI family, which has no stop event, the block is closed
+before a non-JSON payload such as `[DONE]` goes out — every SDK stops reading there, and
+a tail flushed after it was delivered to nobody
+(`TestAnOpenAITailIsReleasedBeforeTheDoneSentinel`).
 
 **A tail belongs to the block it was held back from.** `closeBlock` releases it when the
 block stops or when an event for another block arrives. Carried across, it prefixed the

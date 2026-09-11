@@ -110,12 +110,14 @@ func (v *Vault) Load(session string) map[string]string {
 	return out
 }
 
-// Save adds what a pass minted to the session's mapping.
+// Save adds what a pass minted to the session's mapping, and refreshes its
+// lifetime even when the pass minted nothing.
+//
+// A conversation that introduced its values early and then only reuses them
+// mints nothing on every later request. Refreshed only on a mint, the mapping
+// expired DefaultTTL after the *first* request rather than the last, and the
+// answer to a conversation still in progress reached the caller with raw tokens.
 func (v *Vault) Save(session string, entries map[string]string) error {
-	if len(entries) == 0 {
-		return nil
-	}
-
 	sealed := make(map[string]string, len(entries))
 	for masked, original := range entries {
 		box, err := v.seal(original)
@@ -212,7 +214,9 @@ func (m *Memory) Load(session string) map[string]string {
 	return maps.Clone(s.entries)
 }
 
-// Merge adds entries to a session and refreshes its lifetime.
+// Merge adds entries to a session and refreshes its lifetime. Nothing to add to
+// a session that does not exist creates none: a request that masked nothing
+// must not leave an empty session behind.
 func (m *Memory) Merge(session string, entries map[string]string, ttl time.Duration) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -229,6 +233,9 @@ func (m *Memory) Merge(session string, entries map[string]string, ttl time.Durat
 
 	s, ok := m.sessions[session]
 	if !ok {
+		if len(entries) == 0 {
+			return
+		}
 		s = &memorySession{entries: make(map[string]string, len(entries))}
 		m.sessions[session] = s
 	}

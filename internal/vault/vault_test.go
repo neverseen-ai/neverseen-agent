@@ -237,6 +237,48 @@ func TestSaveNothingIsNotAnError(t *testing.T) {
 	}
 }
 
+// The lifetime runs from the last use, not from the last mint.
+//
+// A conversation that introduced its values early mints nothing afterwards, and
+// every later request saves an empty set. Refreshed only on a mint, the mapping
+// expired DefaultTTL after the first request of a conversation still in progress,
+// and the answer reached the caller with raw tokens.
+func TestSavingNothingKeepsTheSessionAlive(t *testing.T) {
+	v, store := newTestVault(t)
+
+	if err := v.Save("s1", map[string]string{"[EMAIL_1]": "claire@example.fr"}); err != nil {
+		t.Fatal(err)
+	}
+	// The mint is old: the session is a second from expiring on its own clock.
+	store.mu.Lock()
+	store.sessions["s1"].expires = time.Now().Add(time.Second)
+	store.mu.Unlock()
+
+	// A request that reused every value and minted nothing.
+	before := time.Now()
+	if err := v.Save("s1", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	store.mu.Lock()
+	s, ok := store.sessions["s1"]
+	var expires time.Time
+	if ok {
+		expires = s.expires
+	}
+	store.mu.Unlock()
+	if !ok {
+		t.Fatal("saving nothing dropped the session")
+	}
+	if expires.Before(before.Add(DefaultTTL)) {
+		t.Errorf("the session expires at %v, want a full lifetime from %v: an empty save did not refresh it",
+			expires, before)
+	}
+	if got := v.Load("s1"); got["[EMAIL_1]"] != "claire@example.fr" {
+		t.Errorf("the mapping is gone after an empty save: %v", got)
+	}
+}
+
 func testKey(t *testing.T) []byte {
 	t.Helper()
 

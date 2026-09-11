@@ -258,7 +258,13 @@ func (r *streamRehydrator) rewrite(line string) string {
 		// Not JSON — the "[DONE]" sentinel, or a shape we do not model. There is
 		// no structure to work with, so expand whole tokens in the raw text and
 		// hold nothing back.
-		return r.takeName() + strings.Replace(line, payload, detector.UnmaskSeen(payload, r.known, r.seen), 1)
+		//
+		// Whatever the block was holding goes out first. The OpenAI family has no
+		// stop event and its deltas carry no block index, so a tail held back
+		// from the last piece of text reached closeBlock only at end of stream —
+		// after "[DONE]", which is where every SDK stops reading. The characters
+		// the caller wrote were delivered to nobody.
+		return r.closeBlock() + r.takeName() + strings.Replace(line, payload, detector.UnmaskSeen(payload, r.known, r.seen), 1)
 	}
 
 	r.noteUsage(event)
@@ -405,15 +411,30 @@ func (r *streamRehydrator) reportArguments() {
 
 // noteUsage accumulates what the exchange cost from one decoded event. Accumulated
 // rather than reported: the model and the counts arrive in different events.
+//
+// Every usage object is a snapshot, and a count it carries replaces the one held
+// rather than adding to it. Anthropic's message_delta usage is cumulative — it
+// repeats input_tokens and the cache counts from message_start beside the final
+// output_tokens — so adding the two events billed the input twice. OpenAI sends
+// one usage chunk, at the end, and a snapshot reads that correctly too. A count
+// the event does not carry arrives as zero and leaves what an earlier event said.
 func (r *streamRehydrator) noteUsage(event jsonObject) {
 	if model, usage := usageFrom(event); model != "" || usage != (telemetry.TokenUsage{}) {
 		if r.usageModel == "" {
 			r.usageModel = model
 		}
-		r.usageTotals.Input += usage.Input
-		r.usageTotals.Output += usage.Output
-		r.usageTotals.CacheWrite += usage.CacheWrite
-		r.usageTotals.CacheRead += usage.CacheRead
+		if usage.Input != 0 {
+			r.usageTotals.Input = usage.Input
+		}
+		if usage.Output != 0 {
+			r.usageTotals.Output = usage.Output
+		}
+		if usage.CacheWrite != 0 {
+			r.usageTotals.CacheWrite = usage.CacheWrite
+		}
+		if usage.CacheRead != 0 {
+			r.usageTotals.CacheRead = usage.CacheRead
+		}
 	}
 }
 
