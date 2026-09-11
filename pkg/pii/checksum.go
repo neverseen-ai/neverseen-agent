@@ -145,6 +145,19 @@ func IBANCheck(iban string) bool {
 		return false
 	}
 
+	// ISO 13616 fixes the check digits to 02-98: the mod-97 key is 98 minus a
+	// remainder in 0-96, so 00, 01 and 99 are values the standard cannot produce.
+	//
+	// Refusing them is what keeps the fake-mode stand-in out of the catalogue's
+	// own reach. It is built as "FR00" plus an index (generators.go), and one
+	// index in ninety-seven of those happens to clear mod-97 — so the stand-in was
+	// re-detected as an IBAN on the next pass, which is exactly what a stand-in
+	// must never be.
+	switch s[2:4] {
+	case "00", "01", "99":
+		return false
+	}
+
 	rearranged := s[4:] + s[:4]
 	rem := 0
 	for _, r := range rearranged {
@@ -935,6 +948,11 @@ var credentialNameTailRe = regexp.MustCompile(
 // is handed the value and not the quotes, so it cannot tell the two apart.
 func UnclosedBracketCheck(value string) bool { return !hasUnclosedBracket(value) }
 
+// closerFor is package level because this runs once per candidate value: rebuilt
+// inside the function it allocated a map on every call for a table that never
+// changes.
+var closerFor = map[byte]byte{'(': ')', '[': ']', '{': '}', '<': '>'}
+
 // hasUnclosedBracket reports whether value opens a bracket it does not close.
 //
 // The span handed to GenericSecretCheck was cut out of the surrounding text, so an
@@ -943,7 +961,6 @@ func UnclosedBracketCheck(value string) bool { return !hasUnclosedBracket(value)
 // is not reported: `hunter2)` is a password whose last character is a bracket, and
 // no expression begins on one.
 func hasUnclosedBracket(value string) bool {
-	closerFor := map[byte]byte{'(': ')', '[': ']', '{': '}', '<': '>'}
 	var open []byte
 	for i := 0; i < len(value); i++ {
 		ch := value[i]

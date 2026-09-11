@@ -146,6 +146,11 @@ var fakeGenerators = map[Category]Generator{
 	// IBAN check digits run from 02 to 98, so "00" is a value the standard cannot
 	// produce. Twenty-seven characters, the length of a French IBAN, for the same
 	// reason the card is sixteen digits.
+	//
+	// The shape alone was not enough: one index in ninety-seven still cleared
+	// mod-97 — 10, 107, 204 — and the stand-in was read back as an account on the
+	// next pass. IBANCheck refuses the three impossible keys, and this depends on
+	// it.
 	CatIBAN: {Capacity: 99999999, Make: func(i int64) string {
 		return fmt.Sprintf("FR00%023d", i)
 	}},

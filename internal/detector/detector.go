@@ -85,7 +85,7 @@ func New(cfg Config) *Detector {
 		policy:   &policy{},
 		counters: make(map[string]*atomic.Int64),
 	}
-	d.policy.cat.Store(newCatalogue(cfg.Locales))
+	d.policy.cat.Store(newCatalogue(orderLocales(cfg.Locales)))
 	d.policy.sub.Store(int32(cfg.Substitution))
 	d.policy.level.Store(int32(cfg.SecretLevel))
 	return d

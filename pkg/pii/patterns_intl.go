@@ -48,13 +48,22 @@ var (
 	// last gap and it was a *miss*, the worse direction — a real card forwarded in
 	// clear rather than a reference masked for nothing.
 	//
+	// Mastercard has two BIN ranges and only 51-55 was read. The 2-series,
+	// 222100-272099, has been issued since 2017, so a card of that range — an
+	// ordinary card in an ordinary wallet — went to the model in clear. Same
+	// sixteen-digit grouped shape, its own branch because the leading digit
+	// differs; the range is spelled out rather than left as `2\d{3}` because a
+	// loose leading class is four digits of nothing and Luhn alone clears a tenth
+	// of what reaches it.
+	//
 	// Discover is left at sixteen deliberately. ISO/IEC 7812 permits up to nineteen
 	// and the network is widely said to use only sixteen; a length nobody could
 	// confirm is a guess, and a guessed length here either misses real cards or
 	// claims references, both silently.
 	creditCardRe = regexp.MustCompile(`\b(?:` +
 		`4\d{3}(?:[ \-]?\d{4}){2}[ \-]?(?:\d{4}(?:[ \-]?\d{3})?|\d)` + // Visa: 16, 19, or the older 13
-		`|5[1-5]\d{2}(?:[ \-]?\d{4}){3}` + // Mastercard
+		`|5[1-5]\d{2}(?:[ \-]?\d{4}){3}` + // Mastercard, 51-55
+		`|2(?:22[1-9]|2[3-9]\d|[3-6]\d\d|7[01]\d|720)(?:[ \-]?\d{4}){3}` + // Mastercard, 222100-272099
 		`|3[47]\d{2}[ \-]?\d{6}[ \-]?\d{5}` + // Amex
 		`|6(?:011|5\d{2})(?:[ \-]?\d{4}){3}` + // Discover
 		`)\b`)

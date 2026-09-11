@@ -125,6 +125,12 @@ func TestIBANCheck(t *testing.T) {
 		// the same layout. The key is the only thing that separates them.
 		{"purchase order of the same shape", "PO12ABCD3456EFGH", false},
 		{"one check digit changed", "FR1520041010050500013M02606", false},
+		// Check digits ISO 13616 cannot produce, key or no key. The first is the
+		// fake-mode stand-in at index 10, which cleared mod-97 and was re-detected
+		// as somebody's account on the next pass.
+		{"check digits 00, and the key verifies", "FR0000000000000000000000010", false},
+		{"check digits 01", "FR0120041010050500013M02606", false},
+		{"check digits 99", "FR9920041010050500013M02606", false},
 		{"too short", "FR142004", false},
 		{"punctuation inside", "FR14-2004-1010-0505", false},
 		{"empty", "", false},

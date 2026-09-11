@@ -70,6 +70,10 @@ func TestSampleShowsEveryNotation(t *testing.T) {
 				"4532015112830366", pii.CatCreditCard,
 				"4532 0151 1283 0366", pii.CatCreditCard,
 				"4532-0151-1283-0366", pii.CatCreditCard,
+				// Both Mastercard BIN ranges. Only 51-55 was read, so a 2-series
+				// card — issued since 2017 — went to the model in clear.
+				"5425233430109903", pii.CatCreditCard,
+				"2221000000000009", pii.CatCreditCard,
 				"FR1420041010050500013M02606", pii.CatIBAN,
 				"FR14 2004 1010 0505 0001 3M02 606", pii.CatIBAN,
 				"DE89370400440532013000", pii.CatIBAN,
@@ -538,6 +542,9 @@ func TestSampleShowsEveryCredential(t *testing.T) {
 		"xkeysib-5C7Ef653Cc3be1c61D641ac6ed0Cd712Cc28Fdb3DAc8CCFA444168C28E093dbe-ZRsdM3IVV8iwO2y2", pii.CatBrevoSecret,
 		"bkaa_d5vFldPGYYJvW5hANsbEvrSFagEaBp0vXnJaE-9I0MyTLUyi0kn1Gnt11CuZyzaA3U2OLzu6UQB", pii.CatBuildkiteSecret,
 		"bkua_d9jzfx6kjwsk7kegy5mtic4udyfkozm4lncz7kyw", pii.CatBuildkiteSecret,
+		// Both lengths of the user token. The fifty-three-character one is the
+		// notation the alternation's order used to cut short at forty.
+		"bkua_hqekxwqaflliz8x7f5qjrhow1n5946k2ruadyq1nj3e6vp749o96q", pii.CatBuildkiteSecret,
 		"cnvcaptFyfePpX6N1NF2XV54wca_7E56w8ZniqT3Ul4ffqkOkgWrdioy", pii.CatCanvaSecret,
 		// "csk-" against openAILegacyRe's "sk-": at a score below OpenAI's this
 		// came out as CatOpenAIKey with the leading "c" in clear, which is the row

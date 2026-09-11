@@ -7,7 +7,7 @@
    "fn": 0
   },
   "CREDIT_CARD": {
-   "tp": 9,
+   "tp": 10,
    "fp": 0,
    "fn": 0
   },
@@ -162,7 +162,7 @@
    "fn": 0
   },
   "SECRET_BUILDKITE": {
-   "tp": 2,
+   "tp": 3,
    "fp": 0,
    "fn": 0
   },
@@ -312,7 +312,7 @@
    "fn": 0
   },
   "SECRET_GENERIC": {
-   "tp": 44,
+   "tp": 45,
    "fp": 1,
    "fn": 0
   },
@@ -757,5 +757,5 @@
    "fn": 0
   }
  },
- "negatives": 218
+ "negatives": 220
 }

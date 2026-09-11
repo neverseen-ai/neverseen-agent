@@ -30,6 +30,62 @@ const noSentenceTail = `,.;:!?)\]}>`
 // `secret\` and leaves `\"` as a bare `"` — malformed JSON the provider rejects.
 const quoteChars = "\\s\"'`\\\\"
 
+// The tails of the three name-is-the-evidence generics below. Each is written
+// once and compiled behind every spelling of its keyword, because the keyword is
+// the only part that varies.
+const (
+	// Forty base64 characters, and the span is the value rather than the
+	// assignment: masking the name would leave the reader unable to see which
+	// setting was redacted.
+	awsSecretKeyTail = `['"]?\s*[=:]\s*['"]?([a-zA-Z0-9/+=]{40})`
+
+	// Twenty-four characters, the floor that separates a generated blob from a
+	// type name — the reasoning is above sessionSecretPatterns.
+	sessionSecretTail = `['"]?\s*[=:]\s*['"]?([A-Za-z0-9_./+-]{24,})['"]?`
+
+	// Hex in either case. The class carries A-F because the expression used to
+	// carry `(?i)`, and dropping that without widening the class would have
+	// stopped reading every uppercase key — a narrowing dressed as a speed-up,
+	// which is the change that leaks.
+	hexSecretTail = `['"]?\s*[=:]\s*['"]?([0-9a-fA-F]{64,})['"]?`
+)
+
+// namedSecretPatterns compiles one pattern per spelling of a keyword, each
+// opening on a literal.
+//
+// `(?i)` in front of an expression is what stops Go scanning for a leading
+// literal, and these three paid for it: hexSecretPatterns' single expression cost
+// 2.24ms a scan, against 0.56ms for the entire hundred-and-fifty-pattern vendor
+// tier. It is the shape authHeaderRe and authHeaderLowercaseRe already take,
+// generalised — a name is written SCREAMING, lower or Capitalised and never in an
+// arbitrary casing, so what the split gives up is `SeCrEt=`.
+func namedSecretPatterns(cat Category, label, tail string, spellings ...string) []Pattern {
+	out := make([]Pattern, 0, len(spellings))
+	for _, name := range spellings {
+		out = append(out, Pattern{
+			Regex:    regexp.MustCompile(name + tail),
+			Group:    1,
+			Category: cat,
+			Label:    label,
+		})
+	}
+	return out
+}
+
+// The AWS secret has no prefix of its own — forty base64 characters are not
+// distinguishable from any other blob — so the name in front of it is the
+// evidence.
+//
+// `aws_secret` is a prefix of `aws_secret_access_key`, so the longer name is an
+// optional tail rather than a second spelling: that keeps one literal for Go to
+// scan for and still reports the whole name it found.
+var awsSecretKeyPatterns = namedSecretPatterns(CatAWSSecretKey, "AWS secret access key", awsSecretKeyTail,
+	`aws_secret(?:_access_key)?`,
+	`AWS_SECRET(?:_ACCESS_KEY)?`,
+	`secret_access_key`,
+	`SECRET_ACCESS_KEY`,
+)
+
 var (
 	// --- vendor prefixes ---------------------------------------------------
 
@@ -70,12 +126,6 @@ var (
 	awsAccessKeyRe = regexp.MustCompile(`(?:A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{16}`)
 	// Case-sensitive on purpose: "akia" in lowercase prose is not an AWS
 	// identifier, and matching it would mask the word.
-
-	// The AWS secret has no prefix of its own — forty base64 characters are not
-	// distinguishable from any other blob — so the name in front of it is the
-	// evidence. The span is the value, not the assignment: masking the name
-	// would leave the reader unable to see which setting was redacted.
-	awsSecretKeyRe = regexp.MustCompile(`(?i)(?:aws_secret_access_key|aws_secret|secret_access_key)['"]?\s*[=:]\s*['"]?([a-zA-Z0-9/+=]{40})`)
 
 	githubRe = regexp.MustCompile(`gh[pousr]_[a-zA-Z0-9]{36,}`)
 	// The fine-grained token, which is a different word and not a fifth letter in
@@ -126,8 +176,12 @@ var (
 	// TODO: replace {32,} with the real length if either vendor ever documents
 	// one. The three remaining providers — Mistral, Together, DeepInfra — have no
 	// pattern here at all: see the note above SecretPatterns.
-	groqRe = regexp.MustCompile(`\bgsk_[a-zA-Z0-9]{32,}`)
-	xaiRe  = regexp.MustCompile(`\bxai-[a-zA-Z0-9]{32,}`)
+	// No leading \b: it is what stops Go scanning for the leading literal, and
+	// these two paid three hundred times their siblings' cost for it. Nothing
+	// needs the boundary — unlike Stripe's `sk_`, neither "gsk_" nor "xai-" is
+	// the tail of an ordinary word.
+	groqRe = regexp.MustCompile(`gsk_[a-zA-Z0-9]{32,}`)
+	xaiRe  = regexp.MustCompile(`xai-[a-zA-Z0-9]{32,}`)
 
 	// --- structural shapes -------------------------------------------------
 
@@ -300,9 +354,13 @@ var (
 	// Case-insensitive past the element name for the same reason — `key="password"`
 	// is as valid as `key="Password"` and the tooling emits both — while `<add`
 	// itself stays literal, which is what keeps the prefix scan.
+	// The value class excludes the line endings for the reason every long span
+	// here uses horizontal whitespace: with them admitted an unterminated
+	// attribute ran on to the next quote several lines down and the mask ate the
+	// XML between.
 	nugetPasswordRe = regexp.MustCompile(`<add(?i)[ \t\r\n]+key="(?:cleartext)?password"` +
-		`[ \t\r\n]+value="([^"]{8,})"`)
-	nugetPasswordReversedRe = regexp.MustCompile(`<add(?i)[ \t\r\n]+value="([^"]{8,})"` +
+		`[ \t\r\n]+value="([^"\r\n]{8,})"`)
+	nugetPasswordReversedRe = regexp.MustCompile(`<add(?i)[ \t\r\n]+value="([^"\r\n]{8,})"` +
 		`[ \t\r\n]+key="(?:cleartext)?password"`)
 
 	// `Authorization: Bearer …`, which is how a credential travels in a log, a
@@ -334,35 +392,47 @@ var (
 	authHeaderLowercaseRe = regexp.MustCompile(`authorization` + authHeaderTail)
 
 	clickhouseRe = regexp.MustCompile(`(?:^|[^A-Za-z0-9])(4b1d[A-Za-z0-9]{38})(?:[^A-Za-z0-9]|$)`)
+)
 
-	// Sixty-four or more hex characters behind a key-shaped name. The floor is
-	// what separates an encryption key from a commit SHA somebody assigned to a
-	// field: forty hex under "KEY=" is a truncated SHA, and masking it breaks a
-	// paste for nothing.
-	// A session token, which needs a length floor the shared keyword list cannot
-	// give it.
-	//
-	// "session" was in that list for one commit and came straight back out. The
-	// evidence there is the name, and the value is then held apart from source code
-	// by GenericSecretCheck — whose rule is that an identifier carrying a digit is a
-	// credential, because `Sup3rS3cr3tValue123` is one. A *type annotation* defeats
-	// that rule completely: `session: Http2Session` is an identifier with a digit,
-	// and so are `Http2Stream`, `Base64String` and every other type name built on a
-	// numbered standard. Measured over four megabytes of third-party TypeScript it
-	// claimed nine of them, and over a hand-written sample of ordinary application
-	// code it claimed one in ninety-five lines.
-	//
-	// What separates the two is length, not shape. A session token is a generated
-	// blob — thirty-two hex characters in the cookie this exists for — and a type
-	// name is a word or two. Twenty-four is above every type name in those two
-	// corpora and below every real token, and it is a floor the shared expression
-	// cannot carry because its keywords share one alternation and one group.
-	//
-	// GenericSecretCheck still applies, so a long expression behind `session:` is
-	// still rejected on its punctuation.
-	sessionSecretRe = regexp.MustCompile(`(?i)SESSION['"]?\s*[=:]\s*['"]?([A-Za-z0-9_./+-]{24,})['"]?`)
+// A session token, which needs a length floor the shared keyword list cannot
+// give it.
+//
+// "session" was in that list for one commit and came straight back out. The
+// evidence there is the name, and the value is then held apart from source code
+// by GenericSecretCheck — whose rule is that an identifier carrying a digit is a
+// credential, because `Sup3rS3cr3tValue123` is one. A *type annotation* defeats
+// that rule completely: `session: Http2Session` is an identifier with a digit,
+// and so are `Http2Stream`, `Base64String` and every other type name built on a
+// numbered standard. Measured over four megabytes of third-party TypeScript it
+// claimed nine of them, and over a hand-written sample of ordinary application
+// code it claimed one in ninety-five lines.
+//
+// What separates the two is length, not shape. A session token is a generated
+// blob — thirty-two hex characters in the cookie this exists for — and a type
+// name is a word or two. Twenty-four is above every type name in those two
+// corpora and below every real token, and it is a floor the shared expression
+// cannot carry because its keywords share one alternation and one group.
+//
+// GenericSecretCheck still applies, so a long expression behind `session:` is
+// still rejected on its punctuation.
+//
+// Three spellings are the whole of what the `(?i)` in front of this bought:
+// nothing writes a cookie name `SeSsIoN`.
+var sessionSecretPatterns = namedSecretPatterns(CatGenericSecret, "Session token", sessionSecretTail,
+	`SESSION`, `session`, `Session`,
+)
 
-	hexSecretRe = regexp.MustCompile(`(?i)(?:KEY|SECRET|ENCRYPTION_KEY|SIGNING_KEY|HMAC_KEY)['"]?\s*[=:]\s*['"]?([0-9a-f]{64,})['"]?`)
+// Sixty-four or more hex characters behind a key-shaped name. The floor is what
+// separates an encryption key from a commit SHA somebody assigned to a field:
+// forty hex under "KEY=" is a truncated SHA, and masking it breaks a paste for
+// nothing.
+//
+// `ENCRYPTION_KEY`, `SIGNING_KEY` and `HMAC_KEY` were three of the alternatives
+// this used to carry and all three were dead: each ends in `KEY`, the expression
+// has no left boundary, and the span is the value — so `KEY` alone already read
+// every one of them.
+var hexSecretPatterns = namedSecretPatterns(CatHexSecret, "Hex-encoded key", hexSecretTail,
+	`KEY`, `key`, `Key`, `SECRET`, `secret`, `Secret`,
 )
 
 // genericSecretKeywordNames are the names that make the value behind them evidence
@@ -609,7 +679,11 @@ var vendorPrefixes = []struct {
 	{CatBuildkiteSecret, "Buildkite", regexp.MustCompile(`bkpt_[A-Za-z0-9_-]{199}`)},
 	{CatBuildkiteSecret, "Buildkite", regexp.MustCompile(`bkpat_[A-Za-z0-9_-]{54}`)},
 	{CatBuildkiteSecret, "Buildkite", regexp.MustCompile(`bkps_[A-Za-z0-9_-]{64}`)},
-	{CatBuildkiteSecret, "Buildkite", regexp.MustCompile(`bkua_(?:[a-z0-9]{40}|[a-z0-9]{53})`)},
+	// The fifty-three-character branch comes first because Go's regexp is
+	// leftmost-first over an alternation: with the forty-character branch in
+	// front it always won, and a fifty-three-character user token was masked
+	// forty characters in with its last thirteen forwarded in clear.
+	{CatBuildkiteSecret, "Buildkite", regexp.MustCompile(`bkua_(?:[a-z0-9]{53}|[a-z0-9]{40})`)},
 	{CatCanvaSecret, "Canva", regexp.MustCompile(`cnvca[a-zA-Z0-9_-]{51}`)},
 	{CatCerebrasSecret, "Cerebras", regexp.MustCompile(`csk-[a-z0-9]{48}`)},
 	{CatCircleciSecret, "CircleCI", regexp.MustCompile(`CCIPAT_[a-zA-Z0-9]{22}_[a-z0-9]{40}`)},
@@ -766,14 +840,16 @@ var vendorPrefixes = []struct {
 // deployment that scans no country's identifiers still must not paste its keys
 // into a model.
 func SecretPatterns() []Pattern {
-	out := []Pattern{
+	out := append([]Pattern{
 		// vendor prefixes, most specific first
 		{Regex: openAIModernRe, Category: CatOpenAIKey, Label: "OpenAI API key"},
 		{Regex: anthropicRe, Category: CatAnthropicKey, Label: "Anthropic API key"},
 		{Regex: openAILegacyRe, Category: CatOpenAIKey, Label: "OpenAI API key (legacy)"},
 		{Regex: googleRe, Category: CatGoogleKey, Label: "Google API key"},
 		{Regex: awsAccessKeyRe, Category: CatAWSAccessKey, Label: "AWS access key id"},
-		{Regex: awsSecretKeyRe, Group: 1, Category: CatAWSSecretKey, Label: "AWS secret access key"},
+	}, awsSecretKeyPatterns...)
+
+	out = append(out, []Pattern{
 		{Regex: githubRe, Category: CatGitHubToken, Label: "GitHub token"},
 		{Regex: githubFineGrainedRe, Category: CatGitHubToken, Label: "GitHub fine-grained token"},
 		{Regex: gitlabRe, Category: CatGitLabToken, Label: "GitLab personal access token"},
@@ -807,25 +883,43 @@ func SecretPatterns() []Pattern {
 		{Regex: pemRe, Category: CatPEMKey, Label: "PEM private key header"},
 		{Regex: jwtRe, Category: CatJWT, Label: "JSON Web Token"},
 		{Regex: connStrRe, Group: 1, Category: CatConnStr, Label: "URL carrying credentials"},
-	}
+	}...)
 
 	// The second tier goes here — after the shapes reasoned about one by one,
 	// and before the generics — for the reason the tiering exists: a
 	// "TOKEN=..." hint must not claim a span a documented prefix can name.
+	// Two patterns of one category carry different labels, which is what makes a
+	// report say which of a vendor's shapes actually fired — so the label carries
+	// the prefix the pattern opens on, `bkaa_` against `bkua_`, and not the
+	// vendor's name alone, under which all eight of Buildkite's read the same.
+	//
+	// The prefix alone is not always enough to tell them apart: Flutterwave's two
+	// shapes both open on `FLWSECK_TEST-` and Sourcegraph's two on `sgp_`, so each
+	// pair read the same label again and the report said nothing the category code
+	// did not. Where a prefix is shared inside a category — or there is none to
+	// scan for — the expression itself is what distinguishes them.
+	shared := make(map[Category]map[string]int, len(vendorPrefixes))
 	for _, v := range vendorPrefixes {
-		// Two patterns of one category carry different labels, which is what
-		// makes a report say which of a vendor's shapes actually fired — so the
-		// label carries the prefix the pattern opens on, `bkaa_` against `bkua_`,
-		// and not the vendor's name alone, under which all eight of Buildkite's
-		// read the same.
+		prefix, _ := v.Regex.LiteralPrefix()
+		if shared[v.Category] == nil {
+			shared[v.Category] = make(map[string]int)
+		}
+		shared[v.Category][prefix]++
+	}
+
+	for _, v := range vendorPrefixes {
 		label := v.Vendor + " credential"
-		if prefix, _ := v.Regex.LiteralPrefix(); prefix != "" {
+		prefix, _ := v.Regex.LiteralPrefix()
+		switch {
+		case shared[v.Category][prefix] > 1:
+			label += " (" + v.Regex.String() + ")"
+		case prefix != "":
 			label += " (" + prefix + "…)"
 		}
 		out = append(out, Pattern{Regex: v.Regex, Category: v.Category, Label: label})
 	}
 
-	return append(out, []Pattern{
+	out = append(out, []Pattern{
 		// context-hinted generics, last
 		{Regex: genericSecretQuotedRe, Group: 1, Category: CatGenericSecret, Label: "Named secret or password"},
 		{Regex: genericSecretBareRe, Group: 1, Category: CatGenericSecret, Label: "Named secret or password", Verify: UnclosedBracketCheck},
@@ -834,7 +928,8 @@ func SecretPatterns() []Pattern {
 		{Regex: nugetPasswordReversedRe, Group: 1, Category: CatGenericSecret, Label: "NuGet feed password"},
 		{Regex: authHeaderRe, Group: 1, Category: CatGenericSecret, Label: "Authorization header credential", Verify: AuthHeaderCheck},
 		{Regex: authHeaderLowercaseRe, Group: 1, Category: CatGenericSecret, Label: "Authorization header credential", Verify: AuthHeaderCheck},
-		{Regex: sessionSecretRe, Group: 1, Category: CatGenericSecret, Label: "Session token"},
-		{Regex: hexSecretRe, Group: 1, Category: CatHexSecret, Label: "Hex-encoded key"},
 	}...)
+
+	out = append(out, sessionSecretPatterns...)
+	return append(out, hexSecretPatterns...)
 }

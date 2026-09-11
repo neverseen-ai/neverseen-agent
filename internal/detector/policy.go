@@ -93,23 +93,30 @@ func (d *Detector) SetLocales(locales []string) error {
 		}
 	}
 
-	// Stored in registry order whatever order they arrived in, because load order
-	// settles which country claims a value both could read: nine bare digits are a
-	// French SIREN under Luhn and a US routing number under the ABA weights. A
-	// selection that reordered them would quietly change what those digits become.
-	ordered := make([]string, 0, len(locales))
+	d.policy.cat.Store(newCatalogue(orderLocales(locales)))
+	return nil
+}
+
+// orderLocales returns the selection in registry order, each code once.
+//
+// Load order settles which country claims a value both could read: nine bare
+// digits are a French SIREN under Luhn and a US routing number under the ABA
+// weights. A selection that reordered them would quietly change what those digits
+// become — so this route and New have to answer the same way, and New used to
+// store what it was handed verbatim.
+func orderLocales(locales []string) []string {
 	wanted := make(map[string]bool, len(locales))
 	for _, code := range locales {
 		wanted[code] = true
 	}
+
+	ordered := make([]string, 0, len(wanted))
 	for _, code := range pii.LocaleCodes() {
 		if wanted[code] {
 			ordered = append(ordered, code)
 		}
 	}
-
-	d.policy.cat.Store(newCatalogue(ordered))
-	return nil
+	return ordered
 }
 
 // Substitution selects what a masked value looks like on the wire. Both are

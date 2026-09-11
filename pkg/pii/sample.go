@@ -26,6 +26,7 @@ Email : claire.moreau@example.fr, avec alias claire+juridique@example.fr
 Email accentué : andré.muller@example.fr
 Carte : 4532015112830366, aussi écrite 4532 0151 1283 0366 ou 4532-0151-1283-0366
 Cartes des autres longueurs : 4222222222222 (13), 4532015112830366120 (19), 4532 0151 1283 0366 120 (19 groupée)
+Carte Mastercard, les deux séries : 5425233430109903 (51-55), 2221000000000009 (série 2, émise depuis 2017)
 IBAN : FR1420041010050500013M02606, groupé FR14 2004 1010 0505 0001 3M02 606
 IBAN étrangers : DE89370400440532013000, BE68539007547034, NL91ABNA0417164300
 Serveur : 192.168.13.42, et 10.0.0.1 en secours
@@ -161,7 +162,7 @@ Azure App Configuration : Endpoint=https://example-config.azconfig.io;Id=abcd;Se
 Azure Service Bus : Endpoint=sb://uu3.servicebus.windows.net/;SharedAccessKeyName=P;SharedAccessKey=KZyUf0IE9pU2NJhKaM1/5WdR16ePllji
 Brave Search : BSAvghZ4fXfeTkYpIygfdM7ENA8
 Brevo : xkeysib-5C7Ef653Cc3be1c61D641ac6ed0Cd712Cc28Fdb3DAc8CCFA444168C28E093dbe-ZRsdM3IVV8iwO2y2
-Buildkite : bkaa_d5vFldPGYYJvW5hANsbEvrSFagEaBp0vXnJaE-9I0MyTLUyi0kn1Gnt11CuZyzaA3U2OLzu6UQB, bkua_d9jzfx6kjwsk7kegy5mtic4udyfkozm4lncz7kyw
+Buildkite : bkaa_d5vFldPGYYJvW5hANsbEvrSFagEaBp0vXnJaE-9I0MyTLUyi0kn1Gnt11CuZyzaA3U2OLzu6UQB, bkua_d9jzfx6kjwsk7kegy5mtic4udyfkozm4lncz7kyw, bkua_hqekxwqaflliz8x7f5qjrhow1n5946k2ruadyq1nj3e6vp749o96q
 Canva : cnvcaptFyfePpX6N1NF2XV54wca_7E56w8ZniqT3Ul4ffqkOkgWrdioy
 Cerebras : csk-i5skoewqkur3jq64nq6puxcmlzkruykqh7dx297gq8zxqyxj
 CircleCI : CCIPAT_xvWfColNV9ds0HqtO93L7Q_uacojs106xdi5ocbdawtg7w8o0tinx4kiapj2gej

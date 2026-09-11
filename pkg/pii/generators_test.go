@@ -34,7 +34,18 @@ func TestStandInsFailTheirOwnChecksum(t *testing.T) {
 		t.Run(string(tt.cat), func(t *testing.T) {
 			// Several indices, because a generator can be wrong for one and right
 			// for the next — the check digit it has to avoid moves with the body.
-			for _, index := range []int64{1, 2, 3, 42, 1000} {
+			//
+			// A sweep and not a handful, because the handful missed one: the IBAN
+			// stand-in cleared mod-97 at every ninety-seventh index — 10, 107, 204
+			// — and none of the five listed values landed on one, so the whole of
+			// fake mode emitted a re-detectable account for eight years of indices
+			// under a green test.
+			indices := []int64{42, 1000}
+			for i := int64(1); i <= 200; i++ {
+				indices = append(indices, i)
+			}
+
+			for _, index := range indices {
 				value, ok := FakeValue(tt.cat, tt.locale, index)
 				if !ok {
 					t.Fatalf("no stand-in for index %d", index)

@@ -116,6 +116,19 @@ cases:
     expect:
       - {category: CREDIT_CARD, value: "4222222222222"}
 
+  # Mastercard's second BIN range, 222100-272099, issued since 2017. Only 51-55 was
+  # read, so an ordinary card in an ordinary wallet went to the model in clear.
+  - id: intl-card-mastercard-two-series
+    text: "Remboursement sur la carte 2221000000000009 la semaine prochaine."
+    expect:
+      - {category: CREDIT_CARD, value: "2221000000000009"}
+
+  # In the range and one digit off Luhn. The range is four digits of shape and
+  # nothing more; the checksum is what says the number was ever issued.
+  - id: intl-card-mastercard-two-series-bad-luhn
+    text: "Le numéro 2221000000000008 saisi au support ne correspond à aucune carte."
+    expect: []
+
   # --- IPv6 -----------------------------------------------------------------
   #
   # These exist because the shape did not. The category was labelled "IP address"

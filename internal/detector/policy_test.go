@@ -282,6 +282,25 @@ func TestSetLocalesKeepsRegistryOrder(t *testing.T) {
 	}
 }
 
+// New answers the same way SetLocales does. It stored what it was handed verbatim,
+// so a configuration listing "us" before "fr" loaded the two sets in that order and
+// the US routing number claimed the nine digits a French SIREN would have — while
+// the same selection made through the policy route loaded them the other way round.
+// A duplicate arrived twice, and loaded its set twice.
+func TestNewOrdersTheLocalesItIsGiven(t *testing.T) {
+	got := New(Config{Locales: []string{"us", "fr", "fr"}}).Locales()
+
+	want := []string{"fr", "us"}
+	if len(got) != len(want) {
+		t.Fatalf("locales are %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("locales are %v, want %v", got, want)
+		}
+	}
+}
+
 // An unknown code is refused, not skipped. pii.LocalePatterns skips one by design —
 // it must not decide policy about a selection — so nothing below would notice, and
 // an operator who mistyped "uk" would be told the change succeeded while the agent
