@@ -57,6 +57,47 @@ export function looksLikeAKey(value: string): boolean {
   return /^[0-9a-f]{64}$/.test(value.trim());
 }
 
+/**
+ * ACCEPTED_HOSTS are the hostnames a base URL may name, and the list is what the
+ * manifest's host_permissions cover — `http://127.0.0.1/*` and nothing else.
+ *
+ * Two reasons, and either alone would do. The key travels in a header on every
+ * /mask and /unmask call, so a base URL is where the control secret is sent — a
+ * pasted host anywhere on the internet would receive it. And the worker cannot reach
+ * any other host anyway: `localhost` and `[::1]` are loopback too, but a host the
+ * manifest does not name is one every fetch to it fails on, which reads as "the
+ * agent is not running" at somebody whose agent is.
+ */
+const ACCEPTED_HOSTS: readonly string[] = ['127.0.0.1'];
+
+/**
+ * baseUrlProblem says why a base URL cannot be used, or null when it can. An empty
+ * value is fine: it means the default.
+ */
+export function baseUrlProblem(value: string): string | null {
+  const trimmed = value.trim();
+  if (trimmed === '') return null;
+
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    return 'That is not an address.';
+  }
+  if (url.protocol !== 'http:' || !ACCEPTED_HOSTS.includes(url.hostname)) {
+    return (
+      'The agent address must be http://127.0.0.1 with a port. The control key is ' +
+      'sent to whatever answers there, and this extension may reach nothing else — ' +
+      'not localhost, not [::1].'
+    );
+  }
+  return null;
+}
+
+/** normalise trims the address and drops a trailing slash, and returns '' for one
+ * that cannot be used, so the caller falls back to the default rather than sending
+ * the key to it. */
 function normalise(url: string | undefined): string {
-  return (url ?? '').trim().replace(/\/+$/, '');
+  const trimmed = (url ?? '').trim().replace(/\/+$/, '');
+  return baseUrlProblem(trimmed) === null ? trimmed : '';
 }

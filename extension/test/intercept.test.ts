@@ -155,6 +155,51 @@ test('a send whose body cannot be read is blocked, not forwarded', async () => {
   assert.equal(reached, false);
 });
 
+test('a send carrying no field this knows to mask is blocked, not forwarded', async () => {
+  // The site's own path says it is a send, so whatever the body carries reaches the
+  // model. A shape the adapter does not recognise is the site having moved its
+  // prompt — forwarded, the extension masks nothing while looking installed.
+  let reached = false;
+  const original = (async () => {
+    reached = true;
+    return new Response('{}');
+  }) as typeof fetch;
+  const { asked, send } = relay({ mask: masking });
+
+  await assert.rejects(
+    wrapFetch(original, claudeAi, send)(SEND_URL, {
+      method: 'POST',
+      body: JSON.stringify({ message: 'write to claire@example.fr', model: 'claude' }),
+    }),
+    (err: unknown) => err instanceof Blocked && err.reason === 'refused',
+  );
+  assert.equal(reached, false, 'the message was forwarded in clear');
+  assert.ok(asked.some((a) => a.kind === 'blocked'), 'nothing told the person why');
+  assert.ok(!asked.some((a) => a.kind === 'mask'), 'the agent was asked to mask nothing');
+});
+
+test('a Request keeps its referrer through the rebuild', async () => {
+  // A non-empty init resets the referrer and its policy on the copy, and the site's
+  // server may check the referrer on a send.
+  let sent: Request | undefined;
+  const original = (async (input: RequestInfo | URL) => {
+    sent = input as Request;
+    return new Response('{}');
+  }) as typeof fetch;
+  const { send } = relay({ mask: masking });
+
+  const request = new Request(SEND_URL, {
+    method: 'POST',
+    body: JSON.stringify({ prompt: 'hello' }),
+    referrer: 'https://claude.ai/chat/9f1c',
+    referrerPolicy: 'strict-origin-when-cross-origin',
+  });
+  await wrapFetch(original, claudeAi, send)(request);
+
+  assert.equal(sent!.referrer, 'https://claude.ai/chat/9f1c');
+  assert.equal(sent!.referrerPolicy, 'strict-origin-when-cross-origin');
+});
+
 test('a streamed answer is wrapped, and any other answer is not', async () => {
   const sse = (async () =>
     new Response('data: {"delta":{"text":"hi"}}\n\n', {
@@ -228,6 +273,7 @@ test('a transport that cannot be masked is refused rather than forwarded', async
     }
   }
   class FakeSocket {
+    static OPEN = 1;
     constructor(url: string) {
       socketed.push(url);
     }
@@ -261,6 +307,8 @@ test('a transport that cannot be masked is refused rather than forwarded', async
     (err: unknown) => err instanceof Blocked,
   );
   assert.equal(socketed.length, 0, 'the chat connection was opened, and nothing on it is masked');
+  assert.equal(target.WebSocket.OPEN, 1,
+    'the replacement lost the statics; a site comparing readyState against WebSocket.OPEN never sends');
 
   assert.equal(
     asked.filter((a) => a.kind === 'blocked').length,
@@ -273,6 +321,12 @@ test('a transport that cannot be masked is refused rather than forwarded', async
   other.open('GET', 'https://claude.ai/_next/static/chunk.js');
   other.send();
   assert.ok(opened.includes('SENT'));
+
+  // As does a read of the chat: a GET carries nothing typed, and the same GET over
+  // fetch passes untouched.
+  const read = new target.XMLHttpRequest();
+  read.open('GET', SEND_URL);
+  assert.doesNotThrow(() => read.send(), 'a read of the conversation was refused');
   assert.equal(target.navigator.sendBeacon('https://claude.ai/telemetry', 'x'), true);
   assert.equal(beaconed.length, 1);
 });

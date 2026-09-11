@@ -108,21 +108,28 @@ export function wrapFetch(original: typeof fetch, site: Site, send: Send): typeo
     }
 
     const texts = site.texts(body);
-    let outgoing = raw;
-    if (texts.length > 0) {
-      let masked: MaskAnswer;
-      try {
-        masked = await ask<MaskAnswer>(send, { kind: 'mask', texts });
-      } catch (err) {
-        // Every way the masking can fail comes through here, and every one of them
-        // blocks the send *and* says why. A rejection on its own reads to the site as
-        // a network failure and to the person as a broken page — while the actual
-        // cause, most often an agent that is not running, is one command away.
-        const reason = err instanceof Blocked ? err.reason : 'refused';
-        throw block(send, reason, 'send', blockedMessage(reason, describe(err)), err);
-      }
-      outgoing = JSON.stringify(site.withTexts(body, masked.texts));
+    if (texts.length === 0) {
+      // A send carrying none of the fields this knows to mask is refused, not
+      // forwarded. It is a send — the site's own path says so — so what it carries
+      // reaches the model, and a body shaped differently from what the adapter
+      // expects is the site having moved its prompt to a field this does not read.
+      // Forwarded, that is the extension masking nothing while looking installed.
+      throw block(send, 'refused', 'send',
+        'Neverseen: your message was not sent — it carries no field this extension knows how to mask.');
     }
+
+    let masked: MaskAnswer;
+    try {
+      masked = await ask<MaskAnswer>(send, { kind: 'mask', texts });
+    } catch (err) {
+      // Every way the masking can fail comes through here, and every one of them
+      // blocks the send *and* says why. A rejection on its own reads to the site as
+      // a network failure and to the person as a broken page — while the actual
+      // cause, most often an agent that is not running, is one command away.
+      const reason = err instanceof Blocked ? err.reason : 'refused';
+      throw block(send, reason, 'send', blockedMessage(reason, describe(err)), err);
+    }
+    const outgoing = JSON.stringify(site.withTexts(body, masked.texts));
 
     const response = await original(rebuild(input, init, outgoing));
     return restore(response, site, send);
@@ -176,7 +183,9 @@ function restore(response: Response, site: Site, send: Send): Response {
 
   // A new Response over the transformed stream, keeping the status and the headers:
   // the site reads both, and a stream handed back under a fabricated 200 would hide
-  // an error the site knows how to show.
+  // an error the site knows how to show. `url`, `redirected` and `type` cannot be
+  // set on a constructed Response and are lost — a known ceiling, declared rather
+  // than claimed away.
   return new Response(stream, {
     status: response.status,
     statusText: response.statusText,
@@ -230,13 +239,18 @@ function rebuild(
   init: RequestInit | undefined,
   body: string,
 ): Request {
-  // Through a Request either way, so the credentials, the mode, the referrer policy
-  // and every header the site set travel exactly as it set them. Rebuilding an init
-  // by hand is how a wrapper drops the cookie and the send starts failing to
-  // authenticate.
-  return input instanceof Request && init === undefined
-    ? new Request(input, { body })
-    : new Request(input as RequestInfo, { ...init, body });
+  // Through a Request either way, so the credentials, the mode and every header the
+  // site set travel exactly as it set them. Rebuilding an init by hand is how a
+  // wrapper drops the cookie and the send starts failing to authenticate.
+  //
+  // The referrer and its policy are the exception: a non-empty init resets both on
+  // the copy (the Fetch spec's "if init is not empty" step), and the site's server
+  // may check the referrer on a send. So they are carried over explicitly, unless
+  // the init sets its own.
+  const carried = input instanceof Request
+    ? { referrer: input.referrer, referrerPolicy: input.referrerPolicy }
+    : {};
+  return new Request(input as RequestInfo, { ...carried, ...init, body });
 }
 
 /**
@@ -255,7 +269,11 @@ function guardXHR(target: Window & typeof globalThis, site: Site, send: Send): v
 
   proto.open = function (this: XMLHttpRequest, method: string, url: string | URL, ...rest: unknown[]) {
     try {
-      if (site.carriesChat(new URL(String(url), location.href))) marked.add(this);
+      // A read carries nothing typed, and a GET over fetch on the same path passes
+      // untouched; refusing it here would break the site's own listing of a
+      // conversation while protecting nothing.
+      const reads = ['GET', 'HEAD'].includes(String(method).toUpperCase());
+      if (!reads && site.carriesChat(new URL(String(url), location.href))) marked.add(this);
     } catch {
       // An address that will not parse is not one of ours.
     }
@@ -310,5 +328,9 @@ function guardWebSocket(target: Window & typeof globalThis, site: Site, send: Se
   } as unknown as typeof WebSocket;
 
   Guarded.prototype = Original.prototype;
+  // The statics too — WebSocket.OPEN, CONNECTING and the rest. A site reading
+  // `readyState === WebSocket.OPEN` off a replacement without them compares against
+  // undefined and never sends, on every socket and not only the chat's.
+  Object.setPrototypeOf(Guarded, Original);
   target.WebSocket = Guarded;
 }

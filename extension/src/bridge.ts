@@ -65,9 +65,6 @@ export function acceptAsk(raw: unknown, session: string): Ask | null {
       return { kind: 'unmask', session, text: ask.text, tail: ask.tail, final: ask.final };
     }
 
-    case 'health':
-      return { kind: 'health' };
-
     case 'blocked': {
       // A note carries which situation it was, never the sentence. The relay writes
       // its own words for the banner: a page that supplied them could put anything it

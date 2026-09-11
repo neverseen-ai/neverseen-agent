@@ -170,6 +170,62 @@ test('calls are serialised even when answers come back out of order', async () =
   assert.equal(textsOf(stream), 'a claire@example.fr b claire@example.fr c');
 });
 
+test('a tail is released before the event that closes its block, not after the stop', async () => {
+  // A tail belongs to the block it was held back from — the agent's closeBlock rule.
+  // A client that stops appending on message_stop, which is what the site does,
+  // would otherwise lose the last characters of the answer: the flush comes after
+  // the event it stopped on.
+  const stop = 'event: message_stop\ndata: {"type":"message_stop"}\n\n';
+  const stream = await through([...deltas('her address is [EMAIL', '_1]'), stop], expander(known));
+
+  const seenBeforeStop = stream.slice(0, stream.indexOf('event: message_stop'));
+  assert.equal(textsOf(seenBeforeStop), 'her address is claire@example.fr');
+  assert.ok(stream.endsWith(stop), 'the stop event was moved or rewritten');
+});
+
+test('a keep-alive releases nothing: it closes no block', async () => {
+  // Released on a ping, a replacement it happened to split arrives in two halves.
+  const ping = 'event: ping\ndata: {"type":"ping"}\n\n';
+  const [first, second] = deltas('write to [EMA', 'IL_1] today');
+  const stream = await through([first!, ping, second!], expander(known));
+  assert.equal(textsOf(stream), 'write to claire@example.fr today');
+});
+
+test('nothing held means no round trip at the end', async () => {
+  // A call per stop event, to expand an empty string, is one the agent counts and
+  // the person waits on.
+  const inner = expander(known);
+  let calls = 0;
+  const counting: Ask = async (chunk) => {
+    calls++;
+    return inner(chunk);
+  };
+  const stop = 'event: message_stop\ndata: {"type":"message_stop"}\n\n';
+  await through([...deltas('nothing masked here'), stop], counting);
+  assert.equal(calls, 1, 'the agent was asked to expand an empty tail');
+});
+
+test('a stream with CRLF line endings is parsed event by event', async () => {
+  // The spec allows either ending. Matched on "\n\n" alone, no event ever completes
+  // and the whole answer is held back until the flush — rendered all at once, after
+  // a wait that reads as a hung page.
+  const crlf = deltas('write to [EMA', 'IL_1] today').map((e) => e.replace(/\n/g, '\r\n'));
+  const stream = await through(crlf, expander(known));
+  assert.equal(textsOf(stream.replace(/\r\n/g, '\n')), 'write to claire@example.fr today');
+  assert.ok(stream.includes('\r\n'), 'the line ending the server used was not kept');
+});
+
+test('a payload split over several data lines is read whole', async () => {
+  // What the spec says a client receives: the lines joined by a newline. The first
+  // alone is half a document, and the event goes to the page unexpanded.
+  const raw =
+    'event: content_block_delta\n' +
+    'data: {"type":"content_block_delta",\n' +
+    'data: "delta":{"type":"text_delta","text":"write to [EMAIL_1] today"}}\n\n';
+  const stream = await through([raw], expander(known));
+  assert.equal(textsOf(stream), 'write to claire@example.fr today');
+});
+
 test('the older completion shape is restored too', async () => {
   const raw = (text: string) =>
     `data: ${JSON.stringify({ type: 'completion', completion: text })}\n\n`;

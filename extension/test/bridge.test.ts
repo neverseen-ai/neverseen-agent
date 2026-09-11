@@ -66,6 +66,10 @@ test('a message that is not an ask is refused rather than passed on', () => {
     42,
     {},
     { kind: 'policy', off: ['EMAIL'] },
+    // The page never asks this; the options page reads /healthz itself. Accepted, it
+    // was the full payload — locales, categories, what is switched off — handed to
+    // any script the site loads.
+    { kind: 'health' },
     { kind: 'mask' },
     { kind: 'mask', texts: 'not a list' },
     { kind: 'mask', texts: [1, 2] },

@@ -60,8 +60,6 @@ export type PageUnmaskAsk = {
   final: boolean;
 };
 
-export type HealthAsk = { kind: 'health' };
-
 /**
  * Told rather than asked: the page's world blocked something and the page must say
  * so.
@@ -79,13 +77,19 @@ export type BlockedNote = {
 /** Note is the closed set of situations a banner may report. */
 export type Note = 'send' | 'restore' | 'transport';
 
-export type PageAsk = PageMaskAsk | PageUnmaskAsk | HealthAsk | BlockedNote;
+/**
+ * Deliberately no health ask. The options page reads /healthz itself, so nothing in
+ * the page's world needs one — and accepted from there, it handed the full payload
+ * (locales, categories, what is switched off) to any script the site loads. An
+ * answer the page never asks for is an oracle and nothing else.
+ */
+export type PageAsk = PageMaskAsk | PageUnmaskAsk | BlockedNote;
 
 /** MaskAsk and UnmaskAsk are a PageAsk with the session the relay decided on. */
 export type MaskAsk = PageMaskAsk & { session: string };
 export type UnmaskAsk = PageUnmaskAsk & { session: string };
 
-export type Ask = MaskAsk | UnmaskAsk | HealthAsk | BlockedNote;
+export type Ask = MaskAsk | UnmaskAsk | BlockedNote;
 
 /**
  * SESSION_NAMESPACES are the prefixes a session named by this extension may begin

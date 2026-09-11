@@ -1,4 +1,5 @@
-import { AgentError, health, mask, unmask } from './agent.ts';
+import { AgentError, mask, unmask } from './agent.ts';
+import { acceptAsk } from './bridge.ts';
 import { type Ask, namesAWebSession, type Reply } from './protocol.ts';
 import { load, type Storage } from './settings.ts';
 
@@ -15,15 +16,38 @@ import { load, type Storage } from './settings.ts';
 // The key never leaves this file. A key readable from the page is a key any script
 // the site loads can read, and it opens /unmask — token in, original out.
 
-chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
+  // Our own relay and nothing else. onMessage also receives what another extension
+  // sends this one's id, and an ask from there would be a way around the relay's
+  // choice of session — the field the whole boundary exists to keep out of reach.
+  if (sender.id !== chrome.runtime.id) return;
+
+  // Rebuilt field by field rather than cast: a cast believes every property that
+  // arrived, and the relay is one hop that can have a bug in it.
+  const ask = acceptFromRelay(message);
+  if (!ask) {
+    sendResponse({ ok: false, reason: 'refused', message: 'that is not a request this accepts' });
+    return;
+  }
+
   // The listener answers asynchronously, which chrome signals by returning true.
   // Without it the channel closes before the agent has answered and the send is
   // blocked on a round trip that did in fact succeed.
-  answer(message as Ask)
+  answer(ask)
     .then(sendResponse)
     .catch((err: unknown) => sendResponse(failure(err)));
   return true;
 });
+
+/** acceptFromRelay validates a message the relay sent, which is a page ask with the
+ * session the relay stamped on it — so the relay's own validator does the work,
+ * with the session read out of the message and checked by answer() as before. */
+function acceptFromRelay(raw: unknown): Ask | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const session = (raw as Record<string, unknown>).session;
+  if (typeof session !== 'string') return null;
+  return acceptAsk(raw, session);
+}
 
 async function answer(ask: Ask): Promise<Reply<unknown>> {
   const storage = chrome.storage.local as unknown as Storage;
@@ -52,10 +76,6 @@ async function answer(ask: Ask): Promise<Reply<unknown>> {
             fetch,
           ),
         };
-      }
-      case 'health': {
-        const cfg = await load(storage);
-        return { ok: true, result: await health(cfg.baseUrl, fetch) };
       }
       default:
         return { ok: false, reason: 'refused', message: 'unknown request' };

@@ -8,7 +8,7 @@
     "verbatimModuleSyntax": true,
     "noEmit": true,
     "strict": true,
-    "noUncheckedIndexedAccess": false,
+    "noUncheckedIndexedAccess": true,
     "skipLibCheck": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": ["chrome", "node"]

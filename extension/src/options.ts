@@ -2,7 +2,7 @@ import { DEFAULT_BASE_URL, health, unmask } from './agent.ts';
 import { AgentError } from './agent.ts';
 import { diagnose, type Outcome } from './guidance.ts';
 import { type Health } from './protocol.ts';
-import { load, looksLikeAKey, save, type Storage } from './settings.ts';
+import { baseUrlProblem, load, looksLikeAKey, save, type Storage } from './settings.ts';
 
 // The options page: a status the person can read and one field to fill.
 //
@@ -108,6 +108,15 @@ el.save.addEventListener('click', () => {
       // refused you" when what happened is that a shell prompt was pasted along with
       // the key.
       el.saved.textContent = 'That is not a control key: 64 hexadecimal characters, nothing else.';
+      return;
+    }
+
+    // Said here rather than silently replaced by the default: save() would fall back
+    // on its own, and the person would read "Saved." over an address that was thrown
+    // away.
+    const problem = baseUrlProblem(el.baseUrl.value);
+    if (problem) {
+      el.saved.textContent = problem;
       return;
     }
 

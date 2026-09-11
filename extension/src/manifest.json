@@ -2,6 +2,7 @@
   "manifest_version": 3,
   "name": "Neverseen",
   "version": "0.1.0",
+  "minimum_chrome_version": "111",
   "description": "Mask personal data and credentials in web chats, through the Neverseen agent on this machine.",
   "permissions": ["storage"],
   "host_permissions": ["https://claude.ai/*", "http://127.0.0.1/*"],

@@ -30,8 +30,13 @@ import { type Site } from './site/claude.ts';
 /** Ask is the one thing this needs from the outside: a round trip to /unmask. */
 export type Ask = (chunk: { text: string; tail: string; final: boolean }) => Promise<UnmaskAnswer>;
 
-/** EVENT_SEPARATOR ends a server-sent event. */
-const EVENT_SEPARATOR = '\n\n';
+/** EVENT_SEPARATOR ends a server-sent event: a blank line, in either line ending the
+ * spec allows. Matched on "\n\n" alone, a CRLF stream never yields a complete event
+ * and the whole answer is held until the flush. */
+const EVENT_SEPARATOR = /\r?\n\r?\n/;
+
+/** LINE_BREAK splits an event into its lines, whichever ending the server used. */
+const LINE_BREAK = /\r?\n/;
 
 /**
  * restoreStream wraps a server-sent event body so the page reads originals.
@@ -67,19 +72,27 @@ export function restoreStream(ask: Ask, site: Site): TransformStream<Uint8Array,
       // TODO: a known ceiling. A replacement echoed in an event whose payload is not
       // JSON reaches the page unexpanded — visible as a bracket token rather than
       // wrong, which is the safe direction to fail in.
-      return raw;
+      return (await release()) + raw;
     }
 
     const delta = site.deltaText(event);
     if (!delta) {
       // A structured event carrying no generated text: a start, a stop, a usage
-      // report. Nothing to expand and nothing to hold back.
+      // report. Nothing to expand — and whatever the block before it was holding is
+      // released *before* it, never after. A tail belongs to the block it was held
+      // back from, as the agent's closeBlock has it: a client that stops appending
+      // on the stop event would otherwise lose the last characters of the answer,
+      // because the flush comes after the event it stopped on.
+      //
+      // A keep-alive is not a block boundary, and releasing on one would render a
+      // replacement it happened to split as two halves.
       //
       // TODO: a replacement in some other string of such an event is not expanded.
       // The agent's own rehydrator maps every string in the event; doing the same
       // here is a round trip per string, and the field that carries model output is
       // the one this reads.
-      return raw;
+      if (isKeepAlive(event)) return raw;
+      return (await release()) + raw;
     }
 
     const answer = await ask({ text: delta.text, tail, final: false });
@@ -90,8 +103,13 @@ export function restoreStream(ask: Ask, site: Site): TransformStream<Uint8Array,
     return withPayload(raw, JSON.stringify(event));
   }
 
-  /** flush emits whatever is still held back when the stream ends. */
-  async function flush(): Promise<string> {
+  /** release emits whatever is still held back, as an event of its own — at the end
+   * of the stream, or before an event that closes the block it belongs to. */
+  async function release(): Promise<string> {
+    // Nothing held means nothing to ask: a round trip per stop event, to expand an
+    // empty string, is a call the agent counts and the person waits on.
+    if (tail === '') return '';
+
     const answer = await ask({ text: '', tail, final: true });
     tail = '';
     if (!answer.expanded || template === null) return '';
@@ -116,12 +134,13 @@ export function restoreStream(ask: Ask, site: Site): TransformStream<Uint8Array,
     async transform(chunk, controller) {
       buffered += decoder.decode(chunk, { stream: true });
 
-      let cut = buffered.indexOf(EVENT_SEPARATOR);
-      while (cut !== -1) {
-        const raw = buffered.slice(0, cut + EVENT_SEPARATOR.length);
-        buffered = buffered.slice(cut + EVENT_SEPARATOR.length);
+      let cut = EVENT_SEPARATOR.exec(buffered);
+      while (cut !== null) {
+        const end = cut.index + cut[0].length;
+        const raw = buffered.slice(0, end);
+        buffered = buffered.slice(end);
         controller.enqueue(encoder.encode(await rewrite(raw)));
-        cut = buffered.indexOf(EVENT_SEPARATOR);
+        cut = EVENT_SEPARATOR.exec(buffered);
       }
     },
 
@@ -133,30 +152,45 @@ export function restoreStream(ask: Ask, site: Site): TransformStream<Uint8Array,
         controller.enqueue(encoder.encode(await rewrite(buffered)));
         buffered = '';
       }
-      const held = await flush();
+      const held = await release();
       if (held !== '') controller.enqueue(encoder.encode(held));
     },
   });
 }
 
-/** payloadOf returns the JSON a "data:" line carries, or null when there is none. */
-function payloadOf(raw: string): string | null {
-  for (const line of raw.split('\n')) {
-    if (line.startsWith('data:')) return line.slice('data:'.length).trim();
-  }
-  return null;
+/** isKeepAlive reports a ping: an event that keeps the connection open and closes
+ * nothing. */
+function isKeepAlive(event: unknown): boolean {
+  return typeof event === 'object' && event !== null && (event as { type?: unknown }).type === 'ping';
 }
 
-/** withPayload rebuilds an event with a new "data:" line, keeping every other line —
- * the event name above it is what a client dispatches on. */
+/** payloadOf returns the JSON the "data:" lines carry, or null when there is none.
+ *
+ * All of them, joined by a newline, which is what the spec says a client receives:
+ * a server may split one payload over several "data:" lines, and reading the first
+ * alone hands the parser half a document. */
+function payloadOf(raw: string): string | null {
+  const parts: string[] = [];
+  for (const line of raw.split(LINE_BREAK)) {
+    if (line.startsWith('data:')) parts.push(line.slice('data:'.length).trim());
+  }
+  return parts.length === 0 ? null : parts.join('\n');
+}
+
+/** withPayload rebuilds an event with one new "data:" line in place of the ones it
+ * had, keeping every other line — the event name above it is what a client
+ * dispatches on — and the line ending the server used. */
 function withPayload(raw: string, payload: string): string {
+  const eol = raw.includes('\r\n') ? '\r\n' : '\n';
   let replaced = false;
-  const lines = raw.split('\n').map((line) => {
-    if (!replaced && line.startsWith('data:')) {
+  const lines: string[] = [];
+  for (const line of raw.split(LINE_BREAK)) {
+    if (!line.startsWith('data:')) {
+      lines.push(line);
+    } else if (!replaced) {
       replaced = true;
-      return 'data: ' + payload;
+      lines.push('data: ' + payload);
     }
-    return line;
-  });
-  return lines.join('\n');
+  }
+  return lines.join(eol);
 }
