@@ -12,8 +12,8 @@ dependencies are `fyne.io/systray` (menu bar icon) and `gopkg.in/yaml.v3` (test 
 **Licence:** FSL-1.1-ALv2 — *source available, not open source*. Say "source available".
 Each release converts to Apache 2.0 two years after it ships (`LICENSE.md`).
 
-The paid supervision backend is a **separate, private repository** (`cloakfleet-cloud`,
-checked out alongside as `../cloakfleet-cloud`). It imports this repo; this repo must
+The paid supervision backend is a **separate, private repository** (`neverseen-cloud`,
+checked out alongside as `../neverseen-cloud`). It imports this repo; this repo must
 never import it, and must compile and run with no backend at all.
 
 ## Read next

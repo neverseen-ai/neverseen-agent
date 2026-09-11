@@ -148,7 +148,7 @@ provider's status. `restarts` is zero.
 ## For the backend
 
 Every new field is additive and `omitempty`, so a backend on the previous shape
-ignores them and keeps working; the schema version stays at 2. `cloakfleet-cloud`
+ignores them and keeps working; the schema version stays at 2. `neverseen-cloud`
 does not yet store the new fields — that is the follow-up in that repository. A full
 batch of sixty buckets is held at half the backend's 1 MiB body bound by
 `TestAFullBatchFitsTheBackendsBodyBound`.

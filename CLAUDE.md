@@ -14,7 +14,7 @@ write the Apache 2.0 grant as a promise or a plan — it is *additional*,
 full wording, and why each word is load-bearing: `README.md`, `LICENSE.md`.
 
 The paid supervision backend is a **separate, private repository**
-(`cloakfleet-cloud`, checked out as `../cloakfleet-cloud`). It imports this one;
+(`neverseen-cloud`, checked out as `../neverseen-cloud`). It imports this one;
 this one must never import it, and must compile and run with no backend at all.
 Read it there when a change touches `pkg/telemetry`; never add it as a dependency.
 

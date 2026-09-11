@@ -99,7 +99,7 @@ missing rather than dropping them quietly.
 
 ## Adding a field to the supervision contract
 
-1. **Read `../cloakfleet-cloud` first.** The backend imports `pkg/telemetry`; this repo must
+1. **Read `../neverseen-cloud` first.** The backend imports `pkg/telemetry`; this repo must
    never import the backend, and must compile and run with no backend at all.
 2. **Add the field to `pkg/telemetry/contract.go`.**
 3. **If it is a string, add it to `allowedStrings` with its reason** — otherwise

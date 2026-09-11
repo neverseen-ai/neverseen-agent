@@ -12,7 +12,7 @@ and what the heartbeat deliberately does not say — see
 ## Two hard rules
 
 **`pkg/telemetry` is public and the backend imports it — never the reverse.** The paid
-backend lives in a separate private repository (`../cloakfleet-cloud`). This repo must
+backend lives in a separate private repository (`../neverseen-cloud`). This repo must
 compile, run and be useful with no backend in existence. Read the backend there when a
 change touches the shared contract; never add it as a dependency.
 
@@ -340,7 +340,7 @@ every workstation is a fleet nobody can audit.
 
 ## Where to start on a change here
 
-- Adding or changing a contract field ⇒ read `../cloakfleet-cloud` first, then update
+- Adding or changing a contract field ⇒ read `../neverseen-cloud` first, then update
   `contract.go`, `allowedStrings`, and regenerate the golden in the same commit. A map
   keyed on something the agent observes needs a vocabulary in `vocabulary.go` and
   `Other` for the rest.

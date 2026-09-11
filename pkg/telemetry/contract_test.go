@@ -389,7 +389,7 @@ func indexOfOne(h Histogram) int {
 }
 
 // A backlog goes to the backend sixty buckets at a time, and the backend reads a
-// body under a bound (cloakfleet-cloud's ingest.maxBody, 1 MiB). The counters
+// body under a bound (neverseen-cloud's ingest.maxBody, 1 MiB). The counters
 // gained histograms and four maps, so a bucket is several times the size it was;
 // this holds a full batch at half the bound, so the field that would break it is
 // the one that still gets to choose the number — the /healthz lesson,

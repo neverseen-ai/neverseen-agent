@@ -10,7 +10,7 @@
 //
 // # Why the geometry is restated here rather than read from the website's SVG
 //
-// The mark lives in cloakfleet-website/public/favicon.svg, and this draws the same
+// The mark lives in neverseen-website/public/favicon.svg, and this draws the same
 // shapes at the same proportions — but it is deliberately not the same image. A
 // favicon sits on its own dark plate; a menu bar icon has no plate, is monochrome,
 // and is handed to macOS as a template so the system recolours it for a light or a
