@@ -54,6 +54,20 @@ and it is deliberately not repeated here.
 - **A decoded body is a `jsonObject`, not a `map[string]any`** — ordered, and a
   duplicated key is not collapsed. Anything reading a decoded body must switch on
   that type: a `type switch` falling into no branch is silent.
+- **The outbound body repeats the inbound one's prefix, and the agent must not be
+  what breaks it.** Providers bill less and answer faster when a request's prefix
+  matches the previous one's, and a conversation replays its whole history every
+  turn — so any reordering, re-indentation or reshaping the agent introduces
+  *anywhere* in the body forfeits the cached prefix from that point on, for every
+  turn that follows. `jsonObject` being ordered is half of what holds this; masking
+  a value in place is the other, and the session mapping is the third — the same
+  value must get the same stand-in next turn or the prefix breaks where it appears.
+  **Measure it on the reply's `usage`, never by comparing two traces**:
+  `cache_read_input_tokens` should equal the previous request's `cache_read` plus
+  its `cache_creation`, leaving `input_tokens` at the turn's delta. A trace is
+  re-indented before it is written (`json.Indent`, `trace.go`) and the client itself
+  collapses the block that carried `cache_control` last turn, so a byte comparison
+  of two traces reports a break where the provider sees none.
 - **Both shapes of a masked value are expanded** — bracket token and stand-in —
   in one forward walk, not a replacement per entry.
 - **A credential never gets a stand-in** (`Detector.render`); that is what makes
@@ -99,6 +113,60 @@ and it is deliberately not repeated here.
 
 - **`/test` is a real tool, not a demo.** It renders one text in both substitution
   modes, using the deployment's own detector.
+- **`/settings` is where the configuration happens, and the menu bar only says what is
+  happening.** The page holds no engine: it draws from `/healthz` and writes through
+  `PUT /policy`, like every other surface. It exists because the toolkit was the wrong
+  shape — no radio group, no mixed tick, no room for the sentence that says what a
+  choice costs, so every one of those absences had been answered by writing the sentence
+  into a menu entry's own title.
+- **Each country is served with what it can find** (`Health.LocaleCategories`, from
+  `pii.CategoriesInLocale`) — **labels for a reader, never codes to send back**, and
+  **names rather than a count**: the lists overlap and a few categories need no country,
+  so `fr`, `gb` and `us` name 8, 6 and 7 against 16 in play, and a count is a number a
+  reader adds up and is wrong. `TestEachCountryIsServedWithWhatItFinds` fails if the sum
+  ever equals what is in play.
+- **Every closed set a surface draws is served, never spelled out by the surface** —
+  `Groups`, `AvailableLocales`, `HealthGroup.Credentials`, and `Health.Substitutions` /
+  `Health.SecretLevels`. A page with a list of its own goes on offering a name a
+  rebuilt agent refuses — 422 on a name the page suggested — and stays silent about one
+  it gained. `TestTheOfferedNamesAreOnesTheAgentTakes` asks it of the **payload**: asked
+  of `SubstitutionModes()` it passed while the page drew literals of its own. The
+  *sentence* describing a choice stays with the surface; it is prose, not a fact about
+  what exists.
+- **The settings page files a family under one of two headings, and the agent says
+  which** (`HealthGroup.Credentials`, from `pii.IsCredentialGroup`). **Not `Locked()`**:
+  a family can be locked without being credentials — `GroupDeclared` is personal data
+  somebody authored on purpose — and a surface splitting on "can I switch it" would file
+  it among the API keys. **The credentials heading carries no switch and cannot**:
+  `pii.Switchable` refuses them at the detector, and a request naming one is refused
+  whole. **They are listed all the same** — a name is not a control, and "is my vendor's
+  key covered" has no other answer in this agent; the menu bar's one-line-with-a-count
+  rule was right for a menu and is wrong for a page.
+- **A locked category is shown by its notation, not its label**
+  (`HealthCategory.Notations`, from `Detector.Notations()` — the loaded patterns, never
+  the catalogue, because a postcode has one notation per country). The label says what a
+  category *is*, a notation what it *looks like*. `CONN_STR` is the case that forced it:
+  one entry whose pattern takes **any** URL scheme, so it names the shape
+  (`scheme://user:password@…`) and never three example schemes — a list of examples
+  reads as a closed list and is wrong in the direction that matters. `TestOnlyTheCredentialFamiliesAreCredentials` pins the split family by family,
+  and fails on a family it has never been told about.
+- **What decides is kept out of what draws, in the page too**
+  (`settings_decisions.js`, inlined; `settings_decisions.test.mjs` under `node --test`,
+  in `make test` and in CI). It is `internal/tray`'s split one storey up and it is here
+  for the same reason: a browser cannot be asserted on in CI any more than a menu bar
+  can. `plan.go` held these rules for the menu, and deleting it without this would have
+  moved a hundred tested lines into JavaScript nothing runs.
+- **`/settings` is the one response body carrying the control key**, so it is closed
+  twice **before the key is read**: loopback only, hard, whatever `-l` bound; and the
+  `Host` must name this machine (`namesThisMachine`), which is the only defence against
+  DNS rebinding available to an agent that implements no CORS. Every refusal is asserted
+  to carry **no key**, not merely to return 403 — a guard running after the template did
+  would answer 403 with the secret in the body. No key on the agent refuses the page
+  rather than serving one whose every control fails silently. The `Host` check reads the
+  port as well as the name — `SplitHostPort` does not check that a port is one, and
+  `localhost:9787@rebound.example.com` split to the name this guard wanted to see. The
+  page is served under `default-src 'none' … connect-src 'self'`, whose clauses the test
+  asserts **by name**: a policy that lost one would still look like a policy.
 - **`-a` prints every value replaced and restored; `-v` writes every exchange to
   `traces/`.** Two independent flags, and `newAuditor` builds an auditor for either.
   Under the installer's service `-a` files every prompt and every tool call in
@@ -107,6 +175,9 @@ and it is deliberately not repeated here.
   is `proxy.BeyondLoopback`, asked where the agent starts listening and **not on the
   flag** — the environment variable exposes exactly as much. `:9787` counts as
   reachable. This is what `/healthz` and `/test` being unauthenticated costs.
+  **`/settings` is deliberately not in that list** and refuses a caller off loopback
+  whatever was bound: the trade that lets a page describe the configuration to the
+  network does not transfer to one that hands over the ability to switch masking off.
 - **A tool call is printed with its arguments in clear** (`auditor.tool`), from
   `expandedArguments` on the streaming path and `reportToolCalls` on the buffered
   one — both halves or neither. Anthropic's shape only. A `TODO:` names the missing
@@ -133,9 +204,14 @@ and it is deliberately not repeated here.
 - **A level counts the effect, `Disabled` records the intent**, and the level counts
   only what the loaded patterns can emit (`disabledInPlay`).
   `TestTheLevelCountsOnlyWhatTheDetectorCanEmit`.
-- **`neverseen mask` and the menu bar both go through `proxy.SetPolicy`** — the one
-  writer, as `proxy.Query` is the one asker. Both list only what the detector can
-  emit (`Detector.Categories`).
+- **`neverseen mask`, the settings page and the menu bar all go through
+  `proxy.SetPolicy`/`PUT /policy`** — the one writer, as `proxy.Query` is the one asker.
+  Each lists only what the detector can emit (`Detector.Categories`).
+- **The menu bar writes once — "Mask everything again" — and it carries the whole
+  state.** The route replaces rather than patches, so a request carrying nothing but the
+  empty set would switch off, from an entry that says "mask everything again", the mode,
+  the locales and the secret level somebody had just chosen on the page. The three
+  settings the menu stopped drawing are still compared by `same`, for that reason alone.
 - **Four things change while the agent runs**: switched-off categories, substitution
   mode, secret level, loaded locales. All behind one atomic pointer in
   `detector.policy`, the locales carrying `patterns` and `fakes` in one `catalogue`

@@ -280,8 +280,11 @@ func TestTheLineIsTheAgentsOwn(t *testing.T) {
 		"ANTHROPIC_BASE_URL=http://127.0.0.1:9787/anthropic claude"; got != want {
 		t.Errorf("PointAt = %q, want %q", got, want)
 	}
+	// A provider whose variable is de-facto but whose obvious CLI does not read it
+	// gets the export and no command: codex takes its base URL from its own config
+	// file alone, so naming it here produced a line that went out unmasked.
 	if got, want := proxy.PointAt("openai", "127.0.0.1:9787"),
-		"OPENAI_BASE_URL=http://127.0.0.1:9787/openai codex"; got != want {
+		"export OPENAI_BASE_URL=http://127.0.0.1:9787/openai"; got != want {
 		t.Errorf("PointAt = %q, want %q", got, want)
 	}
 	// A provider with no agreed variable gets the URL and nothing invented: neither
@@ -306,11 +309,12 @@ func TestTheClipboardFailureIsReported(t *testing.T) {
 	}
 }
 
-// Where a tool does not simply honour the variable, the entry says so. Codex reads
-// OPENAI_BASE_URL but a model_provider in its own config file wins over it, and on
-// a machine already configured for another provider the copied line does nothing —
-// silently, with the traffic going out unmasked. That failure has no symptom from
-// the terminal, which is why it is worth carrying to the point of handover.
+// Where a tool does not simply honour the variable, the entry says so. codex does
+// not read OPENAI_BASE_URL for its own traffic at all — its base URL comes from the
+// openai_base_url key in ~/.codex/config.toml — so the copied export points it
+// nowhere, silently, with the traffic going out unmasked. That failure has no
+// symptom from the terminal, which is why the file to edit is carried to the point
+// of handover rather than left in a wiki page.
 func TestTheCaveatTravelsWithTheLine(t *testing.T) {
 	caveat := proxy.CaveatFor("openai")
 	if !strings.Contains(caveat, "config.toml") {
@@ -359,88 +363,6 @@ func healthWithGroups(off ...string) proxy.Health {
 	}
 }
 
-// The menu offers what the agent published, and nothing else. A menu built from its
-// own copy of the catalogue would go on offering a switch a rebuilt agent had
-// stopped honouring.
-func TestTheSwitchesAreTheAgentsOwn(t *testing.T) {
-	d := render(proxy.Status{Addr: "127.0.0.1:9787", Answering: true, Health: healthWithGroups()})
-
-	if len(d.switches) != 3 {
-		t.Fatalf("drew %d families, want 3", len(d.switches))
-	}
-	if got := d.switches[0].label; got != "Personal details" {
-		t.Errorf("the first family is %q", got)
-	}
-	if got := len(d.switches[0].members); got != 2 {
-		t.Errorf("the first family holds %d switches, want 2", got)
-	}
-
-	// A family of nothing but credentials is locked, and never reads as switched
-	// off — an unticked lock would say those values are not being masked.
-	secrets := d.switches[2]
-	if !secrets.locked {
-		t.Error("the credential family is not locked")
-	}
-	if secrets.off {
-		t.Error("the credential family reads as switched off")
-	}
-	if got := secrets.title(); got != "Secrets and keys — 2, locked" {
-		t.Errorf("the locked title is %q", got)
-	}
-}
-
-// An agent that is not answering offers nothing: a menu whose clicks reach nothing
-// is worse than a menu with no clicks.
-func TestNoSwitchesWhenTheAgentIsAbsent(t *testing.T) {
-	d := render(proxy.Status{Addr: "127.0.0.1:9787"})
-	if d.switches != nil {
-		t.Errorf("drew %d families for an agent that is not there", len(d.switches))
-	}
-}
-
-// The toolkit has no mixed tick, so a partly-off family says so in its title. Drawn
-// simply unticked, it would claim nothing in the family was being masked.
-func TestAPartlyOffFamilySaysSoInItsTitle(t *testing.T) {
-	tests := map[string]struct {
-		off   []string
-		want  string
-		group int
-	}{
-		"nothing off":    {off: nil, want: "Personal details", group: 0},
-		"one of two off": {off: []string{"EMAIL"}, want: "Personal details — 1 of 2 off", group: 0},
-		"every member off": {off: []string{"EMAIL", "PHONE"},
-			want: "Personal details — all 2 off", group: 0},
-	}
-
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			d := render(proxy.Status{Addr: "a", Answering: true, Health: healthWithGroups(tt.off...)})
-			group := d.switches[tt.group]
-
-			if got := group.title(); got != tt.want {
-				t.Errorf("title is %q, want %q", got, tt.want)
-			}
-			// The group's own tick is only cleared when every member is off, which is
-			// what the title above is compensating for.
-			wantOff := len(tt.off) == 2
-			if group.off != wantOff {
-				t.Errorf("the family reads off=%v, want %v", group.off, wantOff)
-			}
-		})
-	}
-}
-
-// A click sends the whole set, so the set has to be readable from what is drawn.
-func TestTheDrawnMenuCarriesTheWholeSet(t *testing.T) {
-	d := render(proxy.Status{Addr: "a", Answering: true,
-		Health: healthWithGroups("EMAIL", "IP_ADDRESS")})
-
-	got := d.offCodes()
-	if len(got) != 2 || got[0] != "EMAIL" || got[1] != "IP_ADDRESS" {
-		t.Errorf("the drawn menu reports %v switched off", got)
-	}
-}
-
 // The third icon, and the words beside it. An agent with a category switched off is
 // masking, so the masking icon would be the green light over the values that are not
 // being replaced.
@@ -462,226 +384,6 @@ func TestAPartlyMaskingAgentGetsItsOwnIcon(t *testing.T) {
 	// tells somebody whether the category they care about is the one that is off.
 	if !strings.Contains(partial.lines[2], "Email address") {
 		t.Errorf("the state lines do not name what is in clear: %q", partial.lines[2])
-	}
-}
-
-// A click sends the whole set, and what a click means is decided here rather than
-// inside the toolkit adapter — which is the rule this package is built on.
-func TestClickingACategorySendsTheWholeSet(t *testing.T) {
-	d := render(proxy.Status{Addr: "a", Answering: true, Health: healthWithGroups("IP_ADDRESS")})
-
-	// Switching one on leaves the other off.
-	if got := d.withCategoryToggled("IP_ADDRESS"); len(got) != 0 {
-		t.Errorf("unticking the only off category sent %v, want nothing off", got)
-	}
-	got := d.withCategoryToggled("EMAIL")
-	if len(got) != 2 || got[0] != "EMAIL" || got[1] != "IP_ADDRESS" {
-		t.Errorf("sent %v, want both off", got)
-	}
-}
-
-// All or nothing for a family: a click on a partly-off one turns the rest off too.
-// Reviving them would make one click undo several deliberate ones.
-func TestClickingAFamilyIsAllOrNothing(t *testing.T) {
-	tests := map[string]struct {
-		off  []string
-		want []string
-	}{
-		"nothing off turns the family off": {
-			off: nil, want: []string{"EMAIL", "PHONE"},
-		},
-		"partly off turns the rest off too": {
-			off: []string{"EMAIL"}, want: []string{"EMAIL", "PHONE"},
-		},
-		"all off turns the family back on": {
-			off: []string{"EMAIL", "PHONE"}, want: nil,
-		},
-	}
-
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			d := render(proxy.Status{Addr: "a", Answering: true, Health: healthWithGroups(tt.off...)})
-			got := d.withGroupToggled("personal")
-
-			if len(got) != len(tt.want) {
-				t.Fatalf("sent %v, want %v", got, tt.want)
-			}
-			for i := range tt.want {
-				if got[i] != tt.want[i] {
-					t.Errorf("sent %v, want %v", got, tt.want)
-				}
-			}
-		})
-	}
-}
-
-// A locked member is left out of the set a family click sends. Included, the agent
-// would refuse the whole request and the click would do nothing at all.
-func TestClickingALockedFamilySendsNothingItWouldRefuse(t *testing.T) {
-	d := render(proxy.Status{Addr: "a", Answering: true, Health: healthWithGroups()})
-
-	if got := d.withGroupToggled("secrets"); len(got) != 0 {
-		t.Errorf("clicking the credential family sent %v, which the agent refuses", got)
-	}
-}
-
-// The plan is where the slot arithmetic lives, so a test can read what the menu
-// would draw — including what the last slot says when there are more families than
-// slots.
-func TestThePlanFillsTheSlots(t *testing.T) {
-	d := render(proxy.Status{Addr: "a", Answering: true, Health: healthWithGroups("EMAIL")})
-
-	plans := planSwitches(d, 8, 12)
-	if len(plans) != 8 {
-		t.Fatalf("planned %d slots, want the whole pool", len(plans))
-	}
-
-	// Three families, so three visible and five hidden.
-	visible := 0
-	for _, p := range plans {
-		if p.visible {
-			visible++
-		}
-	}
-	if visible != 3 {
-		t.Errorf("%d slots are visible, want 3", visible)
-	}
-
-	personal := plans[0]
-	if personal.title != "Personal details — 1 of 2 off" || !personal.enabled {
-		t.Errorf("the first family is %+v", personal)
-	}
-	if personal.members[0].code != "EMAIL" || personal.members[0].checked {
-		t.Errorf("the switched-off category is drawn as %+v", personal.members[0])
-	}
-	if !personal.members[1].checked {
-		t.Errorf("the category still masked is drawn as %+v", personal.members[1])
-	}
-	if personal.members[2].visible {
-		t.Error("an unused category slot is visible")
-	}
-
-	// A locked family: ticked, not clickable, and no rows under it.
-	secrets := plans[2]
-	if secrets.enabled || !secrets.checked {
-		t.Errorf("the credential family is %+v, want ticked and not clickable", secrets)
-	}
-	if len(secrets.members) != 0 {
-		t.Errorf("the credential family drew %d rows, want none", len(secrets.members))
-	}
-}
-
-// Past the pool the last slot says how many are missing. Dropping them quietly would
-// have somebody conclude the agent does not have them.
-func TestThePlanNamesWhatDoesNotFit(t *testing.T) {
-	d := render(proxy.Status{Addr: "a", Answering: true, Health: healthWithGroups()})
-
-	// A pool of two for three families: one drawn, one saying two are missing.
-	plans := planSwitches(d, 2, 12)
-	if !plans[0].visible || plans[0].code != "personal" {
-		t.Errorf("the first slot is %+v", plans[0])
-	}
-	if !plans[1].visible {
-		t.Fatal("the overflow slot is hidden, so two families vanished silently")
-	}
-	if !strings.Contains(plans[1].title, "2 more") {
-		t.Errorf("the overflow slot says %q, want the count that did not fit", plans[1].title)
-	}
-	if plans[1].code != "" {
-		t.Error("the overflow slot stands for a family, so clicking it would switch one off")
-	}
-}
-
-// A tick per mode rather than one item that cycles: a cycling item cannot say what
-// it is about to become, and the live one is not clickable because clicking it would
-// send the state it is already in.
-func TestTheModeRowsShowTheChoiceAndTheState(t *testing.T) {
-	d := render(proxy.Status{Addr: "a", Answering: true, Health: healthWithGroups()})
-
-	rows := planModes(d)
-	if len(rows) != 2 {
-		t.Fatalf("drew %d modes, want 2", len(rows))
-	}
-
-	live, other := rows[0], rows[1]
-	if live.code != "token" || !live.checked || live.enabled {
-		t.Errorf("the live mode is %+v, want ticked and not clickable", live)
-	}
-	if other.code != "fake" || other.checked || !other.enabled {
-		t.Errorf("the other mode is %+v, want unticked and clickable", other)
-	}
-	// The title says what the mode does, not only its name: neither word says which
-	// one puts a value nobody can check in front of a caller.
-	if !strings.Contains(other.title, "cannot be told from a real value") {
-		t.Errorf("the fake row does not say what it costs: %q", other.title)
-	}
-}
-
-// One row per locale the build has, not per loaded one: a list of what is already on
-// has nothing to turn on.
-func TestTheLocaleRowsOfferEveryCountryTheBuildHas(t *testing.T) {
-	d := render(proxy.Status{Addr: "a", Answering: true, Health: healthWithGroups()})
-
-	rows := planLocales(d)
-	if len(rows) != 3 {
-		t.Fatalf("drew %d locales, want the three the build has", len(rows))
-	}
-	if rows[0].code != "fr" || !rows[0].checked {
-		t.Errorf("the loaded locale is %+v", rows[0])
-	}
-	for _, row := range rows[1:] {
-		if row.checked {
-			t.Errorf("locale %q is ticked and is not loaded", row.code)
-		}
-		// Every row stays clickable, including the last loaded one: an agent with no
-		// locale at all is a valid state and the one it starts in.
-		if !row.enabled {
-			t.Errorf("locale %q cannot be clicked", row.code)
-		}
-	}
-}
-
-func TestClickingALocaleReplacesTheSelection(t *testing.T) {
-	d := render(proxy.Status{Addr: "a", Answering: true, Health: healthWithGroups()})
-
-	if got := d.withLocaleToggled("gb"); len(got) != 2 || got[0] != "fr" || got[1] != "gb" {
-		t.Errorf("adding gb sent %v", got)
-	}
-	// Switching the last one off is reachable, and sends an empty selection rather
-	// than nil — which a caller could read as "no change".
-	got := d.withLocaleToggled("fr")
-	if got == nil {
-		t.Fatal("switching off the last locale sent nil")
-	}
-	if len(got) != 0 {
-		t.Errorf("switching off the only locale sent %v", got)
-	}
-}
-
-// A click carries the other two parts of the state unchanged, because the route
-// replaces the state rather than patching it.
-func TestAClickCarriesTheWholeState(t *testing.T) {
-	d := render(proxy.Status{Addr: "a", Answering: true, Health: healthWithGroups("EMAIL")})
-
-	// Changing the mode leaves the categories and the locales alone.
-	want := d.policyWith(nil, "fake", nil, "")
-	if want.Substitution != "fake" {
-		t.Errorf("the mode was not applied: %+v", want)
-	}
-	if len(want.Off) != 1 || want.Off[0] != "EMAIL" {
-		t.Errorf("the switched-off categories were lost: %v", want.Off)
-	}
-	if len(want.Locales) != 1 || want.Locales[0] != "fr" {
-		t.Errorf("the locales were lost: %v", want.Locales)
-	}
-
-	// And changing a category leaves the mode alone.
-	want = d.policyWith(d.withCategoryToggled("EMAIL"), "", nil, "")
-	if want.Substitution != "token" {
-		t.Errorf("the mode was lost: %+v", want)
-	}
-	if len(want.Off) != 0 {
-		t.Errorf("the category was not switched back on: %v", want.Off)
 	}
 }
 
@@ -784,78 +486,35 @@ func perturb(v reflect.Value) bool {
 	}
 }
 
-// One row per secret level, ticked for the live one — the same shape as the modes,
-// because the toolkit has no radio group and a cycling item cannot say what it is
-// about to become.
+// The one write the menu has left, and the whole state has to travel with it.
 //
-// These rows are the surface the stale comparison hid: no state line carries the
-// level, so a level changed anywhere else was invisible here until same() started
-// reading the whole display. Drawing them right is the other half of that fix.
-func TestTheLevelRowsShowTheChoiceAndTheState(t *testing.T) {
-	health := healthWithGroups()
-	health.SecretLevel = "medium"
-	d := render(proxy.Status{Addr: "a", Answering: true, Health: health})
-
-	rows := planLevels(d)
-	if len(rows) != 3 {
-		t.Fatalf("drew %d levels, want weak, medium and strong", len(rows))
-	}
-
-	// Weakest first, so a row read top to bottom goes from most masking to least.
-	var codes []string
-	for _, r := range rows {
-		codes = append(codes, r.code)
-	}
-	if want := []string{"weak", "medium", "strong"}; !slices.Equal(codes, want) {
-		t.Errorf("the levels are drawn %v, want %v", codes, want)
-	}
-
-	for _, r := range rows {
-		live := r.code == "medium"
-		// The live one is not clickable: clicking it would send the state it is
-		// already in, and a row that does nothing is a row somebody clicks twice
-		// wondering what broke.
-		if r.checked != live || r.enabled == live {
-			t.Errorf("the %q row is %+v, want checked=%v and enabled=%v",
-				r.code, r, live, !live)
-		}
-	}
-
-	// The titles say what each level costs rather than only naming it. "Weak" and
-	// "strong" are the configuration's words and have to stay, but neither says
-	// which one replaces the identifiers in the code somebody is asking about.
-	if !strings.Contains(rows[0].title, "masks code too") {
-		t.Errorf("the weak row does not say what it costs: %q", rows[0].title)
-	}
-	// It says what the level does, not that it solves code review — that claim was
-	// measured and removed: weak and strong claim the same values over real source.
-	if !strings.Contains(rows[2].title, "only what nobody typed") {
-		t.Errorf("the strong row does not say what it buys: %q", rows[2].title)
-	}
-}
-
-// A click on a level sends the whole state with only the level replaced.
-//
-// The route replaces the state rather than patching it, so a click that carried
-// only its own change would wipe the locale selection — the request that turns an
-// agent into one masking almost nothing while reporting success.
-func TestClickingALevelCarriesTheRestUnchanged(t *testing.T) {
+// PUT /policy replaces rather than patches, so a request carrying nothing but the
+// empty set would take the mode, the locales and the secret level down with it —
+// switching off, from a menu entry that says "mask everything again", three settings
+// somebody chose on the settings page.
+func TestMaskingEverythingAgainCarriesTheRestUnchanged(t *testing.T) {
 	health := healthWithGroups("EMAIL")
-	health.SecretLevel = "weak"
-	d := render(proxy.Status{Addr: "a", Answering: true, Health: health})
+	health.SecretLevel = "strong"
+	health.Substitution = "fake"
+	d := render(proxy.Status{Addr: "127.0.0.1:9787", Answering: true, Health: health})
 
-	want := d.policyWith(nil, "", nil, "strong")
+	want := d.maskEverything()
 
+	if len(want.Off) != 0 {
+		t.Errorf("a category stayed switched off: %v", want.Off)
+	}
+	// Empty rather than nil: the route reads an absent list as a malformed request,
+	// and this one means "nothing is switched off".
+	if want.Off == nil {
+		t.Error("the switched-off set is nil, which the route refuses as a partial request")
+	}
+	if want.Substitution != "fake" {
+		t.Errorf("the substitution mode was lost: %q", want.Substitution)
+	}
 	if want.SecretLevel != "strong" {
-		t.Errorf("the level sent is %q, want strong", want.SecretLevel)
+		t.Errorf("the secret level was lost: %q", want.SecretLevel)
 	}
-	if want.Substitution != "token" {
-		t.Errorf("the substitution mode was not carried through: %q", want.Substitution)
-	}
-	if !slices.Equal(want.Locales, []string{"fr"}) {
-		t.Errorf("the locale selection was not carried through: %v", want.Locales)
-	}
-	if !slices.Equal(want.Off, []string{"EMAIL"}) {
-		t.Errorf("the switched-off set was not carried through: %v", want.Off)
+	if len(want.Locales) != 1 || want.Locales[0] != "fr" {
+		t.Errorf("the locales were lost: %v", want.Locales)
 	}
 }

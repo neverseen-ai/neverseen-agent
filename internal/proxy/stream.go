@@ -147,6 +147,23 @@ type streamRehydrator struct {
 	// the name as belonging to the data line that follows it. No provider this
 	// agent proxies writes an event that way round.
 	held bool
+
+	// expander is known with the walk's derivations done once. Built with the
+	// rehydrator because the mapping does not change for the life of a stream, and
+	// rebuilding them per string was the cost measured on the field's own comment.
+	expander *detector.Expander
+
+	// readErr is a read failure that is not the end of the stream, kept until
+	// whatever had already arrived has been handed over.
+	//
+	// Dropped rather than kept, a reset or a timeout half-way through an answer was
+	// indistinguishable from a complete one: done was set, the buffer was delivered
+	// with a nil error, and the next Read said io.EOF — so ReverseProxy closed the
+	// chunked response normally and the client wrote a truncated answer into its
+	// conversation history as though the model had stopped there. The buffered path
+	// already fails loudly on the same body (io.ReadAll's error becomes a 502), and
+	// the two halves disagreeing about a truncated answer is the worse half winning.
+	readErr error
 }
 
 // The concrete type is returned rather than io.ReadCloser so a caller that traces
@@ -156,18 +173,23 @@ func newStreamRehydrator(body io.ReadCloser, known map[string]string,
 	onUsage func(string, telemetry.TokenUsage),
 	seen func(replacement, original string)) *streamRehydrator {
 	return &streamRehydrator{
-		block:   -1,
-		src:     bufio.NewReader(body),
-		closer:  body,
-		known:   known,
-		onUsage: onUsage,
-		seen:    seen,
+		block:    -1,
+		src:      bufio.NewReader(body),
+		closer:   body,
+		known:    known,
+		expander: detector.NewExpander(known),
+		onUsage:  onUsage,
+		seen:     seen,
 	}
 }
 
 func (r *streamRehydrator) Read(p []byte) (int, error) {
 	for r.out.Len() == 0 {
 		if r.done {
+			// The failure, if there was one, once there is nothing left to deliver.
+			if r.readErr != nil {
+				return 0, r.readErr
+			}
 			return 0, io.EOF
 		}
 
@@ -183,12 +205,12 @@ func (r *streamRehydrator) Read(p []byte) (int, error) {
 			r.flush()
 			r.reportUsage()
 			if err != io.EOF {
-				// Whatever the buffer holds is still worth delivering: it is the
-				// caller's own data, and dropping it to report a read error the
-				// caller can do nothing about would lose text that arrived fine.
-				if r.out.Len() == 0 {
-					return 0, err
-				}
+				// Whatever the buffer holds is still worth delivering first: it is
+				// the caller's own text and it arrived fine. Held rather than
+				// dropped, though — the loop comes back here once the buffer is
+				// empty, and reports it then, so an answer cut short is an error to
+				// the client rather than a clean end to half a sentence.
+				r.readErr = err
 			}
 		}
 	}
@@ -264,7 +286,7 @@ func (r *streamRehydrator) rewrite(line string) string {
 		// from the last piece of text reached closeBlock only at end of stream —
 		// after "[DONE]", which is where every SDK stops reading. The characters
 		// the caller wrote were delivered to nobody.
-		return r.closeBlock() + r.takeName() + strings.Replace(line, payload, detector.UnmaskSeen(payload, r.known, r.seen), 1)
+		return r.closeBlock() + r.takeName() + strings.Replace(line, payload, r.expander.Unmask(payload, r.seen), 1)
 	}
 
 	r.noteUsage(event)
@@ -310,12 +332,35 @@ func (r *streamRehydrator) rewrite(line string) string {
 		return prefix
 	}
 
+	// The generated text is lifted out before the walk below and put back after
+	// it, and the order is the whole of what makes a split replacement
+	// reassemblable. It is the one string in the event whose end may be the
+	// beginning of something this mapping would expand, and only the text as the
+	// provider sent it can answer that.
+	//
+	// Expanded first — which is what mapStrings does to every string it reaches —
+	// two things went wrong at once, and both are reachable in fake mode because a
+	// stand-in can be a proper prefix of another: fake IP addresses are minted
+	// 192.0.2.1 … 192.0.2.11, so eleven masked addresses hold both. A delta ending
+	// on "192.0.2.1" was expanded there and then, to the wrong original, before the
+	// holdback could see that the next delta's "1" completed the longer one. And
+	// TailLen was then asked about text with no stand-in left in it, where it
+	// matched a one-character prefix against the end of a real original and sliced
+	// a digit off it into the next event. A bracket token cannot exhibit either —
+	// no complete token is the prefix of another — which is why every test in
+	// stream_test.go passed over it.
+	text, setText, found := deltaText(event)
+	if found {
+		// Emptied rather than left for the walk: whatever is put back below is
+		// this field's only value, and mapStrings expanding it first is the bug.
+		setText("")
+	}
+
 	// Every string in the event, decoded, so an original carrying a quote or a
 	// newline is escaped by the encoder rather than spliced into raw JSON.
-	expand := func(text string) string { return detector.UnmaskSeen(text, r.known, r.seen) }
+	expand := func(text string) string { return r.expander.Unmask(text, r.seen) }
 	mapStrings(event, expand)
 
-	text, setText, found := deltaText(event)
 	if !found {
 		// A structured event that carries no generated text: a start, a stop, a
 		// usage report. Already expanded above; nothing to hold back.
@@ -326,18 +371,32 @@ func (r *streamRehydrator) rewrite(line string) string {
 		return prefix + name + "data: " + string(encoded) + "\n\n"
 	}
 
-	combined := expand(r.pending + text)
+	// Held back on the text as it arrived, then expanded — never the other way
+	// round. r.pending is therefore the provider's own bytes, which is what lets
+	// the next event's first characters complete a replacement that began here.
+	held := r.pending
+	combined := held + text
 
 	r.pending = ""
-	if tail := detector.TailLen(combined, r.known); tail > 0 {
+	if tail := r.expander.TailLen(combined); tail > 0 {
 		r.pending, combined = combined[len(combined)-tail:], combined[:len(combined)-tail]
 	}
 
-	setText(combined)
+	setText(expand(combined))
 	encoded, err := encodeJSONBody(event)
 	if err != nil {
-		// Unreachable for a value that just came out of a decoder, but the
-		// original line is the safe answer rather than a panic.
+		// Unreachable for a value that just came out of a decoder, but the original
+		// line is the safe answer rather than a panic — and the holdback has to be
+		// undone with it, or the recovery loses text and duplicates text at once.
+		// `line` carries this event's own text whole, so the tail just sliced off it
+		// would go out a second time when it is released; and `combined` carries
+		// what the previous event held back, which returning `line` alone throws
+		// away. So: the held characters go out first, in a copy of the event they
+		// were held back from, and nothing of this event is held at all.
+		r.pending = ""
+		if held != "" {
+			return prefix + r.tailEvent(held) + name + line
+		}
 		return prefix + name + line
 	}
 
@@ -486,7 +545,7 @@ func (r *streamRehydrator) expandedArguments() string {
 	// because a session with a mapping still makes tool calls that touch none of it.
 	restored := false
 	expand := func(text string) string {
-		out := detector.UnmaskSeen(text, r.known, r.seen)
+		out := r.expander.Unmask(text, r.seen)
 		if out != text {
 			restored = true
 		}
@@ -531,6 +590,11 @@ func (r *streamRehydrator) expandedArguments() string {
 //
 // A bare fragment is not a valid event and a client would drop it, which would lose
 // characters the caller wrote.
+//
+// Expanded here, because a tail is held back unexpanded — see rewrite. It was held
+// because it could have been the start of a replacement, and reaching this means
+// nothing more is coming; but it may itself be a whole shorter stand-in, and
+// released verbatim that one goes out to the caller unrestored.
 func (r *streamRehydrator) tailEvent(tail string) string {
 	if r.template == nil {
 		return ""
@@ -543,7 +607,7 @@ func (r *streamRehydrator) tailEvent(tail string) string {
 	if !found {
 		return ""
 	}
-	setText(tail)
+	setText(r.expander.Unmask(tail, r.seen))
 	encoded, err := encodeJSONBody(event)
 	if err != nil {
 		return ""

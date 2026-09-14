@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -360,3 +361,91 @@ func TestAnAnswerToAnEmptySessionIsForwardedVerbatim(t *testing.T) {
 		t.Errorf("a buffered answer for an empty session was rewritten:\n got: %q\nwant: %q", got.body, body)
 	}
 }
+
+// Fake mode, where one stand-in is a proper prefix of another — and nothing in
+// this file reached it, because every case above is a bracket token and a complete
+// token can never be the prefix of another one.
+//
+// The catalogue makes this ordinary rather than contrived: fake IP addresses are
+// minted 192.0.2.1, 192.0.2.2 … 192.0.2.11, so any session that masks eleven
+// addresses — a pasted log, the archetypal prompt — holds both "192.0.2.1" and
+// "192.0.2.11". Split between two deltas after the shorter one, the fragment is
+// itself a complete stand-in: expanded where it lands, the caller is handed the
+// wrong original, with its last character sliced off into the next event on top.
+func TestStreamRehydratorHoldsAStandInThatIsThePrefixOfAnother(t *testing.T) {
+	known := map[string]string{
+		"192.0.2.1":  "10.1.1.1",
+		"192.0.2.11": "10.2.2.2",
+	}
+
+	for _, tt := range []struct {
+		name   string
+		pieces []string
+		want   string
+	}{
+		{
+			// The failure: the first delta ends on a complete shorter stand-in
+			// and the second carries the character that made it the longer one.
+			name:   "the longer stand-in split after its prefix",
+			pieces: []string{"host 192.0.2.1", "1 is down"},
+			want:   "host 10.2.2.2 is down",
+		},
+		{
+			// The shorter one really was the whole of it, and it must still be
+			// expanded rather than held for ever.
+			name:   "the shorter stand-in, whole",
+			pieces: []string{"host 192.0.2.1", " is down"},
+			want:   "host 10.1.1.1 is down",
+		},
+		{
+			name:   "one character at a time",
+			pieces: chars("host 192.0.2.11 is down"),
+			want:   "host 10.2.2.2 is down",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var stream strings.Builder
+			for _, piece := range tt.pieces {
+				fmt.Fprintf(&stream, "event: content_block_delta\ndata: %s\n\n", anthropicDelta(piece))
+			}
+			stream.WriteString("event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n")
+			stream.WriteString("event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n")
+
+			if got := concatenatedText(t, rehydrate(t, stream.String(), known)); got != tt.want {
+				t.Errorf("the caller would read %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// A read that fails part-way through an answer is an error to the client, never a
+// clean end.
+//
+// Dropped, the failure was indistinguishable from a complete answer: the buffer went
+// out with a nil error and the next Read said io.EOF, so the response closed normally
+// and the caller wrote half a sentence into its conversation history as though the
+// model had stopped there. The buffered path turns the same failure into a 502, and
+// the two halves must not disagree about a truncated answer.
+func TestStreamRehydratorReportsAReadFailureAfterDeliveringWhatArrived(t *testing.T) {
+	want := errors.New("connection reset by peer")
+	stream := "event: content_block_delta\ndata: " + anthropicDelta("Write to [EMAIL_1] to") + "\n\n"
+
+	r := newStreamRehydrator(
+		io.NopCloser(io.MultiReader(strings.NewReader(stream), errorReader{want})),
+		map[string]string{"[EMAIL_1]": "claire@example.fr"}, nil, nil)
+
+	out, err := io.ReadAll(r)
+	if !errors.Is(err, want) {
+		t.Errorf("read the truncated stream: err = %v, want %v", err, want)
+	}
+	// What did arrive is still delivered: it is the caller's own text, and losing it
+	// to report the failure would trade one loss for another.
+	if !strings.Contains(string(out), "claire@example.fr") {
+		t.Errorf("the text that arrived before the failure was dropped:\n%s", out)
+	}
+}
+
+// errorReader fails on the first read, the way a reset connection does.
+type errorReader struct{ err error }
+
+func (e errorReader) Read([]byte) (int, error) { return 0, e.err }

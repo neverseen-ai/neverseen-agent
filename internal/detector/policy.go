@@ -376,18 +376,61 @@ func (l Level) String() string {
 // the pattern sets are the thing that decides: the locale-independent identifiers
 // and the credentials load whatever the locales say, and a second answer to "what
 // can this agent find" would be a second chance to be wrong about it.
+//
+// Written over Notations for that same reason, one step further: the two questions
+// are one walk over one pattern set, so they cannot come to disagree about which
+// categories are in play.
 func (d *Detector) Categories() []pii.Category {
-	patterns := d.catalogue().patterns
-	seen := make(map[pii.Category]bool, len(patterns))
-	for _, p := range patterns {
-		seen[p.Category] = true
-	}
+	notations := d.Notations()
 
-	out := make([]pii.Category, 0, len(seen))
-	for cat := range seen {
+	out := make([]pii.Category, 0, len(notations))
+	for cat := range notations {
 		out = append(out, cat)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
+}
+
+// Notations reports every category this detector's patterns can emit, each with the
+// shapes it is recognised by, in the order the patterns are tried and each named
+// once.
+//
+// The value is the one thing about a category that is otherwise nowhere: the label
+// says what it *is* ("Doppler credential") and a notation says what it *looks like*
+// ("Doppler credential (dp.pt.…)"). A surface listing the categories nobody may
+// switch off has nothing else to show — a credential is a name and no control — and
+// "is my vendor covered, and by which prefix" is the question those lists are read
+// for.
+//
+// **The key set is exactly what Categories reports**, which is why that one is
+// written over this one rather than beside it: a category whose patterns carry no
+// label at all is a key with no notations, never a missing key. Written as two walks
+// they were two answers to "what can this agent find", and the caller that needs both
+// — the health payload — walked the whole pattern set twice to get them.
+//
+// Read from the loaded patterns rather than from the catalogue, which is the same
+// rule Categories states: a postcode has one notation per country, and an agent with
+// only "fr" loaded that offered the British one would be describing a shape it cannot
+// find.
+func (d *Detector) Notations() map[pii.Category][]string {
+	patterns := d.catalogue().patterns
+
+	out := make(map[pii.Category][]string)
+	seen := make(map[pii.Category]map[string]bool)
+	for _, p := range patterns {
+		if _, known := out[p.Category]; !known {
+			// The key first and unconditionally: an unlabelled pattern still means
+			// the agent can find this category.
+			out[p.Category] = nil
+			seen[p.Category] = make(map[string]bool)
+		}
+		if p.Label == "" || seen[p.Category][p.Label] {
+			// A notation repeated by two patterns of one category is one notation.
+			continue
+		}
+		seen[p.Category][p.Label] = true
+		out[p.Category] = append(out[p.Category], p.Label)
+	}
 	return out
 }
 

@@ -47,6 +47,24 @@ export type Site = {
    */
   sessionForPage(url: URL): string | null;
 
+  /**
+   * resendsStoredTurn reports whether a send re-runs a turn the site already holds,
+   * rather than carrying newly typed text.
+   *
+   * Asked only when texts() came back empty, and it is what separates the two
+   * reasons a send can carry no text. A body with no known field is the site having
+   * moved its prompt somewhere this does not read, and forwarding that is the
+   * extension masking nothing while looking installed — it is refused. A retry
+   * carries no prompt because there is nothing new to carry: the turn was masked
+   * when it was first sent and the site re-runs it from its own store. Refusing it
+   * broke Retry outright.
+   *
+   * Not an exemption from restoration: the stored turn holds stand-ins, so the
+   * answer comes back carrying them and the inbound half runs exactly as it does
+   * for a first send.
+   */
+  resendsStoredTurn(url: URL): boolean;
+
   /** texts pulls out every field of the body that carries typed text, in a fixed
    * order. */
   texts(body: unknown): string[];
@@ -75,6 +93,10 @@ export const claudeAi: Site = {
 
   carriesChat(url: URL): boolean {
     return url.pathname.includes('/chat_conversations/');
+  },
+
+  resendsStoredTurn(url: URL): boolean {
+    return url.pathname.endsWith('/retry_completion');
   },
 
   sessionForPage(url: URL): string | null {

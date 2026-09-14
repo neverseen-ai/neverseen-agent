@@ -1,0 +1,517 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Neverseen — settings</title>
+<style>
+  :root { color-scheme: light dark;
+          --line: #8883; --muted: #7c7c85; --ok: #2e7d32; --warn: #b26a00; --bad: #c62828;
+          --card: #8881; --accent: #3b82f6; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif;
+         background: Canvas; color: CanvasText; }
+
+  /* Tabs rather than a column of links, and one panel at a time: the five sections
+     are read one at a time — a country selection, then what to do about it — and a
+     page that scrolled through all five put the credentials list, which is a hundred
+     and thirty-one lines nobody scrolls past, between two settings. */
+  .page { max-width: 62rem; margin: 0 auto; }
+
+  /* An opaque ground of its own, not `inherit`: inherit takes the parent's computed
+     background, which is transparent, and a sticky bar that paints nothing has the
+     page scroll straight through it. The system colour rather than a hex value, so it
+     tracks the light and dark grounds body is painted with. */
+  header { position: sticky; top: 0; z-index: 1; padding: 1.25rem 2rem 0;
+           border-bottom: 1px solid var(--line); background: Canvas; }
+  .title { display: flex; gap: .75rem; align-items: baseline; flex-wrap: wrap;
+           margin-bottom: 1rem; }
+  .title h1 { font-size: 1rem; margin: 0; letter-spacing: -.01em; }
+  .title .spacer { flex: 1; }
+  .title a { color: var(--muted); font-size: 12px; }
+  .title .version { color: var(--muted); font-size: 12px; }
+
+  .tabs { display: flex; gap: .25rem; flex-wrap: wrap; }
+  .tabs button { font: inherit; padding: .45rem .9rem; border: 0; background: none;
+                 color: var(--muted); cursor: pointer; border-radius: 6px 6px 0 0;
+                 border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .tabs button:hover { color: inherit; background: var(--card); }
+  .tabs button[aria-selected="true"] { color: inherit; font-weight: 600;
+                                       border-bottom-color: var(--accent); }
+
+  main { padding: 1.5rem 2rem 4rem; }
+  section { margin-bottom: 2.5rem; }
+  section:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+  /* The lede is the first thing in a panel now that the tab carries the heading. */
+  section > p.lede { margin: 0 0 1rem; color: var(--muted); max-width: 74ch; }
+  /* A panel holding two blocks names them. This is not the heading the tab strip
+     already carries — it is the seam inside one tab. */
+  section > h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em;
+                 margin: 2rem 0 .5rem; color: var(--muted); font-weight: 600; }
+  section > h2:first-child { margin-top: 0; }
+
+  /* The whole-section switch, sized to read as one rather than as a row that
+     happens to sit above the families. */
+  .master { display: flex; gap: .5rem; align-items: center; margin: 0 0 .75rem;
+            cursor: pointer; font-weight: 600; }
+  .master input { width: 1.1rem; height: 1.1rem; accent-color: var(--accent); margin: 0; }
+  .master.off { color: var(--warn); }
+
+  .card { border: 1px solid var(--line); border-radius: 8px; margin-bottom: .75rem; }
+  .card > h3 { font-size: .85rem; margin: 0; padding: .6rem .85rem; font-weight: 600;
+               border-bottom: 1px solid var(--line); display: flex; justify-content: space-between;
+               gap: 1rem; align-items: baseline; }
+  .card > h3 .count { font-weight: 400; color: var(--muted); font-size: 12px; }
+  .grid { display: grid; gap: .1rem .75rem; padding: .5rem .85rem .7rem;
+          grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); }
+  /* One country per line with what it finds beside it, rather than a grid of bare
+     codes: the list is the whole reason the row is worth reading. */
+  .locale { display: grid; grid-template-columns: auto 2.5rem minmax(0, 1fr);
+            gap: .5rem; align-items: baseline; padding: .45rem .85rem; cursor: pointer; }
+  .locale + .locale { border-top: 1px solid var(--line); }
+  .locale:hover { background: var(--card); }
+  .locale input { margin: 0; accent-color: var(--accent); }
+  .locale .code { font-weight: 600; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .locale .finds { color: var(--muted); font-size: 13px; }
+  .locale.off .finds { text-decoration: line-through; opacity: .6; }
+
+  .locked { padding: .6rem .85rem .2rem; color: var(--muted); font-size: 13px; }
+  /* Tighter columns than the switch grid: these rows carry a name and no control, so
+     they pack denser without a checkbox to align against. */
+  .names { grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+           color: var(--muted); font-size: 13px; }
+
+  label.row { display: flex; gap: .5rem; align-items: baseline; padding: .2rem 0;
+              border-radius: 4px; cursor: pointer; }
+  label.row:hover { color: var(--accent); }
+  label.row input { margin: 0; accent-color: var(--accent); }
+  label.row.off { color: var(--warn); }
+  label.row.disabled { color: var(--muted); cursor: default; }
+  label.row.disabled:hover { color: var(--muted); }
+
+  .choice { display: block; border: 1px solid var(--line); border-radius: 8px;
+            padding: .7rem .85rem; margin-bottom: .5rem; cursor: pointer; }
+  .choice:hover { border-color: var(--accent); }
+  .choice.on { border-color: var(--accent); background: var(--card); }
+  .choice .name { font-weight: 600; }
+  .choice .why { display: block; color: var(--muted); margin: .15rem 0 0 1.5rem; }
+  .choice input { accent-color: var(--accent); }
+
+  .badge { display: inline-block; padding: .1rem .5rem; border-radius: 999px;
+           font-size: 11px; font-weight: 600; border: 1px solid currentColor; }
+  .badge.full { color: var(--ok); } .badge.partial { color: var(--warn); }
+  .badge.none, .badge.down { color: var(--bad); }
+
+  .banner { margin: 0 0 1.25rem; padding: .6rem .85rem; border-radius: 6px;
+            border: 1px solid var(--bad); color: var(--bad); }
+  .banner:empty { display: none; }
+  .hint { color: var(--muted); font-size: 12px; max-width: 74ch; margin: .5rem 0 0; }
+  .caution { color: var(--warn); font-size: 12px; margin: 0 0 1rem; max-width: 74ch; }
+  body.busy { cursor: progress; }
+  body.busy main { opacity: .6; pointer-events: none; }
+</style>
+</head>
+<body data-control-key="{{.ControlKey}}">
+<div class="page">
+  <header>
+    <div class="title">
+      <h1>Neverseen</h1>
+      <span class="state" id="state"></span>
+      <span class="spacer"></span>
+      <a href="/test">Try a text on this configuration</a>
+      <span class="version" id="version"></span>
+    </div>
+    <div class="tabs" role="tablist">
+      <button role="tab" id="tab-personal" data-panel="personal">Personal data</button>
+      <button role="tab" id="tab-credentials" data-panel="credentials">Credentials</button>
+      <button role="tab" id="tab-substitution" data-panel="substitution">Substitution</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="banner" id="banner"></div>
+
+    <section id="personal" role="tabpanel" aria-labelledby="tab-personal" tabindex="0">
+      <h2>Countries</h2>
+      <p class="lede">Which country's identifiers the agent recognises, and the thing to
+        settle first: it decides which switches the rest of this tab has to offer at all.
+        Unticking a country removes what only it can find from <em>Personal details</em>,
+        <em>Company identifiers</em> and <em>Banking</em> below; the technical identifiers
+        have no nationality and do not move, and neither do the credentials. What you switch
+        off is remembered across the change, so unloading a country and loading it again
+        does not revive a category you had switched off.</p>
+      <div class="card"><div id="locales"></div></div>
+      <p class="hint">Each country is listed with what it can find. Several of them carry
+        the same category — a postcode, a telephone number, a postal address — and such a
+        category stays while any one of them is loaded.</p>
+
+      <h2>What gets masked</h2>
+      <p class="lede">One switch per kind of value. Unticking one sends those values to the
+        provider in clear, from the next request on.</p>
+      <label class="master">
+        <input type="checkbox" id="master">
+        <span id="master-label"></span>
+      </label>
+      <div id="groups"></div>
+    </section>
+
+    <section id="credentials" role="tabpanel" aria-labelledby="tab-credentials" tabindex="0">
+      <h2>Secret strength</h2>
+      <p class="lede">This grades exactly one of the entries listed below — <em>Secret in an
+        assignment</em>, the catch-all for a value with no known prefix — and nothing else.
+        Every other credential here is recognised by its own shape — a vendor's prefix
+        (<code>dp.pt.</code>, <code>A3-</code>, <code>AKCp</code>) or a structure like a PEM
+        block — and is masked at every level whatever this says.</p>
+      <div id="levels"></div>
+
+      <h2>What is always masked</h2>
+      <p class="lede">API keys, tokens and connection strings. These have no switch, here or
+        anywhere else: a credential in clear is a live key handed to a provider, and the agent
+        refuses to stop masking one whatever it is asked. They are listed all the same —
+        knowing whether your own vendor's key is among them is a question nothing else here
+        answers, and your browser's find works on the list.</p>
+      <div id="secret-groups"></div>
+    </section>
+
+    <section id="substitution" role="tabpanel" aria-labelledby="tab-substitution" tabindex="0">
+      <p class="lede">What a masked value is replaced with on its way out.</p>
+      <p class="caution">Changing this clears what has already been substituted, so a
+        conversation in progress starts naming its values differently.</p>
+      <div id="modes"></div>
+    </section>
+
+  </main>
+</div>
+
+<script>{{.Decisions}}</script>
+
+<script>
+// The page holds no engine, exactly as the extension holds none: it draws what
+// /healthz says and writes through PUT /policy, which is the one route that changes
+// what the agent does. Nothing here decides anything about a value.
+const KEY = document.body.dataset.controlKey;
+
+// What each choice costs, in the words the menu bar used to carry in its own entry
+// titles — where they made every row sixty characters wide. "token" and "fake" are
+// the words the configuration uses and have to stay; neither of them says which one
+// puts a value nobody can check in front of a caller.
+//
+// Sentences only. *Which* modes and levels exist is the agent's answer and arrives on
+// /healthz — a page with a list of its own goes on offering a name a rebuilt agent no
+// longer takes, and stays silent about one it gained. A value served with no sentence
+// here is drawn under its bare name rather than dropped: the list of what exists and
+// the prose about it are allowed to fall out of step, and only one of them decides
+// what is on screen.
+const MODES = {
+  token: "[EMAIL_1] — obvious in an answer, and impossible to mistake for real data.",
+  fake:  "Reads as prose, and cannot be told from a real value — including by you.",
+};
+const LEVELS = {
+  weak:   "Every value found, words included. Masks source code along with secrets.",
+  medium: "Values mixing two kinds of character.",
+  strong: "Only what nobody typed by hand.",
+};
+
+let state = null;
+
+// The tab strip. One panel is shown at a time and the rest carry `hidden`, which is
+// why draw() can rewrite a panel's contents without knowing which one is on screen:
+// what a redraw replaces is the inside of each section, never the sections.
+//
+// The hash is honoured on arrival so a link to a section still lands on it — the page
+// answered to #credentials when the sections were a column, and a bookmark outlives a
+// layout.
+function showPanel(name) {
+  for (const tab of document.querySelectorAll(".tabs button")) {
+    const on = tab.dataset.panel === name;
+    tab.setAttribute("aria-selected", on ? "true" : "false");
+    // Roving tabindex: one stop for the whole strip, as the authoring practice has
+    // it, so tabbing through the page does not walk five buttons before the panel.
+    tab.tabIndex = on ? 0 : -1;
+    document.getElementById(tab.dataset.panel).hidden = !on;
+  }
+}
+
+// The panels that were tabs of their own before they were merged into another. A
+// bookmark outlives a layout, which is the whole reason the hash is honoured at all.
+const PANEL_ALIASES = { countries: "personal", secrets: "credentials" };
+
+function wireTabs() {
+  const tabs = [...document.querySelectorAll(".tabs button")];
+  const names = tabs.map(t => t.dataset.panel);
+
+  tabs.forEach((tab, i) => {
+    tab.onclick = () => select(tab.dataset.panel);
+    // The arrow keys move between tabs, which is what makes a tab strip a tab strip
+    // for somebody not using a mouse. Home and End because a five-tab strip is short
+    // enough that jumping to an end is the obvious thing to try.
+    tab.onkeydown = (e) => {
+      const step = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
+      let next = step === undefined ? undefined : (i + step + tabs.length) % tabs.length;
+      if (e.key === "Home") next = 0;
+      if (e.key === "End") next = tabs.length - 1;
+      if (next === undefined) return;
+      e.preventDefault();
+      select(tabs[next].dataset.panel);
+      tabs[next].focus();
+    };
+  });
+
+  function select(name) {
+    showPanel(name);
+    // Written rather than navigated to, so the panel does not also scroll itself
+    // under the sticky header — and so reloading stays where the reader was.
+    history.replaceState(null, "", "#" + name);
+  }
+
+  showPanel(panelFor(decodeURIComponent(location.hash), names, PANEL_ALIASES));
+}
+
+// Every write goes through here, and the state it sends is built in
+// settings_decisions.js — see policyFrom for why the other three parts travel.
+async function send(change) {
+  document.body.classList.add("busy");
+  try {
+    const reply = await fetch("/policy", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "X-Neverseen-Control": KEY },
+      body: JSON.stringify(policyFrom(state, change)),
+    });
+    if (!reply.ok) {
+      // Redrawn from the agent rather than from the request that failed: the route
+      // is not a transaction, so a refusal can still have applied half of what it
+      // carried, and a page that put its own request back on screen would show a
+      // state the agent is not in.
+      fail(await reply.text());
+      return wireTabs();
+load();
+    }
+    banner("");
+    draw(await reply.json());
+  } catch (err) {
+    fail("The agent is not answering. " + err);
+  } finally {
+    document.body.classList.remove("busy");
+  }
+}
+
+async function load() {
+  try {
+    const reply = await fetch("/healthz", { cache: "no-store" });
+    draw(await reply.json());
+  } catch (err) {
+    fail("The agent is not answering on this address. Start it with: neverseen proxy");
+    const host = document.getElementById("state");
+    host.textContent = "";
+    host.appendChild(el("span", "badge down", "not answering"));
+  }
+}
+
+function fail(text) { banner(text.trim() || "That change was refused."); }
+function banner(text) { document.getElementById("banner").textContent = text; }
+
+function draw(health) {
+  state = health;
+  drawState(health);
+  drawGroups(health);
+  drawMaster(health);
+  drawLocales(health);
+  drawChoices("modes", "substitution", MODES, health.substitution, health.substitutions);
+  drawChoices("levels", "secret_level", LEVELS, health.secret_level, health.secret_levels);
+}
+
+// The verdict follows `masking` and nothing else, so this page and the menu bar icon
+// cannot disagree about whether the traffic is protected.
+function drawState(health) {
+  const verdict = {
+    full: ["full", "masking"],
+    partial: ["partial", (health.off || []).length + " in clear"],
+    none: ["none", "not masking"],
+  }[health.masking] || ["down", health.masking || "unknown"];
+
+  const host = document.getElementById("state");
+  host.textContent = "";
+  host.appendChild(el("span", "badge " + verdict[0], verdict[1]));
+  document.getElementById("version").textContent = "Version " + (health.version || "unknown");
+}
+
+// The two headings, and which family goes under which is the agent's answer rather
+// than this page's. A list of group codes here would be a second copy of the
+// taxonomy, and the day a family was added it would be filed under the wrong heading
+// — quietly, since both headings draw the same switches.
+function drawGroups(health) {
+  const filed = splitGroups(health.groups);
+  const hosts = {
+    personal: document.getElementById("groups"),
+    credentials: document.getElementById("secret-groups"),
+  };
+
+  for (const heading of Object.keys(hosts)) {
+    hosts[heading].textContent = "";
+    for (const group of filed[heading]) hosts[heading].appendChild(groupCard(group));
+  }
+}
+
+// groupCard is one family: its name, what is off in it, and either its switches or
+// its names.
+function groupCard(group) {
+  const locked = group.categories.every(c => c.locked);
+  const off = group.categories.filter(c => c.off).length;
+
+  const card = el("div", "card");
+  const head = el("h3", null, group.label);
+  head.appendChild(el("span", "count", groupCount(group, locked, off)));
+  card.appendChild(head);
+
+  if (!locked) {
+    const grid = el("div", "grid");
+    for (const cat of group.categories) grid.appendChild(categoryRow(cat));
+    card.appendChild(grid);
+    return card;
+  }
+
+  // Named, not switched. The menu bar drew a locked family as one line with a count,
+  // and that was right there: a row that cannot be clicked is a row of nothing to do,
+  // and a hundred of them buried the nineteen real ones. It is wrong here. A name on
+  // a page is not a control, and "is my vendor's key covered" has no other answer
+  // anywhere in this agent — the list is the whole reason somebody opens the section.
+  //
+  // Two wordings, because a locked family is not necessarily a credential: what a
+  // deployment declared sensitive itself is locked for its own reason, and the
+  // credential wording would be wrong about it.
+  card.appendChild(el("div", "locked", group.credentials
+    ? "The agent refuses to stop masking these, whatever it is asked."
+    : "This deployment declared these itself, so nothing switches them off here."));
+  card.appendChild(names(group.categories));
+  return card;
+}
+
+function groupCount(group, locked, off) {
+  const total = group.categories.length;
+  if (locked) return total + ", always masked";
+  if (off > 0) return off + " of " + total + " in clear";
+  return String(total);
+}
+
+// drawMaster applies what masterState worked out, and wires the click to bulkSet.
+//
+// No arithmetic here on purpose: which three states the control can be in, what the
+// label says, and what a click sends are decided in settings_decisions.js where a
+// test reaches them.
+function drawMaster(health) {
+  const cats = switchableOf(health.groups);
+  const shown = masterState(cats);
+
+  const box = document.getElementById("master");
+  box.checked = shown.checked;
+  box.indeterminate = shown.indeterminate;
+  box.disabled = shown.disabled;
+  // A screen reader hears "unchecked" over a partly-masked section otherwise, which
+  // is the lie the third state exists to prevent visually.
+  box.setAttribute("aria-checked", shown.indeterminate ? "mixed" : String(shown.checked));
+
+  document.getElementById("master-label").textContent = shown.label;
+  document.querySelector(".master").classList.toggle("off", !shown.checked);
+
+  box.onchange = () =>
+    void send({ off: bulkSet(state.off || [], cats.map(c => c.code), shown.allOff) });
+}
+
+// names lists a locked family's categories, with no control beside them.
+//
+// A checkbox that cannot be ticked is worse than no checkbox: it invites a click and
+// says nothing the line above has not already said. Plain text also means the
+// browser's own find picks these up, which is how somebody checks for their vendor
+// in a hundred and thirty-one of them.
+//
+// The notation rather than the label wherever the agent sent one, because the label
+// alone answers nothing here: "Connection string" is a category whose pattern takes
+// any URL scheme carrying credentials, and "1Password credential" does not say it is
+// the one that starts `A3-`. A category recognised several ways carries them all —
+// a PEM key is found by its whole block and by its header alone.
+function names(categories) {
+  const grid = el("div", "grid names");
+  for (const cat of categories) {
+    const shapes = cat.notations || [];
+    grid.appendChild(el("span", null, shapes.length ? shapes.join(" · ") : cat.label));
+  }
+  return grid;
+}
+
+function categoryRow(cat) {
+  const row = el("label", "row" + (cat.off ? " off" : "") + (cat.locked ? " disabled" : ""));
+  const box = document.createElement("input");
+  box.type = "checkbox";
+  box.checked = !cat.off;
+  box.disabled = !!cat.locked;
+  box.onchange = () => void send({ off: toggledSet(state.off || [], cat.code) });
+  row.appendChild(box);
+  row.appendChild(document.createTextNode(cat.label));
+  return row;
+}
+
+// Each country is drawn with what it can find, because that is the question its
+// checkbox raises and nothing else on the page answers it.
+//
+// Names rather than a count: countries share categories — a postcode, a telephone
+// number and a postal address are national in shape and one category each — so the
+// lists overlap and their lengths do not add up to what is in play. A count would be
+// a number a reader could add up and be wrong. The note under the card carries the
+// other half of that, which is that a shared category survives its country going.
+function drawLocales(health) {
+  const host = document.getElementById("locales");
+  host.textContent = "";
+  // Read from `state` like every other handler: it is the same object, and one name
+  // for "what the agent last said" is one fewer thing to keep straight.
+  const on = new Set(state.locales || []);
+  const finds = state.locale_categories || {};
+
+  for (const code of state.available_locales || []) {
+    const row = el("label", "locale" + (on.has(code) ? "" : " off"));
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = on.has(code);
+    // Stays clickable even as the last one loaded: an agent with no locale at all is
+    // a valid state and the one it starts in, so a page that refused to reach it
+    // would be hiding a state the agent can be in.
+    box.onchange = () => void send({ locales: toggledSet(state.locales || [], code) });
+
+    row.appendChild(box);
+    row.appendChild(el("span", "code", code));
+    row.appendChild(el("span", "finds", (finds[code] || []).join(", ")));
+    host.appendChild(row);
+  }
+}
+
+// One row per value with the live one marked, rather than a control that cycles: a
+// cycling control cannot say what it is about to become.
+function drawChoices(hostID, field, why, live, offered) {
+  const host = document.getElementById(hostID);
+  host.textContent = "";
+
+  for (const value of offered || []) {
+    const choice = el("label", "choice" + (value === live ? " on" : ""));
+    const radio = document.createElement("input");
+    radio.type = "radio";
+    radio.name = field;
+    radio.checked = value === live;
+    radio.onchange = () => void send({ [field]: value });
+    choice.appendChild(radio);
+    choice.appendChild(el("span", "name", " " + value));
+    choice.appendChild(el("span", "why", why[value] || ""));
+    host.appendChild(choice);
+  }
+}
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+wireTabs();
+load();
+</script>
+</body>
+</html>

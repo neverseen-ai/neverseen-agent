@@ -40,6 +40,11 @@ test('an address anywhere else falls back to the default rather than receiving t
     'http://[::1]:9787',
     'http://127.0.0.2:9787',
     'not an address',
+    // No port. The host and the scheme are both accepted, so this was kept and the
+    // control key went to port 80 — while the refusal message the person reads has
+    // always said "with a port". The message was right and the check was not.
+    'http://127.0.0.1',
+    'http://127.0.0.1/',
   ]) {
     const storage = memory();
     await save(storage, { baseUrl, key: KEY });

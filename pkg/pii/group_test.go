@@ -94,3 +94,32 @@ func TestAnUnknownCategoryIsNotSwitchable(t *testing.T) {
 		t.Error("an unregistered category is switchable")
 	}
 }
+
+// The split a surface draws its two headings from, pinned family by family.
+//
+// Written out rather than derived in the test, because a test that recomputed the
+// rule would agree with a broken rule. The two lines that matter are GroupDeclared
+// — locked, and still not a credential — and GroupConnection, which is one category
+// and must not be filed with the personal details because of it.
+func TestOnlyTheCredentialFamiliesAreCredentials(t *testing.T) {
+	want := map[Group]bool{
+		GroupPersonal:   false,
+		GroupCompany:    false,
+		GroupTechnical:  false,
+		GroupBanking:    false,
+		GroupDeclared:   false,
+		GroupConnection: true,
+		GroupSecrets:    true,
+	}
+
+	for _, g := range Groups() {
+		expected, known := want[g]
+		if !known {
+			t.Fatalf("group %q is not in this test, so nothing says which heading it "+
+				"belongs under on the settings page", g)
+		}
+		if got := IsCredentialGroup(g); got != expected {
+			t.Errorf("IsCredentialGroup(%q) = %v, want %v", g, got, expected)
+		}
+	}
+}

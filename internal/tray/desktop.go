@@ -13,14 +13,17 @@ import (
 // desktop, they all read standard input or take a URL, and a dependency for that
 // would be a dependency to maintain for six lines.
 
-// openTestPage asks the desktop to open the agent's own test page.
+// openInBrowser asks the desktop to open one of the agent's own pages.
+//
+// Takes the URL rather than building it from the address, because there are two of
+// them now — the test page and the settings page — and a function that took a path
+// beside the address would be the same string concatenation with an extra seam in
+// it.
 //
 // Started and forgotten: whether a browser opened is not something this can do
 // anything about, and a menu bar item that blocked on a browser launching would
 // freeze the bar.
-func openTestPage(addr string) {
-	url := "http://" + addr + "/test"
-
+func openInBrowser(url string) {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":

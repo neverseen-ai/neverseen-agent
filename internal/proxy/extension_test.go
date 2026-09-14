@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -466,4 +468,54 @@ func tokenIn(t *testing.T, text string) string {
 		t.Fatalf("no token in %q", text)
 	}
 	return text[start : end+1]
+}
+
+// Fake mode, where the tail's two halves can disagree — and the shape no token
+// test can reach, because no complete bracket token is the prefix of another.
+//
+// Fake IP addresses are minted 192.0.2.1, 192.0.2.2 … 192.0.2.11, so a session
+// that masks eleven addresses holds a stand-in that is a proper prefix of another.
+// Expanded before the holdback was decided, a chunk ending on the shorter one was
+// replaced there and then with the wrong original, and the tail handed back was
+// sliced out of restored text — so a fragment of a real original travelled to the
+// page and was expanded a second time on the way in.
+func TestUnmaskHoldsBackAStandInThatIsThePrefixOfAnother(t *testing.T) {
+	up := newUpstream(t, echoJSON)
+	agent, det := newControlledAgent(t, up, []string{"fr"})
+	det.SetSubstitution(detector.SubstitutionFake)
+
+	// One call, so the eleven share a mapping: /mask taking a list is what gives
+	// them one identity, and it is what makes the prefix pair exist at all.
+	var originals []string
+	for i := 1; i <= 11; i++ {
+		originals = append(originals, "10.1.1."+strconv.Itoa(i))
+	}
+	masked := decodeReply[maskReply](t, postAs(t, agent, "/mask", testControlKey, "fake",
+		body(t, maskRequest{Texts: originals})))
+
+	// Read off the reply rather than assumed: what matters is that some stand-in is
+	// a proper prefix of another, not which one the catalogue happens to mint.
+	short, long := "", ""
+	for _, a := range masked.Texts {
+		for _, b := range masked.Texts {
+			if a != b && strings.HasPrefix(b, a) && len(b) > len(long) {
+				short, long = a, b
+			}
+		}
+	}
+	if short == "" {
+		t.Skipf("no stand-in in %v is the prefix of another, so this shape is unreachable", masked.Texts)
+	}
+	original := originals[slices.Index(masked.Texts, long)]
+
+	// Split exactly where it hurts: the first chunk ends on the whole of the
+	// shorter stand-in, and the next carries what makes it the longer one.
+	one := decodeReply[unmaskReply](t, postAs(t, agent, "/unmask", testControlKey, "fake",
+		body(t, unmaskRequest{Text: "host " + short})))
+	two := decodeReply[unmaskReply](t, postAs(t, agent, "/unmask", testControlKey, "fake",
+		body(t, unmaskRequest{Text: long[len(short):] + " is down", Tail: one.Tail, Final: true})))
+
+	if whole := one.Expanded + two.Expanded; whole != "host "+original+" is down" {
+		t.Errorf("the page rendered %q, want %q", whole, "host "+original+" is down")
+	}
 }

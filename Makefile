@@ -22,8 +22,14 @@ run: build ## Run the agent and open its test page — loads .env if there is on
 	  ( sleep 1; open "http://$$addr/test" ) & \
 	  exec $(BIN) proxy
 
-test: ## Run the whole suite with the race detector
+test: settings-test ## Run the whole suite with the race detector
 	go test -race ./...
+
+settings-test: ## Run the settings page's decisions under node --test
+	# No npm project and no dependency: one file, loaded by the same `require` the
+	# page's inlined copy is not. It is in `test` rather than beside the extension
+	# because it is this agent's page, and a rule nothing runs is a rule that drifts.
+	node --test internal/proxy/settings_decisions.test.mjs
 
 test-cover: ## Run the suite with coverage; the CI gate is 80%
 	go test -race -coverprofile=coverage.out -covermode=atomic ./...

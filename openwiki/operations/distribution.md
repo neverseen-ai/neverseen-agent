@@ -175,13 +175,24 @@ the platform event loop, and on macOS that loop must be the main thread.
 ### What is testable is kept away from the toolkit
 
 Everything in `internal/tray` that decides **what** to show is separate from the toolkit.
-`render` (`tray.go:190`) and `watch` (`:394`) take no part of `fyne.io/systray` and are covered
-by tests; the adapter that touches the toolkit (`systray.go`) builds the menu from what
-`render` decided and holds no decision of its own — it has grown to a couple of dozen small
-functions as the menu gained switches, modes, levels and locales, and the pool sizing for the
-category rows is the one piece of arithmetic in it.
+`render` and `watch` take no part of `fyne.io/systray` and are covered by tests; the adapter
+that touches the toolkit (`systray.go`) builds the menu from what `render` decided and holds
+no decision of its own — the provider pool sizing is the one piece of arithmetic left in it.
 A menu bar cannot be asserted on in CI, so what can be is kept where a test reaches it — the
 alternative is a feature whose behaviour has only ever run on somebody's screen.
+
+**The menu says; it does not configure.** It used to do both, and `plan.go` existed to hold
+the decisions that took: the all-or-nothing rule for a family, the arithmetic around locked
+members, which slot held which group past the pool, what a row of each choice was titled.
+All of it is gone, and so is half of `internal/tray`, because the toolkit was the wrong shape
+for the job. `fyne.io/systray` gives titles and ticks — no radio group, no mixed tick, no
+room for the sentence that says what a choice costs — so every one of those absences had
+been answered by writing the sentence into an entry's own title ("weak — every value found,
+words included; masks code too"), and a menu bar of sixty-character rows is a menu nobody
+reads. What is configured is configured on
+[`/settings`](configuration.md#settings--where-the-configuration-actually-happens), which has
+the room this never had; the menu keeps the one thing an icon in the bar can do that nothing
+else can, which is to say without being clicked whether the traffic is masked.
 
 - **The icon follows `Status.Level()` and nothing else**, so the picture and the exit code of
   `neverseen status` cannot disagree about the same agent
@@ -192,21 +203,18 @@ alternative is a feature whose behaviour has only ever run on somebody's screen.
   about the twenty-odd categories that are. The third is the right-hand square **half
   filled** — the mark's own vocabulary again, and half rather than a smaller inner square
   because at sixteen points an inner shape is three pixels with a one-pixel gap.
-- **The switch menu is built from what the agent published, never from `pkg/pii`.** The
-  menu bar could import the catalogue directly, and must not: the agent is the one applying
-  it, so a menu built from its own copy would go on offering a switch a rebuilt agent had
-  stopped honouring. `/healthz` carries the groups, their categories, what is off and what
-  is locked.
-- **A group with some of its categories off says so in its title** — "Personal details — 1
-  of 2 off". `fyne.io/systray` offers `Check()` and `Uncheck()` and nothing between, so a
-  partly-off group cannot show a third tick state, and drawn simply unticked it would claim
-  nothing in the family was being masked.
-- **A locked family is one dim line with a count**, not a submenu: twenty API keys nobody
-  may switch off is twenty rows of nothing to do, and a submenu that opened onto them would
-  read as an invitation.
-- **A click sends the whole set and redraws from the reply**, so a refused click corrects
-  itself rather than leaving a tick that lies. `proxy.SetPolicy` is the one place a local
-  surface writes this, as `proxy.Query` is the one place it is read.
+- **"Mask everything again" is the one thing the menu writes**, and it sends the whole state
+  with the switched-off set emptied (`display.maskEverything`,
+  `TestMaskingEverythingAgainCarriesTheRestUnchanged`). `PUT /policy` replaces rather than
+  patches, so a request carrying nothing but the empty set would take the mode, the locales
+  and the secret level down with it — switching off, from an entry that says "mask everything
+  again", three settings somebody had just chosen on the page. It redraws from the reply, so
+  a refused click corrects itself rather than leaving the menu claiming something it did not
+  get. `proxy.SetPolicy` is the one place a local surface writes this, as `proxy.Query` is
+  the one place it is read.
+- **The three settings the menu stopped drawing are still compared.** They are not on
+  screen, but they are in every request that entry sends, and a stale copy of them is a
+  click that quietly reverts what the settings page has just changed.
 - `display` is **one value rather than four calls**, so `watch` can tell whether anything
   changed by comparing two of them — and a fifth thing to show cannot be added without the
   comparison being updated with it. `watch` applies only on a change, because a menu bar told

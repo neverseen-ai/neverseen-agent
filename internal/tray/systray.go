@@ -60,38 +60,11 @@ type menuBar struct {
 	mu    sync.Mutex
 	slots []providerSlot
 
-	// levels is the pool of secret-strength rows, drawn like the modes are.
-	levels []catSlot
-
-	// groups is the pool of switch entries, created up front and revealed as the
-	// agent reports its catalogue — the toolkit builds a menu once and there is no
-	// adding an entry later, which is the same reason the provider pool exists.
-	groups []groupSlot
-
-	// modes and locales are the pools for the two choices, created up front like
-	// every other entry: the toolkit builds a menu once.
-	modes   []catSlot
-	locales []catSlot
-
-	// shown is the display the menu is currently drawing. A click computes the new
-	// set from it, so what is sent is the whole set rather than one toggle: two
-	// surfaces looking at one agent would otherwise interleave the halves of a
-	// read-modify-write into a set neither asked for.
+	// shown is the display the menu is currently drawing. "Mask everything again"
+	// builds what it sends from it, so the request carries the whole state rather
+	// than one change: the route replaces rather than patches, and a request built
+	// from anything staler would revert what another surface has just set.
 	shown display
-}
-
-// groupSlot is one group entry and its pool of category entries.
-type groupSlot struct {
-	item  *systray.MenuItem
-	code  string
-	cats  []catSlot
-	empty *systray.MenuItem // shown in place of the categories when the group is locked
-}
-
-// catSlot is one category entry and what it currently stands for.
-type catSlot struct {
-	item *systray.MenuItem
-	code string
 }
 
 // providerSlot is one entry in the provider submenu and the provider it currently
@@ -115,194 +88,40 @@ func (m *menuBar) build() {
 	}
 
 	systray.AddSeparator()
-	m.buildSwitches()
-	m.buildSubstitution()
-	m.buildSecretLevels()
-	m.buildLocales()
+
+	// The ellipsis is the platforms' own convention for an entry that opens
+	// somewhere else rather than doing something. The tooltip carries the address
+	// rather than restating the label: the page is served by the agent this icon is
+	// watching, and which agent that is on a machine with a non-default listen
+	// address is the one thing the label cannot say.
+	settings := systray.AddMenuItem("Settings…", "http://"+m.addr+"/settings")
+	restore := systray.AddMenuItem("Mask everything again", "Switch every category back on")
+
+	systray.AddSeparator()
 	m.buildProviders()
 
-	// The tooltip carries the address rather than restating the label: the page is
-	// served by the agent this icon is watching, and which agent that is on a
-	// machine with a non-default listen address is the one thing the label cannot
-	// say.
+	systray.AddSeparator()
 	test := systray.AddMenuItem("Open the test page", "http://"+m.addr+"/test")
 	quit := systray.AddMenuItem("Quit the icon", "Leave the agent running")
+
 	go func() {
 		for {
 			select {
+			case <-settings.ClickedCh:
+				openInBrowser("http://" + m.addr + "/settings")
+			case <-restore.ClickedCh:
+				m.mu.Lock()
+				shown := m.shown
+				m.mu.Unlock()
+				m.apply(shown.maskEverything())
 			case <-test.ClickedCh:
-				openTestPage(m.addr)
+				openInBrowser("http://" + m.addr + "/test")
 			case <-quit.ClickedCh:
 				systray.Quit()
 				return
 			}
 		}
 	}()
-}
-
-// maxGroupEntries and maxCategoryEntries bound the switch pools.
-//
-// Eight groups because the catalogue has seven and a new family is one entry in a
-// registry; twelve categories because the largest switchable group has ten. Both
-// are the provider pool's reasoning: a menu is built once, so the ceiling has to be
-// picked in advance, and past it the entries say how many are missing rather than
-// dropping them quietly.
-const (
-	maxGroupEntries    = 8
-	maxCategoryEntries = 12
-
-	// maxModeEntries and maxLocaleEntries bound the other two pools. Two modes and
-	// three locales today; the locale registry names Germany, Spain, Italy and the
-	// Netherlands as the next four, so eight leaves room for all of them without a
-	// menu nobody can read.
-	maxModeEntries   = 4
-	maxLocaleEntries = 8
-
-	// maxLevelEntries bounds the secret-strength pool. Three levels today, and the
-	// scale is a judgement rather than a registry — a fourth would mean a new
-	// answer to "how much does this look like a credential", not a new country.
-	maxLevelEntries = 4
-)
-
-// buildSwitches creates the group entries and their category entries, all hidden.
-//
-// Every entry that can be ticked is a checkbox from the start: the toolkit decides
-// whether an item has a tick box when it is created, and an item that became one
-// later would need a menu rebuilt, which is exactly what it cannot do.
-func (m *menuBar) buildSwitches() {
-	parent := systray.AddMenuItem("What gets masked", "One entry per family of values this agent recognises")
-
-	caution := parent.AddSubMenuItem("Unticking sends those values to the provider in clear", "")
-	caution.Disable()
-	parent.AddSeparator()
-
-	m.groups = make([]groupSlot, 0, maxGroupEntries)
-	for range maxGroupEntries {
-		item := parent.AddSubMenuItemCheckbox("", "", true)
-		item.Hide()
-
-		slot := groupSlot{item: item, cats: make([]catSlot, 0, maxCategoryEntries)}
-		// Shown instead of the categories when nothing in the group may be
-		// switched: twenty API keys nobody may touch is twenty rows of nothing to
-		// do, and a submenu that opened onto them would read as an invitation.
-		slot.empty = item.AddSubMenuItem("Never switched off from here", "")
-		slot.empty.Disable()
-		slot.empty.Hide()
-
-		for range maxCategoryEntries {
-			cat := item.AddSubMenuItemCheckbox("", "", true)
-			cat.Hide()
-			slot.cats = append(slot.cats, catSlot{item: cat})
-		}
-
-		m.groups = append(m.groups, slot)
-		go m.watchClicks(item.ClickedCh, m.groupCode(len(m.groups)-1), toGroup)
-		for c := range slot.cats {
-			go m.watchClicks(slot.cats[c].item.ClickedCh, m.categoryCode(len(m.groups)-1, c), toCategory)
-		}
-	}
-
-	systray.AddSeparator()
-	restore := systray.AddMenuItem("Mask everything again", "Switch every category back on")
-	go func() {
-		for range restore.ClickedCh {
-			m.mu.Lock()
-			shown := m.shown
-			m.mu.Unlock()
-			m.apply(shown.policyWith([]string{}, "", nil, ""))
-		}
-	}()
-	systray.AddSeparator()
-}
-
-// buildSubstitution creates the mode rows.
-func (m *menuBar) buildSubstitution() {
-	parent := systray.AddMenuItem("Substitution", "What a masked value is replaced by")
-
-	m.modes = make([]catSlot, 0, maxModeEntries)
-	for range maxModeEntries {
-		item := parent.AddSubMenuItemCheckbox("", "", false)
-		item.Hide()
-		m.modes = append(m.modes, catSlot{item: item})
-		go m.watchClicks(item.ClickedCh, m.modeCode(len(m.modes)-1), toMode)
-	}
-}
-
-// buildSecretLevels creates the level rows.
-func (m *menuBar) buildSecretLevels() {
-	parent := systray.AddMenuItem("Secret strength", "How far down the scale a named secret is masked")
-
-	caution := parent.AddSubMenuItem("A key with a known prefix is masked at every level", "")
-	caution.Disable()
-	parent.AddSeparator()
-
-	m.levels = make([]catSlot, 0, maxLevelEntries)
-	for range maxLevelEntries {
-		item := parent.AddSubMenuItemCheckbox("", "", false)
-		item.Hide()
-		m.levels = append(m.levels, catSlot{item: item})
-		go m.watchClicks(item.ClickedCh, m.levelCode(len(m.levels)-1), toLevel)
-	}
-}
-
-// watchClicks turns every click on one entry into the whole policy to send.
-//
-// One loop rather than the five it was. They differed only in where the entry's code
-// came from and which part of the policy the click replaced, and written out five
-// times the shape had to be got right five times: take the lock, read the code *and*
-// the display under it, release, ignore a hidden slot, send. The lock is the part
-// that matters — a slot relabelled between reading its code and reading the display
-// would send one entry's change against another entry's state.
-//
-// What a click means still lives in plan.go, where a test reaches it: the
-// all-or-nothing rule for a family, the arithmetic around locked members and the
-// locale toggle are decisions, and decisions do not belong in the half of this
-// package that only ever runs on somebody's screen.
-//
-// A hidden slot is skipped rather than sent. The pools are built full and revealed
-// as the agent reports its catalogue, so an entry with no code behind it is one the
-// toolkit is drawing at nothing.
-func (m *menuBar) watchClicks(clicks <-chan struct{}, code func() string,
-	want func(d display, code string) proxy.Policy) {
-	for range clicks {
-		m.mu.Lock()
-		this, shown := code(), m.shown
-		m.mu.Unlock()
-		if this == "" {
-			continue
-		}
-		m.apply(want(shown, this))
-	}
-}
-
-// The five things a click can change, as the policy each one sends. The route
-// replaces the whole state rather than patching it, so every one of these carries
-// the other parts through unchanged.
-var (
-	toGroup    = func(d display, code string) proxy.Policy { return d.policyWith(d.withGroupToggled(code), "", nil, "") }
-	toCategory = func(d display, code string) proxy.Policy {
-		return d.policyWith(d.withCategoryToggled(code), "", nil, "")
-	}
-	toMode   = func(d display, code string) proxy.Policy { return d.policyWith(nil, code, nil, "") }
-	toLocale = func(d display, code string) proxy.Policy { return d.policyWith(nil, "", d.withLocaleToggled(code), "") }
-	toLevel  = func(d display, code string) proxy.Policy { return d.policyWith(nil, "", nil, code) }
-)
-
-// buildLocales creates the locale rows.
-func (m *menuBar) buildLocales() {
-	parent := systray.AddMenuItem("Countries", "Which country's identifiers to look for")
-
-	caution := parent.AddSubMenuItem("With none of them, only credentials and email are found", "")
-	caution.Disable()
-	parent.AddSeparator()
-
-	m.locales = make([]catSlot, 0, maxLocaleEntries)
-	for range maxLocaleEntries {
-		item := parent.AddSubMenuItemCheckbox("", "", false)
-		item.Hide()
-		m.locales = append(m.locales, catSlot{item: item})
-		go m.watchClicks(item.ClickedCh, m.localeCode(len(m.locales)-1), toLocale)
-	}
 }
 
 // apply sends the new set to the agent and redraws from its answer.
@@ -391,109 +210,15 @@ func (m *menuBar) show(d display) {
 		m.entries[i].SetTitle(line)
 	}
 
-	m.showSwitches(d)
-	m.showRows(m.modes, planModes(d))
-	m.showRows(m.levels, planLevels(d))
-	m.showRows(m.locales, planLocales(d))
-	m.showProviders(d.providers)
-}
-
-// showSwitches applies the plan planSwitches worked out.
-//
-// No arithmetic here on purpose: which slot holds what, and what the last one says
-// when there are more families than slots, is decided in tray.go where a test can
-// read it.
-func (m *menuBar) showSwitches(d display) {
+	// Kept under the provider lock, because "Mask everything again" reads it on the
+	// click goroutine to build the state it sends while a poll is writing it — and a
+	// display read half-written is a request that reverts whatever the settings page
+	// changed between the two halves.
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	// Kept under the same lock as the slots, because a click reads it to work out
-	// the new set while a poll is writing it.
 	m.shown = d
+	m.mu.Unlock()
 
-	for i, plan := range planSwitches(d, len(m.groups), maxCategoryEntries) {
-		slot := &m.groups[i]
-		slot.code = plan.code
-
-		if !plan.visible {
-			m.hideCategories(i)
-			slot.empty.Hide()
-			slot.item.Hide()
-			continue
-		}
-
-		slot.item.SetTitle(plan.title)
-		setEnabled(slot.item, plan.enabled)
-		setChecked(slot.item, plan.checked)
-
-		for c := range slot.cats {
-			if c >= len(plan.members) || !plan.members[c].visible {
-				slot.cats[c].code = ""
-				slot.cats[c].item.Hide()
-				continue
-			}
-			member := plan.members[c]
-			slot.cats[c].code = member.code
-			slot.cats[c].item.SetTitle(member.title)
-			setEnabled(slot.cats[c].item, member.enabled)
-			setChecked(slot.cats[c].item, member.checked)
-			slot.cats[c].item.Show()
-		}
-
-		// The stand-in line appears exactly when no category row does, which is the
-		// locked family and the overflow entry.
-		if len(plan.members) == 0 {
-			slot.empty.Show()
-		} else {
-			slot.empty.Hide()
-		}
-		slot.item.Show()
-	}
-}
-
-func (m *menuBar) hideCategories(index int) {
-	for i := range m.groups[index].cats {
-		m.groups[index].cats[i].code = ""
-		m.groups[index].cats[i].item.Hide()
-	}
-}
-
-// showRows applies a flat plan to a flat pool, which is the whole of what the two
-// choices need. No arithmetic here either: planModes and planLocales decide.
-func (m *menuBar) showRows(slots []catSlot, plans []entryPlan) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	for i := range slots {
-		if i >= len(plans) || !plans[i].visible {
-			slots[i].code = ""
-			slots[i].item.Hide()
-			continue
-		}
-		slots[i].code = plans[i].code
-		slots[i].item.SetTitle(plans[i].title)
-		setEnabled(slots[i].item, plans[i].enabled)
-		setChecked(slots[i].item, plans[i].checked)
-		slots[i].item.Show()
-	}
-}
-
-func setEnabled(item *systray.MenuItem, enabled bool) {
-	if enabled {
-		item.Enable()
-		return
-	}
-	item.Disable()
-}
-
-// setChecked drives the toolkit's tick to a state rather than toggling it, because
-// a poll redraws the whole menu and a toggle would invert whatever was there.
-func setChecked(item *systray.MenuItem, checked bool) {
-	if checked {
-		item.Check()
-		return
-	}
-	item.Uncheck()
+	m.showProviders(d.providers)
 }
 
 // showProviders labels one slot per provider and hides the rest.
@@ -535,26 +260,4 @@ func (m *menuBar) showProviders(codes []string) {
 			m.slots[i].item.Hide()
 		}
 	}
-}
-
-// The code readers, one per pool. Each is called by watchClicks with m.mu held: the
-// slots are rewritten by a poll on one goroutine while the clicks arrive on another.
-//
-// Every one of them reads through the receiver rather than closing over the slice.
-// The pools are built at full capacity so append never moves them today, but a
-// closure holding its own slice header would read a stale backing array the day one
-// of those bounds was raised past its capacity — a click that then sends the code of
-// whatever the slot used to be.
-func (m *menuBar) modeCode(i int) func() string { return func() string { return m.modes[i].code } }
-
-func (m *menuBar) levelCode(i int) func() string { return func() string { return m.levels[i].code } }
-
-func (m *menuBar) localeCode(i int) func() string {
-	return func() string { return m.locales[i].code }
-}
-
-func (m *menuBar) groupCode(i int) func() string { return func() string { return m.groups[i].code } }
-
-func (m *menuBar) categoryCode(group, cat int) func() string {
-	return func() string { return m.groups[group].cats[cat].code }
 }

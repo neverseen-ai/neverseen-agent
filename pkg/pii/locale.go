@@ -131,3 +131,39 @@ func LocalePatterns(codes []string) []Pattern {
 	}
 	return out
 }
+
+// CategoriesInLocale names what one country's pattern set can find, in catalogue
+// order and with each category named once however many patterns carry it.
+//
+// Derived from the patterns rather than declared beside the locale, for the reason
+// IsCredentialGroup is derived: a second list is a list that comes to disagree with
+// the first, and this one would disagree silently — a notation added to a locale
+// without its category being added here would simply go unmentioned on the page.
+//
+// It is what this country can find, and that is **not** the same as what unticking
+// it would cost. Countries share categories — a postcode, a telephone number and a
+// postal address are national in shape and one category each in the catalogue — so a
+// category two countries carry survives while either is loaded, and a few (a date of
+// birth, an email address) are found with no country loaded at all. The lists
+// therefore overlap, and their lengths do not add up to what a selection has in play:
+// fr, gb and us name 8, 6 and 7 against 16 in play. That is why a surface shows the
+// names from this and never a count — a count is a number a reader adds up and is
+// wrong.
+func CategoriesInLocale(code string) []Category {
+	locale, ok := LocaleByCode(code)
+	if !ok {
+		return nil
+	}
+
+	seen := make(map[Category]bool)
+	var out []Category
+	for _, p := range locale.Patterns() {
+		if seen[p.Category] {
+			continue
+		}
+		seen[p.Category] = true
+		out = append(out, p.Category)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
+}

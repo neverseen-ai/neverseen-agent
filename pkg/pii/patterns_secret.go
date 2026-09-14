@@ -82,8 +82,10 @@ func namedSecretPatterns(cat Category, label, tail string, spellings ...string) 
 var awsSecretKeyPatterns = namedSecretPatterns(CatAWSSecretKey, "AWS secret access key", awsSecretKeyTail,
 	`aws_secret(?:_access_key)?`,
 	`AWS_SECRET(?:_ACCESS_KEY)?`,
+	`Aws_Secret(?:_Access_Key)?`,
 	`secret_access_key`,
 	`SECRET_ACCESS_KEY`,
+	`Secret_Access_Key`,
 )
 
 var (
@@ -882,7 +884,13 @@ func SecretPatterns() []Pattern {
 		{Regex: pemBlockRe, Category: CatPEMKey, Label: "PEM private key, whole block"},
 		{Regex: pemRe, Category: CatPEMKey, Label: "PEM private key header"},
 		{Regex: jwtRe, Category: CatJWT, Label: "JSON Web Token"},
-		{Regex: connStrRe, Group: 1, Category: CatConnStr, Label: "URL carrying credentials"},
+		// The notation names the shape rather than a scheme, because the pattern takes
+		// any of them: `[a-z][a-z0-9+.\-]{1,29}://` is postgres, mysql, mongodb, redis,
+		// amqp and whatever a deployment runs that nobody here has heard of. A label
+		// naming three of them would read as a closed list and be wrong in the
+		// direction that matters — somebody concluding their own scheme is not covered.
+		{Regex: connStrRe, Group: 1, Category: CatConnStr,
+			Label: "URL carrying credentials (scheme://user:password@…)"},
 	}...)
 
 	// The second tier goes here — after the shapes reasoned about one by one,

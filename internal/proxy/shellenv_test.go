@@ -153,8 +153,13 @@ func TestPointAtIsTheLineForOneShell(t *testing.T) {
 		// command" means — a line to paste and press return on.
 		"a provider with a known CLI": {"anthropic",
 			"ANTHROPIC_BASE_URL=http://" + addr + "/anthropic claude"},
-		"a provider whose CLI is the other one": {"openai",
-			"OPENAI_BASE_URL=http://" + addr + "/openai codex"},
+		// An export rather than a command, because the one command anybody would
+		// name here does not read the variable. codex was in this slot and the
+		// pair was wrong — it takes its base URL from ~/.codex/config.toml alone
+		// — so the line it produced went to OpenAI unmasked with no error to
+		// notice. The variable stays because the OpenAI SDKs do read it.
+		"a provider whose variable is standard but whose CLI ignores it": {"openai",
+			"export OPENAI_BASE_URL=http://" + addr + "/openai"},
 		// No agreed variable name, so a guess would be an instruction that does
 		// nothing. The URL is what an operator can actually act on.
 		"a provider with no standard variable": {"gemini", "http://" + addr + "/gemini"},
@@ -174,6 +179,50 @@ func TestPointAtIsTheLineForOneShell(t *testing.T) {
 	}
 }
 
+// The same line for PowerShell, and asserted on every platform rather than only on
+// Windows — the reason internal/service takes the platform as a field.
+//
+// PointAt used to spell the POSIX `export` whatever the platform, and the menu bar
+// that hands this line over is built and installed on Windows. `export NAME=value`
+// in PowerShell is not an error, it is a command that does nothing: the person
+// pastes it, nothing complains, and every request goes to the provider unmasked.
+// That is the failure Shell exists to prevent, reached through the one function
+// that had no Shell to take.
+func TestPointAtForSpellsTheAssignmentTheShellReads(t *testing.T) {
+	const addr = "127.0.0.1:9999"
+
+	for name, tc := range map[string]struct{ code, want string }{
+		"a provider with a known CLI": {"anthropic",
+			`$env:ANTHROPIC_BASE_URL = "http://` + addr + `/anthropic"; claude`},
+		"a provider whose variable is standard but whose CLI ignores it": {"openai",
+			`$env:OPENAI_BASE_URL = "http://` + addr + `/openai"`},
+		// Shell-agnostic: there is no variable to assign, so there is nothing to
+		// spell either way.
+		"a provider with no standard variable": {"gemini", "http://" + addr + "/gemini"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := PointAtFor(tc.code, addr, ShellPowerShell)
+			if got != tc.want {
+				t.Errorf("PointAtFor(%q, powershell) = %q, want %q", tc.code, got, tc.want)
+			}
+			if strings.HasPrefix(got, "export ") {
+				t.Errorf("PointAtFor(%q, powershell) returned a POSIX export: %q", tc.code, got)
+			}
+		})
+	}
+
+	// One line, never the two that a trailing newline from assignment would make:
+	// the callers put this inside their own formatting — a banner line, a clipboard,
+	// a menu tooltip — and a newline in the middle of it breaks all three.
+	for _, shell := range []Shell{ShellPosix, ShellPowerShell} {
+		for _, code := range ToolCodes() {
+			if got := PointAtFor(code, addr, shell); strings.Contains(got, "\n") {
+				t.Errorf("PointAtFor(%q, %s) = %q, which is more than one line", code, shell, got)
+			}
+		}
+	}
+}
+
 // Every code the table offers a line for has a variable behind it.
 //
 // The failure this catches is the one the table exists to prevent: a code listed by
@@ -188,6 +237,28 @@ func TestEveryOfferedToolHasAVariable(t *testing.T) {
 			t.Errorf("the line for %s does not carry %s: %q",
 				code, shellTools[code].Variable, line)
 		}
+	}
+}
+
+// No line pairs a variable with a command that does not read it.
+//
+// codex is the case that paid for this: it sat in the table as the CLI for
+// OPENAI_BASE_URL, and it does not read that variable for its own model traffic —
+// only the `openai_base_url` key in ~/.codex/config.toml reaches its built-in
+// provider. So the line was pasted, believed, and answered by OpenAI directly,
+// with nothing in the terminal to show it. Asserted on the rendered line rather
+// than on the field, because the line is what somebody runs.
+func TestNoLineOffersCodexAVariableItDoesNotRead(t *testing.T) {
+	for _, code := range ToolCodes() {
+		if line := PointAt(code, DefaultListen); strings.Contains(line, " codex") {
+			t.Errorf("the line for %s runs codex against a variable it ignores: %q", code, line)
+		}
+	}
+
+	// And the way that does work is named where the line is handed over, since the
+	// export alone points codex at nothing.
+	if caveat := CaveatFor("openai"); !strings.Contains(caveat, "openai_base_url") {
+		t.Errorf("the openai caveat does not name the key codex actually reads: %q", caveat)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -175,18 +176,41 @@ func TestPolicyOfCarriesCodesNotLabels(t *testing.T) {
 }
 
 // The modes and levels this build offers, served rather than spelled out by each
-// surface. A menu offering a name the agent does not have would fail on a name the
-// menu itself suggested.
+// surface. A page offering a name the agent does not have would fail on a name the
+// page itself suggested.
+//
+// Asked of the payload rather than of the two functions, which is the half that was
+// missing: they agreed with the parser all along while the settings page drew a list
+// of literals of its own, so nothing here noticed that what a surface receives and
+// what the agent takes had stopped being the same question.
 func TestTheOfferedNamesAreOnesTheAgentTakes(t *testing.T) {
-	for _, mode := range SubstitutionModes() {
+	health := (&Server{det: detector.New(detector.Config{})}).healthNow()
+
+	if len(health.Substitutions) == 0 || len(health.SecretLevels) == 0 {
+		t.Fatalf("the payload offers no choice to draw: %v / %v",
+			health.Substitutions, health.SecretLevels)
+	}
+
+	for _, mode := range health.Substitutions {
 		if _, err := detector.ParseSubstitution(mode); err != nil {
 			t.Errorf("this build offers the mode %q and refuses it: %v", mode, err)
 		}
 	}
-	for _, level := range SecretLevels() {
+	for _, level := range health.SecretLevels {
 		if _, err := detector.ParseSecretLevel(level); err != nil {
 			t.Errorf("this build offers the level %q and refuses it: %v", level, err)
 		}
+	}
+
+	// And the live value is one of them, or the page draws a choice with nothing
+	// selected over a setting the agent is actually applying.
+	if !slices.Contains(health.Substitutions, health.Substitution) {
+		t.Errorf("the live mode %q is not among those offered: %v",
+			health.Substitution, health.Substitutions)
+	}
+	if !slices.Contains(health.SecretLevels, health.SecretLevel) {
+		t.Errorf("the live level %q is not among those offered: %v",
+			health.SecretLevel, health.SecretLevels)
 	}
 }
 
@@ -236,4 +260,108 @@ func TestHealthPayloadFitsTheQueryBound(t *testing.T) {
 			"healthMaxBytes in the same commit as the categories that did it", len(body), healthMaxBytes)
 	}
 	t.Logf("health payload %d bytes against a bound of %d", len(body), healthMaxBytes)
+}
+
+// The two headings the settings page draws, served rather than worked out there.
+//
+// A page splitting on a list of group codes of its own would be a second copy of
+// the taxonomy, and the day a family was added it would file it under the wrong
+// heading — quietly, since both headings draw the same switches.
+func TestTheCatalogueSaysWhichFamiliesAreCredentials(t *testing.T) {
+	det := detector.New(detector.Config{Locales: []string{"fr", "gb", "us"}})
+
+	credentials := map[string]bool{}
+	for _, g := range catalogueOf(det) {
+		credentials[g.Code] = g.Credentials
+	}
+
+	for code, want := range map[string]bool{
+		"personal":   false,
+		"company":    false,
+		"technical":  false,
+		"banking":    false,
+		"connection": true,
+		"secrets":    true,
+	} {
+		got, drawn := credentials[code]
+		if !drawn {
+			t.Errorf("the catalogue does not carry the %q family at all", code)
+			continue
+		}
+		if got != want {
+			t.Errorf("family %q: credentials = %v, want %v", code, got, want)
+		}
+	}
+
+	// The one that would be filed wrong by a surface splitting on "can I switch
+	// it": every category in it is locked, and none of them is a credential.
+	for _, g := range catalogueOf(det) {
+		if g.Code != "declared" {
+			continue
+		}
+		if !g.Locked() {
+			t.Error("the declared family is no longer locked, which this case rests on")
+		}
+		if g.Credentials {
+			t.Error("the declared family is filed under the credentials heading, " +
+				"where what a deployment declared sensitive itself does not belong")
+		}
+	}
+}
+
+// Each country is served with what it can find, because a checkbox for a country
+// that is not loaded raises a question nothing else on the payload answers.
+//
+// It also pins the arithmetic the page refuses to do. The lists overlap — several
+// countries carry a postcode, a telephone number and a postal address — so their
+// lengths do not add up to what a selection has in play, which is why a surface
+// shows these names and never a count.
+func TestEachCountryIsServedWithWhatItFinds(t *testing.T) {
+	det := detector.New(detector.Config{Locales: []string{"fr", "gb", "us"}})
+	srv := &Server{det: det}
+	health := srv.healthNow()
+
+	for _, code := range health.AvailableLocales {
+		if len(health.LocaleCategories[code]) == 0 {
+			t.Errorf("locale %q is offered with nothing said about what it finds", code)
+		}
+	}
+
+	// Labels for a reader, not codes to send back. A surface that mixed the two
+	// would send "Social security number (fr)" to a route that knows only SSN_FR.
+	fr := health.LocaleCategories["fr"]
+	if !slices.Contains(fr, pii.Label(pii.CatSIREN)) {
+		t.Errorf("fr does not name SIREN among what it finds: %v", fr)
+	}
+	for _, label := range fr {
+		if strings.ToUpper(label) == label {
+			t.Errorf("fr names %q, which is a code rather than a label", label)
+		}
+	}
+
+	// The overlap, asserted rather than described: a category two countries carry is
+	// named by both, and survives while either is loaded.
+	postcode := pii.Label(pii.CatPostalCode)
+	for _, code := range []string{"fr", "gb", "us"} {
+		if !slices.Contains(health.LocaleCategories[code], postcode) {
+			t.Errorf("%q does not name %q, and this case rests on the overlap", code, postcode)
+		}
+	}
+
+	// So the lengths must not add up to what is in play — the sum a count on the
+	// page would invite a reader to make.
+	sum := 0
+	for _, code := range health.AvailableLocales {
+		sum += len(health.LocaleCategories[code])
+	}
+	inPlay := 0
+	for _, g := range health.Groups {
+		if !g.Credentials {
+			inPlay += len(g.Categories)
+		}
+	}
+	if sum == inPlay {
+		t.Errorf("the per-country lists add up to what is in play (%d), so this test "+
+			"no longer demonstrates why the page shows names rather than a count", sum)
+	}
 }

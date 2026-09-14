@@ -42,8 +42,9 @@ import (
 // CLI is the command people actually run against that variable, where there is one
 // everybody means. It is a narrower question than the variable: a guessed command
 // name is worse than none, because it fails with "command not found" after somebody
-// has already pasted it and believed it. Empty means "no single obvious one", which
-// is not the same as "there is no CLI".
+// has already pasted it and believed it. Empty means "no single obvious one" — and
+// also "a CLI exists but does not read this variable", which is the worse case of
+// the two and the one codex turned out to be. Neither is "there is no CLI".
 //
 // Caveat is what somebody has to know before trusting the line, where the tool does
 // not simply honour the variable. It is here rather than in whatever displays the
@@ -57,14 +58,30 @@ var shellTools = map[string]struct {
 	"anthropic": {Variable: "ANTHROPIC_BASE_URL", CLI: "claude"},
 	"openai": {
 		Variable: "OPENAI_BASE_URL",
-		CLI:      "codex",
-		// Codex reads the variable, but a model_provider in ~/.codex/config.toml and
-		// --profile both win over it — so on a machine already configured for another
-		// provider the line does nothing, silently, and the traffic goes out
-		// unmasked. That failure has no symptom at all from the terminal, which is
-		// exactly why it is worth saying where the line is handed over.
-		Caveat: "codex ignores this if ~/.codex/config.toml sets model_provider, " +
-			"or if you pass --profile",
+		// No CLI, and codex is the reason rather than an omission.
+		//
+		// It used to be here, and the pair was wrong: codex does not read
+		// OPENAI_BASE_URL for its own model traffic at all. Its built-in openai
+		// provider takes its base URL from the `openai_base_url` key in
+		// ~/.codex/config.toml and from nothing else — read in
+		// codex-rs/core/src/config/mod.rs, passed to built_in_model_providers,
+		// and defaulted to api.openai.com when absent (openai/codex@53c542d,
+		// verified 2026-09-12). The variable appears in that tree only in the
+		// credential broker, which hands it to subprocesses codex spawns, and
+		// in tests that preserve an ambient environment.
+		//
+		// So `OPENAI_BASE_URL=… codex` was a line somebody pastes, believes, and
+		// gets no error from, while every request goes to OpenAI unmasked. The
+		// variable itself stays: it is what the OpenAI SDKs read, which is what
+		// the export in a profile is for.
+		//
+		// TODO: the ceiling is that nothing here checks this. A pair is verified
+		// by hand against the tool's source, on the day it is added, and a
+		// vendor can stop reading a variable in a release nobody here notices.
+		// The upgrade path is `make e2e-openai` — one real request per named
+		// tool, asserting the agent saw it.
+		Caveat: "codex does not read this: put openai_base_url = \"<the URL above>\" " +
+			"in ~/.codex/config.toml instead (user-level — the key is ignored in a project file)",
 	},
 }
 
@@ -99,7 +116,19 @@ func CaveatFor(code string) string { return shellTools[code].Caveat }
 // can see whether the agent is running. A line like this in a login file is the
 // Agent Veil failure — every LLM tool on the machine breaking the day the proxy
 // stops. Whatever offers this to a person has to say so at the point of offering.
-func PointAt(code, addr string) string {
+func PointAt(code, addr string) string { return PointAtFor(code, addr, DefaultShell()) }
+
+// PointAtFor is PointAt for a named shell.
+//
+// The pair exists for the reason ShellEnv and ShellEnvFor do, and the bug it
+// closes is the one Shell was introduced to prevent: PointAt used to spell the
+// POSIX `export` whatever the platform, while the menu bar that hands this line
+// over is built and installed on Windows. In PowerShell `export NAME=value` is
+// not an error — it is a command that does nothing — so the person pastes it,
+// sees no complaint, and their traffic goes to the provider unmasked with no
+// symptom anywhere. A guessed spelling and a guessed variable name fail the same
+// way, which is why six providers are printed as comments rather than guessed at.
+func PointAtFor(code, addr string, shell Shell) string {
 	if addr == "" {
 		addr = DefaultListen
 	}
@@ -109,6 +138,13 @@ func PointAt(code, addr string) string {
 	switch {
 	case !standard:
 		return url
+	case tool.CLI != "" && shell == ShellPowerShell:
+		// TODO: on PowerShell the assignment outlives the command — `$env:` is the
+		// process's environment and there is no one-run prefix to spell. The
+		// upgrade is to run the CLI in a child process with the variable set for
+		// that child alone; until then this is the readable equivalent, and it
+		// leaves the variable set for the rest of the session.
+		return fmt.Sprintf("$env:%s = %q; %s", tool.Variable, url, tool.CLI)
 	case tool.CLI != "":
 		// A prefixed assignment rather than an export, where the command is known:
 		// it applies to that one run and leaves the shell as it was. It is also
@@ -117,7 +153,10 @@ func PointAt(code, addr string) string {
 		// what reads it.
 		return tool.Variable + "=" + url + " " + tool.CLI
 	default:
-		return "export " + tool.Variable + "=" + url
+		// Through assignment, the one owner of how a variable is spelled, so this
+		// cannot drift from what ShellEnvFor writes. It writes a whole line; this
+		// returns one for a caller that does its own formatting.
+		return strings.TrimSuffix(shell.assignment(tool.Variable, url), "\n")
 	}
 }
 

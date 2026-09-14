@@ -177,11 +177,18 @@ func (s *Server) handleUnmask(w http.ResponseWriter, r *http.Request) {
 	session := sessionOf(r)
 	known := s.vault.Load(session)
 
-	// nil rather than the audit console's callback, and that is structural rather
-	// than an omission: -a and -v record the proxy's exchanges, and a trace of this
-	// route would put originals on disk through a path the invariant never
-	// considered. See TestExtensionRoutesAreNotAudited.
-	expanded := detector.UnmaskSeen(req.Tail+req.Text, known, nil)
+	// Held back before anything is expanded, in that order, exactly as the
+	// streaming rehydrator does it — and for the same reason. Expanded first, a
+	// chunk ending on a stand-in that is the prefix of another is replaced there
+	// and then, with the wrong original, and the tail handed back to the client is
+	// sliced out of already-restored text: a fragment of a real original travels
+	// back to the page, is prepended to the next chunk and expanded again. This
+	// route exists so that a value at the very end of an answer is not truncated on
+	// screen, and in the other order it was the mechanism doing the truncating.
+	body := req.Tail + req.Text
+
+	// One prepared mapping for the two questions this route asks of it.
+	expander := detector.NewExpander(known)
 
 	tail := ""
 	if !req.Final {
@@ -189,12 +196,16 @@ func (s *Server) handleUnmask(w http.ResponseWriter, r *http.Request) {
 		// function: a stand-in splits across two chunks exactly as a token does, and a
 		// caller answering that question for itself in JavaScript would be a second
 		// answer to it.
-		if n := detector.TailLen(expanded, known); n > 0 {
-			tail, expanded = expanded[len(expanded)-n:], expanded[:len(expanded)-n]
+		if n := expander.TailLen(body); n > 0 {
+			tail, body = body[len(body)-n:], body[:len(body)-n]
 		}
 	}
 
-	writeJSON(w, unmaskReply{Expanded: expanded, Tail: tail})
+	// nil rather than the audit console's callback, and that is structural rather
+	// than an omission: -a and -v record the proxy's exchanges, and a trace of this
+	// route would put originals on disk through a path the invariant never
+	// considered. See TestExtensionRoutesAreNotAudited.
+	writeJSON(w, unmaskReply{Expanded: expander.Unmask(body, nil), Tail: tail})
 }
 
 // fromLoopback reports whether a request came from this machine.

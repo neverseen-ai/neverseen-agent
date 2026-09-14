@@ -21,9 +21,19 @@
 // so the part that can be is kept where a test can reach it — the alternative is a
 // feature whose behaviour has never run anywhere but a person's screen.
 //
-// That is what the files are: this one turns a status into a display, plan.go says
-// what each menu entry becomes and what a click on it means, desktop.go is the two
-// things asked of the platform, and systray.go applies the results.
+// That is what the files are: this one turns a status into a display, desktop.go is
+// the two things asked of the platform, and systray.go applies the results.
+//
+// # The menu says, the page configures
+//
+// It used to do both, and the second half never fitted. fyne.io/systray gives titles
+// and ticks: no radio group, no mixed tick, no room for the sentence that says what a
+// choice costs — so every one of those absences had been answered by writing the
+// sentence into an entry's own title, and a menu bar of sixty-character rows is a menu
+// nobody reads. What is configured is configured on the agent's own /settings page,
+// which has the room this never had. The menu is back to the one thing an icon in the
+// bar can do that nothing else can: say, without being clicked, whether the traffic is
+// being masked.
 package tray
 
 import (
@@ -79,99 +89,15 @@ type display struct {
 	lines     []string
 	providers []string
 
-	// substitution is the live mode, and modes are every mode this build offers, so
-	// the menu can draw a choice rather than a state.
+	// The three settings the menu no longer draws, kept because it still writes
+	// once: "Mask everything again" replaces the whole state, and a request that
+	// left these out would switch them off by omission.
+	//
+	// Compared like everything else, so a change made on the settings page or by
+	// `neverseen mask` still redraws this — see same.
 	substitution string
-
-	// secretLevel is the live level, and levels are every level this build offers.
 	secretLevel  string
-	secretLevels []string
-	modes        []string
-
-	// locales is one row per locale the build has, with whether it is loaded.
-	locales []localeRow
-
-	// switches is the catalogue as the menu draws it: every group in the order the
-	// agent listed them, each with its categories. Built from what the agent
-	// serves rather than from pkg/pii, so a menu cannot go on offering a switch a
-	// rebuilt agent stopped honouring.
-	switches []switchGroup
-}
-
-// localeRow is one country pattern set the build has, and whether it is loaded.
-type localeRow struct {
-	code string
-	on   bool
-}
-
-// switchGroup is one family of categories in the menu.
-type switchGroup struct {
-	code  string
-	label string
-
-	// off is whether every switchable member is switched off, which is what the
-	// group's own tick shows. The toolkit has no mixed state — Check and Uncheck
-	// and nothing between — so a partly-off group says so in its title instead;
-	// see title.
-	off bool
-
-	// locked is whether nothing in this group may be switched. A locked group is
-	// one dim line rather than a submenu: twenty API keys nobody may switch off is
-	// twenty rows of nothing to do.
-	locked bool
-
-	members []switchCategory
-}
-
-// switchCategory is one switch.
-type switchCategory struct {
-	code   string
-	label  string
-	off    bool
-	locked bool
-}
-
-// title is what the group's menu entry says.
-//
-// The count of what is off lives here because fyne.io/systray offers Check and
-// Uncheck and nothing between: a group with two of its nine categories off cannot
-// show a third tick state, and a group drawn simply unticked would say "nothing
-// here is masked" about seven categories that are.
-func (g switchGroup) title() string {
-	switch {
-	case g.locked:
-		return fmt.Sprintf("%s — %d, locked", g.label, len(g.members))
-	case g.off:
-		return fmt.Sprintf("%s — all %d off", g.label, len(g.members))
-	}
-
-	off := 0
-	for _, m := range g.members {
-		if m.off {
-			off++
-		}
-	}
-	if off > 0 {
-		return fmt.Sprintf("%s — %d of %d off", g.label, off, len(g.members))
-	}
-	return g.label
-}
-
-// offCodes lists every category currently switched off, across every group.
-//
-// The whole set, because that is what the agent is sent: a toggle would be a
-// read-modify-write, and two surfaces looking at one agent can interleave the two
-// halves into a set neither asked for.
-func (d display) offCodes() []string {
-	var out []string
-	for _, g := range d.switches {
-		for _, m := range g.members {
-			if m.off {
-				out = append(out, m.code)
-			}
-		}
-	}
-	return out
+	locales      []string
 }
 
 // view is what the menu bar can be told. The real one wraps fyne.io/systray; a
@@ -257,123 +183,28 @@ func render(s proxy.Status) display {
 		// handing out lines that lead nowhere.
 		providers:    s.Providers,
 		substitution: s.Substitution,
-		modes:        proxy.SubstitutionModes(),
 		secretLevel:  s.SecretLevel,
-		secretLevels: proxy.SecretLevels(),
-		locales:      localesOf(s),
-		switches:     switchesOf(s),
+		locales:      s.Locales,
 	}
 }
 
-// localesOf is one row per locale the build has, ticked when it is loaded.
+// maskEverything is the state to send when "Mask everything again" is clicked.
 //
-// Every locale the build has rather than only the loaded ones, because the menu is
-// offering a choice: a list of what is already on has nothing to turn on. Drawn from
-// what the agent published so the menu cannot suggest a locale the agent would
-// refuse.
-func localesOf(s proxy.Status) []localeRow {
-	if !s.Answering {
-		return nil
-	}
-
-	on := make(map[string]bool, len(s.Locales))
-	for _, code := range s.Locales {
-		on[code] = true
-	}
-
-	out := make([]localeRow, 0, len(s.AvailableLocales))
-	for _, code := range s.AvailableLocales {
-		out = append(out, localeRow{code: code, on: on[code]})
-	}
-	return out
-}
-
-// policyWith is the whole state to send, with one part replaced.
+// The whole state with the switched-off set emptied, because PUT /policy replaces
+// rather than patches: a request carrying only the empty set would take the mode,
+// the locales and the secret level down with it.
 //
-// Built from what the menu is currently drawing, which is what the agent last
-// reported: the route replaces the state rather than patching it, so a click has to
-// carry the other two parts unchanged.
-func (d display) policyWith(off []string, substitution string, locales []string, level string) proxy.Policy {
-	want := proxy.Policy{Off: d.offCodes(), Substitution: d.substitution, SecretLevel: d.secretLevel}
-	for _, l := range d.locales {
-		if l.on {
-			want.Locales = append(want.Locales, l.code)
-		}
+// The other three parts come from what the agent last reported, which is what this
+// menu is currently drawing. It is the one write left here, and the only one that
+// needs no reading of the catalogue at all — "everything" is the empty set whatever
+// the catalogue holds.
+func (d display) maskEverything() proxy.Policy {
+	return proxy.Policy{
+		Off:          []string{},
+		Substitution: d.substitution,
+		Locales:      d.locales,
+		SecretLevel:  d.secretLevel,
 	}
-
-	if off != nil {
-		want.Off = off
-	}
-	if substitution != "" {
-		want.Substitution = substitution
-	}
-	if locales != nil {
-		want.Locales = locales
-	}
-	if level != "" {
-		want.SecretLevel = level
-	}
-	return want
-}
-
-// withLocaleToggled is the locale selection to send when one row is clicked.
-func (d display) withLocaleToggled(code string) []string {
-	var out []string
-	for _, l := range d.locales {
-		switch {
-		case l.code == code && !l.on:
-			out = append(out, l.code)
-		case l.code == code:
-			// Left out: this is the one being switched off.
-		case l.on:
-			out = append(out, l.code)
-		}
-	}
-	// Never nil, so "no locale at all" is a selection the agent is actually sent
-	// rather than a nil the caller might read as "no change".
-	if out == nil {
-		out = []string{}
-	}
-	return out
-}
-
-// switchesOf turns what the agent published into the rows the menu draws.
-//
-// A locked group keeps its members even though no row is drawn for them, because
-// the count in its title is the honest thing to show: "Secrets and keys — 20,
-// locked" says what is protected, where an empty line would look like a group the
-// agent had stopped having.
-func switchesOf(s proxy.Status) []switchGroup {
-	if !s.Answering {
-		// Nothing to offer about an agent that is not there, and offering it anyway
-		// would be a menu whose clicks reach nothing.
-		return nil
-	}
-
-	var out []switchGroup
-	for _, g := range s.Groups {
-		group := switchGroup{code: g.Code, label: g.Label, locked: true, off: true}
-
-		for _, c := range g.Categories {
-			group.members = append(group.members, switchCategory{
-				code: c.Code, label: c.Label, off: c.Off, locked: c.Locked,
-			})
-			if !c.Locked {
-				group.locked = false
-				if !c.Off {
-					group.off = false
-				}
-			}
-		}
-
-		// A group of nothing but locked categories is locked, and its "off" flag is
-		// meaningless — cleared so a locked group never reads as switched off.
-		if group.locked {
-			group.off = false
-		}
-		out = append(out, group)
-	}
-	return out
 }
 
 func plural(n int, one, many string) string {
@@ -423,14 +254,17 @@ func watch(ctx context.Context, v view, ask func() proxy.Status, every time.Dura
 //
 // The whole value, rather than the four fields somebody thought of. The
 // field-by-field version carried a promise that a fifth thing to show could not be
-// added without this being updated with it, and six were added past it: the
-// substitution mode, the secret level, the two lists of choices, the locales and
-// the switches. None of them was compared, and what that cost is a menu that lies.
-// No line of the menu carries the secret level, so `neverseen mask
-// --secret-level strong` changed nothing this looked at and the ticked row stayed
-// on the old level until something else moved; the locales are named in a state
-// line only while no category is switched off, so a locale change on an agent in
-// the partial state was invisible in exactly the same way.
+// added without this being updated with it, and six were added past it. None of them
+// was compared, and what that cost is a menu that lies: no line of the menu carries
+// the secret level, so `neverseen mask --secret-level strong` changed nothing this
+// looked at and the menu went on writing the old level back in its next request;
+// the locales are named in a state line only while no category is switched off, so a
+// locale change on an agent in the partial state was invisible in the same way.
+//
+// The three settings the menu stopped drawing are still compared for that second
+// reason. They are not on screen, but they are in every request "Mask everything
+// again" sends, and a stale copy of them is a click that quietly reverts what the
+// settings page just changed.
 //
 // A promise in a comment is not what keeps a comparison current — comparing the
 // value is. DeepEqual reads the icons by content as well, which is the property

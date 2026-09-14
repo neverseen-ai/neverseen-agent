@@ -131,3 +131,33 @@ func Switchable(cat Category) bool {
 	// decision somebody made explicitly.
 	return !info.Secret && cat != CatCustom
 }
+
+// IsCredentialGroup reports whether a group holds nothing but credentials.
+//
+// The taxonomy fact behind the two headings a surface shows: personal data on one
+// side, credentials on the other. Derived from the categories rather than declared
+// on the group, so a family added to the catalogue lands on the right side without
+// anybody remembering a second registry — and so the two answers cannot drift into
+// disagreeing about the same family.
+//
+// Asked of the whole family rather than of the categories a detector currently has
+// in play: which side of the page a family belongs on is a fact about the
+// catalogue, and one that moved when a locale was unloaded would move the heading
+// under somebody's cursor.
+//
+// It is deliberately not the same question as Switchable. A group can be entirely
+// locked without being credentials — GroupDeclared is what a deployment declared
+// sensitive itself, which is personal data that happens to be unswitchable — and a
+// page splitting on "can I switch it" would file it under the API keys.
+func IsCredentialGroup(g Group) bool {
+	cats := CategoriesInGroup(g)
+	if len(cats) == 0 {
+		return false
+	}
+	for _, cat := range cats {
+		if !IsSecret(cat) {
+			return false
+		}
+	}
+	return true
+}

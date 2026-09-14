@@ -84,7 +84,14 @@ export function baseUrlProblem(value: string): string | null {
   } catch {
     return 'That is not an address.';
   }
-  if (url.protocol !== 'http:' || !ACCEPTED_HOSTS.includes(url.hostname)) {
+  // The port is checked as well as named, and it is the check rather than the
+  // message that was wrong: `http://127.0.0.1` parses, names an accepted host, and
+  // was accepted — so the key then went to port 80, which is the one thing this
+  // function exists to prevent, while the sentence the person read said "with a
+  // port". A URL reports no port for the scheme's default, so an explicit `:80` is
+  // refused here too; that is the safe direction, since nothing puts this agent
+  // there.
+  if (url.protocol !== 'http:' || !ACCEPTED_HOSTS.includes(url.hostname) || url.port === '') {
     return (
       'The agent address must be http://127.0.0.1 with a port. The control key is ' +
       'sent to whatever answers there, and this extension may reach nothing else — ' +

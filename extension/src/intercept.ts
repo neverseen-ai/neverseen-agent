@@ -109,13 +109,21 @@ export function wrapFetch(original: typeof fetch, site: Site, send: Send): typeo
 
     const texts = site.texts(body);
     if (texts.length === 0) {
-      // A send carrying none of the fields this knows to mask is refused, not
-      // forwarded. It is a send — the site's own path says so — so what it carries
-      // reaches the model, and a body shaped differently from what the adapter
-      // expects is the site having moved its prompt to a field this does not read.
-      // Forwarded, that is the extension masking nothing while looking installed.
-      throw block(send, 'refused', 'send',
-        'Neverseen: your message was not sent — it carries no field this extension knows how to mask.');
+      if (!site.resendsStoredTurn(url)) {
+        // A send carrying none of the fields this knows to mask is refused, not
+        // forwarded. It is a send — the site's own path says so — so what it carries
+        // reaches the model, and a body shaped differently from what the adapter
+        // expects is the site having moved its prompt to a field this does not read.
+        // Forwarded, that is the extension masking nothing while looking installed.
+        throw block(send, 'refused', 'send',
+          'Neverseen: your message was not sent — it carries no field this extension knows how to mask.');
+      }
+      // A retry re-runs a turn the site already holds. Nothing typed travels, so
+      // there is nothing to mask — but the answer still arrives carrying the
+      // stand-ins that turn was masked with, so the inbound half runs unchanged.
+      // Forwarded through rebuild rather than the original input: bodyText has
+      // already read the body off a Request, and a Request cannot be read twice.
+      return restore(await original(rebuild(input, init, raw)), site, send);
     }
 
     let masked: MaskAnswer;

@@ -129,6 +129,55 @@ func TestMaskReusesASessionsExistingTokens(t *testing.T) {
 	}
 }
 
+// A conversation replays its whole history every turn, and a provider bills less
+// and answers faster when a request's prefix repeats the previous one's. So the
+// stability asserted above has to hold at the scale of a body, not just of a
+// value: re-masking the earlier turn on the next one must come out byte for byte
+// the same, and the values new to the later turn must take indices after it
+// rather than renumber anything inside it.
+//
+// The single-value half is TestMaskReusesASessionsExistingTokens. This is the
+// half the cached prefix actually rests on — see the request-path invariants in
+// CLAUDE.md. Both substitution modes, because a stand-in is rendered from the
+// index and a token is not, so they can fail apart.
+func TestMaskRepeatsTheEarlierTurnByteForByte(t *testing.T) {
+	const (
+		firstTurn = "write to claire@example.fr, copy ab@x.fr, and call claire@example.fr back\n"
+		added     = "then add cd@y.fr and copy ab@x.fr once more"
+	)
+
+	for _, mode := range []Substitution{SubstitutionToken, SubstitutionFake} {
+		t.Run(mode.String(), func(t *testing.T) {
+			d := New(Config{Locales: []string{"en"}, Substitution: mode})
+
+			first := d.NewPass(nil)
+			maskedFirst, _ := d.Mask(firstTurn, first)
+			stored := first.Minted()
+			if len(stored) == 0 {
+				t.Fatal("the first turn masked nothing, so the test asserts nothing")
+			}
+
+			// The second turn is the first one replayed with more after it, which
+			// is the shape of every turn but the first.
+			second := d.NewPass(stored)
+			maskedSecond, _ := d.Mask(firstTurn+added, second)
+
+			if !strings.HasPrefix(maskedSecond, maskedFirst) {
+				t.Errorf("the second turn rewrote the first one, forfeiting the cached prefix from that point on\n first:  %q\n second: %q",
+					maskedFirst, maskedSecond)
+			}
+			if len(second.Minted()) == 0 {
+				t.Error("the second turn minted nothing, so it never exercised minting beside a seeded mapping")
+			}
+			for masked, original := range stored {
+				if again, ok := second.Minted()[masked]; ok {
+					t.Errorf("%q was minted again on the second turn, for %q then %q", masked, original, again)
+				}
+			}
+		})
+	}
+}
+
 func TestParseSubstitution(t *testing.T) {
 	tests := []struct {
 		spec    string

@@ -227,8 +227,49 @@ func UnmaskSeen(text string, known map[string]string, seen func(masked, original
 	if len(known) == 0 {
 		return text
 	}
+	return NewExpander(known).Unmask(text, seen)
+}
 
-	standIns := standInsOf(known)
+// Expander is a session's mapping with everything the walk needs derived from it
+// once.
+//
+// The derivations are a pure function of the mapping, and the mapping is fixed for
+// the life of a stream — but UnmaskSeen and TailLen each rebuilt them on every
+// call: a sorted slice, and a first-byte table, per string visited, seven or so per
+// SSE event, thousands of events per answer. Measured over two thousand events, a
+// three-hundred-value fake session spent 165ms and allocated 100MB rehydrating text
+// a ten-value session did in 15ms — the cost grew with the mapping while the work
+// did not. Built once and passed down: 27ms and 7.5MB for the same three hundred,
+// and the allocation count is now the same at ten values as at three hundred, which
+// is the property that was missing rather than the speed.
+//
+// The one-shot functions stay, and delegate: a caller with one document to expand
+// has nothing to amortise, and two implementations of "what may be expanded" is the
+// duplication UnmaskSeen exists to avoid.
+type Expander struct {
+	known    map[string]string
+	standIns []string
+	// starts is the set of bytes a stand-in can begin with, so the walk skips a
+	// position without consulting the list at all.
+	starts [256]bool
+}
+
+// NewExpander prepares known for repeated expansion.
+func NewExpander(known map[string]string) *Expander {
+	e := &Expander{known: known, standIns: standInsOf(known)}
+	for _, standIn := range e.standIns {
+		e.starts[standIn[0]] = true
+	}
+	return e
+}
+
+// Unmask is UnmaskSeen against a prepared mapping.
+func (e *Expander) Unmask(text string, seen func(masked, original string)) string {
+	known, standIns := e.known, e.standIns
+	if len(known) == 0 {
+		return text
+	}
+
 	if len(standIns) == 0 {
 		// Token mode, which is every session that has minted nothing but tokens:
 		// one regex scan that answers "is there anything here at all", and the
@@ -247,10 +288,7 @@ func UnmaskSeen(text string, known map[string]string, seen func(masked, original
 	// postcode inside the fake address it belongs to — and replacing them in turn
 	// expands the shorter one inside text that has already been expanded, which
 	// puts a value inside a value.
-	var starts [256]bool
-	for _, standIn := range standIns {
-		starts[standIn[0]] = true
-	}
+	starts := e.starts
 
 	var b strings.Builder
 	b.Grow(len(text))
@@ -302,11 +340,35 @@ func report(known map[string]string, masked string, seen func(masked, original s
 // stand-in the model echoed is split across two of them exactly as a token is.
 // Answering only for tokens is what left fake mode restoring nothing in a
 // streamed answer while a buffered one round-tripped.
+// A tail never cuts into a stand-in that is already complete at the end of the
+// text, and that guard is the difference between holding a value back and
+// destroying it. Held back only as a prefix, "192.0.2.11" was split after its
+// ninth character — because "1" is a one-character prefix of "192.0.2.1", a
+// stand-in the same session mints — so the expander saw "192.0.2.1", handed the
+// caller the wrong original, and the orphaned digit was released into the next
+// event on top. Holding the whole match instead costs nothing: it is released
+// expanded when its block closes.
 func TailLen(text string, known map[string]string) int {
+	return NewExpander(known).TailLen(text)
+}
+
+// TailLen is the package-level TailLen against a prepared mapping.
+func (e *Expander) TailLen(text string) int {
 	tail := pii.TokenTailLen(text)
-	for _, standIn := range standInsOf(known) {
+	standIns := e.standIns
+
+	// The longest stand-in the text already ends on, and therefore the floor for
+	// any tail: a shorter one would start inside it.
+	whole := 0
+	for _, standIn := range standIns {
+		if len(standIn) > whole && strings.HasSuffix(text, standIn) {
+			whole = len(standIn)
+		}
+	}
+
+	for _, standIn := range standIns {
 		limit := min(len(standIn)-1, len(text))
-		for k := limit; k > tail; k-- {
+		for k := limit; k > tail && k >= whole; k-- {
 			if strings.HasSuffix(text, standIn[:k]) {
 				tail = k
 				break

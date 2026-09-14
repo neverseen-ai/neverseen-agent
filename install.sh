@@ -24,14 +24,23 @@
 # otherwise the latest release, downloaded and verified. The third is what somebody
 # piping this script from the web gets, and it used to be an error message.
 #
-# Usage:
-#   ./install.sh [--shell]     install, start, and optionally wire the shell
-#   ./install.sh --status      is it running, and what is it applying
-#   ./install.sh --restart     restart it (after editing the config)
-#   ./install.sh --logs        follow its log
-#   ./install.sh --uninstall   stop it, remove the services, undo the shell line
+# The usage is in usage() below rather than in this comment, because --help has to
+# answer when this script is piped and there is no file to read it out of.
 
 set -eu
+
+# What every invocation can print, on disk or piped. The rationale above is the
+# other half of --help and is only available when $0 is a file.
+usage() {
+    cat <<'EOF'
+Usage:
+  ./install.sh [--shell]     install, start, and optionally wire the shell
+  ./install.sh --status      is it running, and what is it applying
+  ./install.sh --restart     restart it (after editing the config)
+  ./install.sh --logs        follow its log
+  ./install.sh --uninstall   stop it, remove the services, undo the shell line
+EOF
+}
 
 # An interrupted download must not leave an unpacked release behind. An `if`
 # rather than `[ … ] && …`: with set -e a false test as the last command of a
@@ -39,6 +48,7 @@ set -eu
 # script that had succeeded.
 cleanup() {
     if [ -n "$TEMP_DIR" ]; then rm -rf "$TEMP_DIR"; fi
+    if [ -n "$STAGED" ]; then rm -f "$STAGED"; fi
 }
 trap cleanup EXIT
 
@@ -82,6 +92,9 @@ else
     SOURCE_DIR=.
 fi
 TEMP_DIR=""
+# The name a binary is written under before it is renamed into place. Held in a
+# variable so an interrupted install does not leave it beside the real one.
+STAGED=""
 
 say()  { printf '%s\n' "$*"; }
 warn() { printf '%s\n' "$*" >&2; }
@@ -95,6 +108,13 @@ platform() {
     esac
 }
 
+# Asked once, here, and not at each place that wants it. Called as a command
+# substitution the refusal above exits the *subshell*: an unsupported system
+# printed the message and carried on installing, because the test around it simply
+# read an empty string. In an assignment, set -e takes the substitution's status
+# and the script stops where it says it does.
+PLATFORM=$(platform)
+
 # ---------------------------------------------------------------- the binary
 
 # latest_tag reads the tag off the redirect on /releases/latest.
@@ -104,10 +124,16 @@ platform() {
 # else — the installer would then fail on a rate limit, which is not a sentence
 # anybody can act on. Set NEVERSEEN_VERSION to pin a tag instead, which is also
 # the way back to an older release.
+#
+# `sed -n …p` and not a bare substitution: a repository with no published release
+# redirects to /releases rather than to /releases/tag/vX.Y.Z, the pattern then
+# matches nothing, and sed prints the Location line unchanged. That non-empty
+# string walked straight past the emptiness check its caller makes and went into a
+# download URL — the confusing failure that check exists to replace.
 latest_tag() {
     curl --proto '=https' --tlsv1.2 -fsSI "https://github.com/$REPO/releases/latest" \
         | grep -i '^location:' \
-        | sed -E 's|.*/tag/([^[:space:]]+).*|\1|' \
+        | sed -n -E 's|.*/tag/([^[:space:]]+).*|\1|p' \
         | tr -d '\r'
 }
 
@@ -130,7 +156,10 @@ verify_checksum() {
 
     expected=$(grep -E "[[:space:]]\*?$3\$" "$2" | cut -d' ' -f1)
     [ -n "$expected" ] || die "$3 is not listed in checksums.txt; refusing to install it"
-    [ "$expected" = "$actual" ] || die "checksum mismatch for $3: expected $expected, got $actual"
+    # The likeliest cause by far is a proxy that served a cached archive from a
+    # previous release, so the message names it: the alternative reading of a
+    # checksum mismatch is alarming and almost never the right one.
+    [ "$expected" = "$actual" ] || die "checksum mismatch for $3: expected $expected, got $actual (a caching proxy may have served a stale archive; retry, or set NEVERSEEN_VERSION to pin a tag)"
     say "Checksum verified."
 }
 
@@ -155,7 +184,7 @@ fetch_release() {
 
     # goreleaser names an archive after the version without its leading v, while
     # the URL it sits at carries the tag with it.
-    archive="${BIN_NAME}_${tag#v}_$(platform)_${arch}.tar.gz"
+    archive="${BIN_NAME}_${tag#v}_${PLATFORM}_${arch}.tar.gz"
     base="https://github.com/$REPO/releases/download/$tag"
 
     TEMP_DIR=$(mktemp -d)
@@ -182,6 +211,21 @@ fetch_release() {
     SOURCE_DIR="$TEMP_DIR"
 }
 
+# claim_the_name refuses to install behind another neverseen.
+#
+# Two binaries answering to one name is worse here than it is for an ordinary
+# tool: this one is pointed at by ANTHROPIC_BASE_URL and forwards the caller's
+# credential, so `neverseen status` reporting a healthy agent while a different
+# build is the one on the PATH is a masking failure nobody would look for. Asked
+# before anything is written, so the refusal costs nothing.
+claim_the_name() {
+    existing=$(command -v "$BIN_NAME" 2>/dev/null || true)
+    [ -n "$existing" ] || return 0
+    [ "$existing" != "$BIN_DIR/$BIN_NAME" ] || return 0
+    die "a different $BIN_NAME already owns the name, at $existing.
+  Remove it, or set NEVERSEEN_PREFIX to the prefix it lives under, so one binary owns \`$BIN_NAME\`."
+}
+
 install_binary() {
     mkdir -p "$BIN_DIR"
 
@@ -191,10 +235,17 @@ install_binary() {
     # Built from inside SOURCE_DIR, in a subshell: go needs the module's own
     # directory as its working one, and so does the git describe that stamps the
     # version — run from elsewhere it described whatever repository was there.
+    # Written under a temporary name in the destination directory and renamed,
+    # never straight over the file that is there: on an upgrade that file is the
+    # running agent, and a half-written executable is a crash rather than an old
+    # version. A rename within one directory is atomic, and the process already
+    # running keeps the binary it started from until the service is restarted.
+    STAGED="$BIN_DIR/$BIN_NAME.install.$$"
+
     if [ -f "$SOURCE_DIR/go.mod" ] && command -v go >/dev/null 2>&1; then
         say "Building from source…"
         (cd "$SOURCE_DIR" && go build -ldflags "-s -w -X main.version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)" \
-            -o "$BIN_DIR/$BIN_NAME" ./cmd/neverseen)
+            -o "$STAGED" ./cmd/neverseen)
     else
         # No toolchain and no archive beside this script: fetch one. This is the
         # ordinary case for anybody who did not clone the repository, and it used
@@ -203,29 +254,38 @@ install_binary() {
             fetch_release
         fi
         say "Installing the released binary…"
-        cp "$SOURCE_DIR/$BIN_NAME" "$BIN_DIR/$BIN_NAME"
+        cp "$SOURCE_DIR/$BIN_NAME" "$STAGED"
     fi
 
-    chmod 0755 "$BIN_DIR/$BIN_NAME"
+    chmod 0755 "$STAGED"
+    mv -f "$STAGED" "$BIN_DIR/$BIN_NAME"
+    STAGED=""
     say "Installed $BIN_DIR/$BIN_NAME"
 
     # The icon, on macOS only, and never a reason to fail. If it cannot be built or
     # is not in the archive, the agent is installed and masking anyway — the icon
     # is how somebody sees that, not part of it.
-    if [ "$(platform)" = darwin ]; then
+    if [ "$PLATFORM" = darwin ]; then
+        STAGED="$BIN_DIR/$TRAY_NAME.install.$$"
         if [ -f "$SOURCE_DIR/go.mod" ] && command -v go >/dev/null 2>&1; then
             if (cd "$SOURCE_DIR" && go build -ldflags "-s -w -X main.version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)" \
-                -o "$BIN_DIR/$TRAY_NAME" ./cmd/neverseen-tray 2>/dev/null); then
-                chmod 0755 "$BIN_DIR/$TRAY_NAME"
+                -o "$STAGED" ./cmd/neverseen-tray 2>/dev/null); then
+                chmod 0755 "$STAGED"
+                mv -f "$STAGED" "$BIN_DIR/$TRAY_NAME"
                 say "Installed $BIN_DIR/$TRAY_NAME"
             else
+                # A failed build can still have written something under the
+                # staged name, and it must not be left beside the real icon.
+                rm -f "$STAGED"
                 say "Could not build $TRAY_NAME (it needs a C toolchain); skipping the menu bar icon"
             fi
         elif [ -f "$SOURCE_DIR/$TRAY_NAME" ]; then
-            cp "$SOURCE_DIR/$TRAY_NAME" "$BIN_DIR/$TRAY_NAME"
-            chmod 0755 "$BIN_DIR/$TRAY_NAME"
+            cp "$SOURCE_DIR/$TRAY_NAME" "$STAGED"
+            chmod 0755 "$STAGED"
+            mv -f "$STAGED" "$BIN_DIR/$TRAY_NAME"
             say "Installed $BIN_DIR/$TRAY_NAME"
         fi
+        STAGED=""
     fi
 
     case ":$PATH:" in
@@ -316,12 +376,26 @@ unwire_shell() {
         # Written to a temporary file and moved, so an interrupted uninstall
         # cannot leave a truncated login file behind.
         # cp -p first so the copy carries the profile's own mode, which is the
-        # portable spelling of it. `|| :` because grep -v exits 1 when it selects
-        # nothing — a profile holding only that line — and under set -e that
+        # portable spelling of it.
+        #
+        # The exit status is read rather than discarded, and the two non-zero ones
+        # mean opposite things. 1 is grep selecting nothing — a profile holding only
+        # that line — and the empty result is correct; under set -e that status alone
         # skipped the move and left the temporary file beside an untouched profile.
+        # 2 and above is grep failing: an unreadable file, an I/O error. The
+        # redirection has already truncated the temporary file by then, so moving it
+        # on a failure installs an empty file over the profile — `|| :` swallowed both
+        # statuses and did exactly that.
         tmp="$profile.neverseen.$$"
         cp -p "$profile" "$tmp"
-        grep -vF 'neverseen env' "$profile" > "$tmp" || :
+        rc=0
+        grep -vF 'neverseen env' "$profile" > "$tmp" || rc=$?
+        if [ "$rc" -gt 1 ]; then
+            rm -f "$tmp"
+            warn "Could not read $profile (grep exited $rc); left it untouched."
+            warn "Remove the 'neverseen env' line by hand."
+            continue
+        fi
         mv "$tmp" "$profile"
         say "Removed the export line from $profile"
     done
@@ -330,6 +404,7 @@ unwire_shell() {
 # ---------------------------------------------------------------- commands
 
 do_install() {
+    claim_the_name
     install_binary
     write_config
 
@@ -378,7 +453,7 @@ verify_running() {
 
 do_status() {
     say "Service:"
-    case "$(platform)" in
+    case "$PLATFORM" in
         darwin)
             launchctl list | grep -F "$SERVICE_LABEL" || say "  not loaded"
             # An `if`, not `[ … ] && …`: with set -e a false test at the end of this
@@ -411,7 +486,7 @@ do_restart() {
 }
 
 do_logs() {
-    case "$(platform)" in
+    case "$PLATFORM" in
         darwin) [ -f "$LOG_FILE" ] || die "no log at $LOG_FILE yet"; tail -f "$LOG_FILE" ;;
         linux)  journalctl --user -u neverseen.service -f ;;
     esac
@@ -444,6 +519,12 @@ case "${1:---install}" in
     --restart)   do_restart ;;
     --logs)      do_logs ;;
     --uninstall) do_uninstall ;;
-    -h|--help)   sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//' ;;
+    # Piped from the web, $0 is the shell's own name and the rationale at the head
+    # of this script is not on disk to be read — sed then failed on a file called
+    # `sh`, in the one invocation where printing something is the whole request.
+    -h|--help)
+        if [ -f "$0" ]; then sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'; fi
+        usage
+        ;;
     *)           die "unknown option $1 (try --help)" ;;
 esac

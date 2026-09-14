@@ -66,9 +66,19 @@ func main() {
 	// the icon polling the default address for an agent that was never on it.
 	// Not `cmd/` reading a setting, for the reason cmd/neverseen gives: it names no
 	// variable and asks for no value.
+	//
+	// An unreadable file is reported and carried past, never fatal. The parser
+	// skips a line it cannot read, so what reaches here is the file itself being
+	// unopenable — the wrong owner after an install under sudo is how that happens.
+	// The icon is launched by launchd or a logon task, so this stderr reaches
+	// nobody: exiting here removed the menu bar icon altogether, with no message
+	// anywhere. And the moment it disappears is the moment it is worth having — the
+	// icon's whole job is to say *not masking*, which is exactly what a
+	// configuration nothing could read leaves the workstation doing. Polling the
+	// default address may well be wrong, and a wrong address still draws the
+	// unmasked icon rather than nothing at all.
 	if err := proxy.LoadConfigFile(""); err != nil {
 		_, _ = os.Stderr.WriteString("neverseen-tray: " + err.Error() + "\n")
-		os.Exit(1)
 	}
 
 	// Cancelled on the way out, so the icon leaves the bar when the session ends

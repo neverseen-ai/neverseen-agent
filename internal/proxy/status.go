@@ -43,6 +43,22 @@ type Health struct {
 	// what 1 means.
 	Masking string `json:"masking"`
 
+	// Substitutions and SecretLevels are the values this build offers for the two
+	// settings that are a choice from a closed set, in the order a surface should
+	// draw them.
+	//
+	// Served rather than spelled out by each surface, which is the rule
+	// AvailableLocales and Groups are here for: a page with a list of its own goes
+	// on offering a name a rebuilt agent no longer takes — and the click then fails
+	// with 422 on a name the page itself suggested, which reads as the page being
+	// broken. The reverse is quieter and worse: a mode added to the build is simply
+	// missing from the page, with nothing failing anywhere.
+	//
+	// The *sentence* describing each one stays with the surface. That is prose for a
+	// reader, not a fact about what exists.
+	Substitutions []string `json:"substitutions,omitempty"`
+	SecretLevels  []string `json:"secret_levels,omitempty"`
+
 	// AvailableLocales are the country pattern sets this build has, in load order,
 	// whether or not they are loaded.
 	//
@@ -53,6 +69,25 @@ type Health struct {
 	// claims a value both could read — and a list somebody ticks in a different
 	// order than the agent applies them in is a list that lies about the result.
 	AvailableLocales []string `json:"available_locales,omitempty"`
+
+	// LocaleCategories names what each available locale can find, as **labels for a
+	// reader** and never as codes to send back. It answers the question a country
+	// checkbox raises and nothing else on this payload answers — though it answers it
+	// only in part, since a category two countries carry survives while either is
+	// loaded.
+	//
+	// Labels, deliberately, and the field says so because the distinction has a
+	// cost: `Off` carries codes and this carries words, and a surface that mixed
+	// them would send "Social security number (fr)" to a route that knows only
+	// `SSN_FR` — which fails with "no category named", reading as a bug in the
+	// agent.
+	//
+	// The lists **overlap**: a postcode, a telephone number and a postal address are
+	// national in shape and one category each in the catalogue, so two countries name
+	// them both, and a few categories are found with no country at all. Their lengths
+	// therefore do not add up to what a selection has in play — fr, gb and us name 8,
+	// 6 and 7 against 16 — which is why a surface shows the names and never a count.
+	LocaleCategories map[string][]string `json:"locale_categories,omitempty"`
 
 	// Groups is the catalogue as a list somebody can be shown: every group in
 	// display order with its categories, each carrying whether it is switched off
@@ -81,6 +116,21 @@ type HealthGroup struct {
 	Code       string           `json:"code"`
 	Label      string           `json:"label"`
 	Categories []HealthCategory `json:"categories"`
+
+	// Credentials is whether this family holds nothing but credentials, which is
+	// the heading a surface files it under: personal data on one side, the keys and
+	// the connection strings on the other.
+	//
+	// Served rather than worked out by the surface, for the reason the rest of this
+	// type is served: a page splitting on a list of group codes of its own would be
+	// a second copy of the taxonomy, and the day a family was added it would file it
+	// under the wrong heading — quietly, since both headings draw the same switches.
+	//
+	// Deliberately not Locked. A family can be entirely locked without being
+	// credentials — "Declared by this deployment" is personal data that happens to
+	// be unswitchable — and a surface splitting on "can I switch it" would show it
+	// among the API keys.
+	Credentials bool `json:"credentials,omitempty"`
 }
 
 // Locked reports whether every category in the group is one that cannot be
@@ -108,6 +158,23 @@ type HealthCategory struct {
 	// and this is a rule — and a surface guessing at it would draw a switch the
 	// agent refuses to honour.
 	Locked bool `json:"locked,omitempty"`
+
+	// Notations are the shapes this agent recognises the category by, in the order
+	// its patterns are tried: "Doppler credential (dp.pt.…)", "URL carrying
+	// credentials", "PEM private key, whole block".
+	//
+	// Label says what a category *is* and this says what it *looks like*, which is
+	// the only thing a surface can show about a category nobody may switch off — a
+	// credential is a name and no control, and those lists are read for "is my
+	// vendor covered, and by which prefix". "Connection string" is the case that
+	// forced it: the category is one entry whose pattern takes *any* URL scheme
+	// carrying credentials, so its own label says nothing at all about what it
+	// catches.
+	//
+	// From the detector rather than the catalogue, like the rest of this type: a
+	// postcode has one notation per country, and an agent with only "fr" loaded
+	// would otherwise describe a shape it cannot find.
+	Notations []string `json:"notations,omitempty"`
 }
 
 // Status is what a local caller can learn about the agent, including the case

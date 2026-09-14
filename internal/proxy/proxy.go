@@ -205,7 +205,7 @@ func (s *Server) reverseProxy(base *url.URL) *httputil.ReverseProxy {
 // reservedRoutes are the paths the agent answers itself. A provider may not take
 // one of these codes: "/healthz" would reach the agent while "/healthz/v1/…"
 // reached the provider, which is a routing table nobody could reason about.
-var reservedRoutes = []string{"healthz", "test", "policy", "mask", "unmask"}
+var reservedRoutes = []string{"healthz", "test", "settings", "policy", "mask", "unmask"}
 
 // Handler returns the agent's routes.
 func (s *Server) Handler() http.Handler {
@@ -213,6 +213,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/healthz", s.health)
 	mux.HandleFunc("/policy", s.handlePolicy)
 	mux.HandleFunc("/test", s.handleTest)
+	mux.HandleFunc("/settings", s.handleSettings)
 	mux.HandleFunc("/mask", s.handleMask)
 	mux.HandleFunc("/unmask", s.handleUnmask)
 	mux.HandleFunc("/", s.forward)
@@ -245,10 +246,34 @@ func (s *Server) healthNow() Health {
 		// From the registry rather than from the configuration: this is what the
 		// build can load, not what it has loaded, and it is the list a surface
 		// offering a choice has to draw.
+		// The two choices from a closed set, offered by the agent that takes them.
+		Substitutions: SubstitutionModes(),
+		SecretLevels:  SecretLevels(),
+
 		AvailableLocales: pii.LocaleCodes(),
+		LocaleCategories: localeCategories(),
 		Groups:           s.catalogue(),
 		Off:              switchedOffCodes(s.det.Disabled()),
 	}
+}
+
+// localeCategories names what each country the build has can find.
+//
+// From the registry rather than from the detector, like AvailableLocales beside it:
+// a country that is not loaded is exactly the one a reader is deciding about, so a
+// list that only described the loaded ones would be silent about every choice on
+// offer.
+func localeCategories() map[string][]string {
+	out := make(map[string][]string, len(pii.LocaleCodes()))
+	for _, code := range pii.LocaleCodes() {
+		cats := pii.CategoriesInLocale(code)
+		labels := make([]string, 0, len(cats))
+		for _, cat := range cats {
+			labels = append(labels, pii.Label(cat))
+		}
+		out[code] = labels
+	}
+	return out
 }
 
 // catalogue is the whole catalogue as a surface needs to draw it: groups in
@@ -271,23 +296,15 @@ func catalogueOf(det *detector.Detector) []HealthGroup {
 		off[cat] = true
 	}
 
-	// Only what this agent can actually find. With one locale loaded the catalogue
-	// holds categories whose patterns are not in the detector at all, and a switch
-	// for one of those would tell somebody the agent is masking a value it cannot
-	// recognise — the opposite of what a list of switches is for.
-	inPlay := make(map[pii.Category]bool)
-	for _, cat := range det.Categories() {
-		inPlay[cat] = true
-	}
+	// One walk over the loaded patterns for the two questions asked of them: which
+	// categories are in play — only what this agent can actually find, since a switch
+	// for a category no loaded locale can emit would say the agent is masking a value
+	// it cannot recognise — and what each is recognised by.
+	inPlay := det.Notations()
 
 	var out []HealthGroup
 	for _, g := range pii.Groups() {
-		var cats []pii.Category
-		for _, cat := range pii.CategoriesInGroup(g) {
-			if inPlay[cat] {
-				cats = append(cats, cat)
-			}
-		}
+		cats := categoriesOf(g, inPlay, off)
 		// A family whose every category is out of play is not drawn: an empty
 		// heading reads as a group the agent lost rather than one its locales never
 		// loaded.
@@ -295,20 +312,35 @@ func catalogueOf(det *detector.Detector) []HealthGroup {
 			continue
 		}
 
-		group := HealthGroup{
-			Code:       string(g),
-			Label:      pii.GroupLabel(g),
-			Categories: make([]HealthCategory, 0, len(cats)),
+		out = append(out, HealthGroup{
+			Code:  string(g),
+			Label: pii.GroupLabel(g),
+			// Asked of the whole family rather than of the categories in play, so
+			// unloading a locale cannot move a heading under somebody's cursor.
+			Credentials: pii.IsCredentialGroup(g),
+			Categories:  cats,
+		})
+	}
+	return out
+}
+
+// categoriesOf is one family's switches, in catalogue order, keeping only what this
+// detector can find.
+func categoriesOf(g pii.Group, inPlay map[pii.Category][]string,
+	off map[pii.Category]bool) []HealthCategory {
+	var out []HealthCategory
+	for _, cat := range pii.CategoriesInGroup(g) {
+		notations, found := inPlay[cat]
+		if !found {
+			continue
 		}
-		for _, cat := range cats {
-			group.Categories = append(group.Categories, HealthCategory{
-				Code:   string(cat),
-				Label:  pii.Label(cat),
-				Off:    off[cat],
-				Locked: !pii.Switchable(cat),
-			})
-		}
-		out = append(out, group)
+		out = append(out, HealthCategory{
+			Code:      string(cat),
+			Label:     pii.Label(cat),
+			Off:       off[cat],
+			Locked:    !pii.Switchable(cat),
+			Notations: notations,
+		})
 	}
 	return out
 }

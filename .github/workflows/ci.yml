@@ -42,6 +42,12 @@ jobs:
       - name: Build
         run: make build
 
+      # The settings page's decisions, which are JavaScript and therefore invisible
+      # to the Go suite and its coverage gate. Node is on the runner already and this
+      # needs no package: one file, no dependency.
+      - name: Test the settings page's decisions
+        run: node --test internal/proxy/settings_decisions.test.mjs
+
       - name: Test with race detector and coverage
         run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
 

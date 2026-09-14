@@ -111,6 +111,13 @@ network, and `sessionOf` reads a header the caller controls — so naming somebo
 else's session is enough to be handed its replacements. `PUT /policy` is unaffected: it
 carries the control key whatever the interface.
 
+**`/settings` is not in that list, and the asymmetry is the point.** It is the one
+response body on this agent that carries the control key, so it refuses a caller that is
+not on loopback whatever `-l` bound — the warn-rather-than-refuse trade that lets
+`/healthz` and `/test` answer the network does not transfer to a body that gives away the
+ability to switch masking off. See
+[`/settings`](#settings--where-the-configuration-actually-happens).
+
 The default stays quiet (`TestTheDefaultAddressDoesNotWarn`). A warning on every
 ordinary start is one nobody reads by the time it matters.
 
@@ -227,7 +234,7 @@ fails on a purge that is not guarded.
 
 `internal/proxy/policyfile.go`.
 
-Everything the menu bar, `neverseen mask` and the test page can change went through
+Everything the settings page, the menu bar and `neverseen mask` can change went through
 `PUT /policy` and lasted exactly as long as the process. A person unticked a category,
 restarted the workstation, and the agent came back masking it again while the menu they
 had set said otherwise on the next click — a control whose settings are forgotten is one
@@ -254,8 +261,8 @@ for.
   kinds of refusal are told apart. `TestARequestRefusedBeforeAnythingAppliedStoresNothing`
   is the counterpart of the case above and neither is meaningful alone.
 - **One writer at a time, and a temporary name of its own.** Storing the file is a
-  read-modify-write — apply, read the detector back, store — and the menu bar and
-  `neverseen mask` interleave the halves of one, which is the hazard the route already
+  read-modify-write — apply, read the detector back, store — and the settings page, the
+  menu bar and `neverseen mask` interleave the halves of one, which is the hazard the route already
   names for the mapping. The handler takes `policyMu`, and the write goes through
   `os.CreateTemp` rather than a fixed `.tmp`: sharing one temporary path, two writers
   truncated and filled it under each other and what landed under the rename was one
@@ -329,6 +336,248 @@ whole input, and a page accepting a POST should not accept a megabyte of adversa
 (`TestTheTestPageIsNotCounted`). `/test` is a reserved route, so a provider cannot take it.
 
 It is also how the two body-shape bugs and the locale stand-in bug were found.
+
+## `/settings` — where the configuration actually happens
+
+While the agent runs, `http://127.0.0.1:9787/settings` is where the four things that can
+change under a running agent are changed: which categories are masked, which countries are
+loaded, the substitution mode and the secret level. It is what the menu bar opens, and what
+the menu bar stopped being.
+
+**It exists because the menu bar was the wrong shape for the job.** `fyne.io/systray` gives
+titles and ticks and nothing else: no radio group, no mixed tick, no room for the sentence
+that says what a choice costs. Every one of those absences had been answered by writing the
+sentence into the entry's own title — `weak — every value found, words included; masks code
+too` — and a menu bar of sixty-character rows is a menu nobody reads. The page has the room
+the menu never had. [The menu bar](distribution.md#the-menu-bar-binary) is back to saying
+whether the traffic is masked, which is the one thing an icon in the bar can do that nothing
+else can.
+
+**It holds no engine**, exactly as [the extension](../architecture/browser-extension.md)
+holds none: no catalogue, no policy, no mappings. It draws itself from `/healthz` and writes
+through `PUT /policy` — the one route that changes what the agent does, and the one writer
+every surface goes through.
+
+### The control key is in the page, and that is what shapes the route
+
+`PUT /policy` is closed by a header a page from the internet cannot set, which is the whole
+reason that header exists rather than CORS. A page *served by this agent* is same-origin with
+it, so it can set that header — provided it holds the secret. `GET /settings` hands it over,
+which makes it the only response body on this agent carrying the control key. So the route is
+closed twice, **both before the key is ever read** (`handleSettings`):
+
+1. **Loopback only, hard, whatever `-l` bound.** `/healthz` and `/test` describe a
+   configuration; this one gives away the ability to switch masking off
+   (`TestSettingsPageRefusesACallerFromTheNetwork`).
+2. **The `Host` must name this machine** (`namesThisMachine`). A loopback check alone is not
+   enough against DNS rebinding: a page on the internet whose domain resolves to `127.0.0.1`
+   reaches this route *from* the browser — a loopback source — and, being same-origin by the
+   browser's reckoning, gets to read the body. Refusing a `Host` that is not localhost is what
+   closes that, and it is the only defence available, since the agent implements no CORS and
+   must not (`TestSettingsPageRefusesAHostThatIsNotThisMachine`).
+
+Every one of those tests asserts the refusal **carries no key**, not merely that it returned
+403. A guard that ran after the template did would still answer 403 with the secret in the
+body, and a test reading the status alone would pass over it.
+
+What this does *not* widen: a local process of this user could already read
+`~/.neverseen/control.key`, which is 0600 and theirs. Against that reader the route gives away
+nothing new. Against every other reader the two guards above are the whole answer.
+
+An agent with no key **refuses the page** rather than serving one whose every control fails on
+submission with nothing saying why — the same direction `PUT /policy` takes with no key. The
+response is `no-store`: a page holding a secret has no business in a disk cache, and the agent
+it describes moves under it besides.
+
+### Three tabs, one panel at a time
+
+The sections are a tab strip rather than a scrolling column, and only the selected
+panel is in the document's flow. Scrolled together, the credentials list — a hundred and
+thirty-one lines nobody reads past — sat between two settings.
+
+**Countries and the switches are one tab**, in that order, because they are one
+decision: the countries settle which switches the rest of the panel has to offer at all,
+and a category no loaded locale can emit is not drawn. Splitting them made a reader
+choose a country on one tab and discover what it had done on another.
+
+**The secret level lives with the credentials**, above the list, because it grades
+**exactly one of its entries** — `SECRET_GENERIC`, "Secret in an assignment", the
+catch-all for a value with no known prefix — and nothing else. On a tab of its own the
+setting read as a dial over all hundred and thirty-one; beside the list it can point at
+the line it moves. The examples of prefixes in its lede are checked against what the
+list actually shows (`dp.pt.`, `A3-`, `AKCp`): the big vendors' patterns carry no prefix
+in their notation, so citing `ghp_` would have sent a reader to a find that returns
+nothing.
+
+Blocks inside a panel carry sub-headings — that is the seam inside one tab, not the
+heading the tab strip already carries.
+
+The **hash still selects a panel** (`#credentials`), because the page answered to those
+anchors when the sections were a column and a bookmark outlives a layout — `#countries` and
+`#secrets`, which were panels before their merges, are aliased to the ones holding them
+rather than falling back to the first tab. A click
+*writes* the hash rather than navigating to it, so the panel does not scroll itself
+under the sticky header and a reload stays where the reader was. A redraw rewrites the
+inside of each panel and never the panels, so the selected tab survives every poll and
+every change.
+
+### Countries come first, and say what they find
+
+The section is at the top of the page because it decides what the sections below have
+to offer at all: a category no loaded locale can emit is not drawn. Unticking a country
+removes what **only** it can find from Personal data, Company identifiers and Banking;
+the technical identifiers and the credentials have no nationality and do not move.
+
+**Each country is listed with the categories it can find** (`Health.LocaleCategories`,
+from `pii.CategoriesInLocale`, derived from the locale's own patterns). A checkbox for a
+country that is *not* loaded raises a question nothing else on the payload answers, and
+the list is the answer.
+
+**Names, never a count.** The lists overlap — a postcode, a telephone number and a
+postal address are national in shape and one category each in the catalogue, so several
+countries name them all — and a few categories are found with no country loaded at all.
+`fr`, `gb` and `us` name 8, 6 and 7 against **16** in play. A count is a number a reader
+adds up and is wrong, which is why the page shows the names and a note saying that a
+shared category survives its country going
+(`TestEachCountryIsServedWithWhatItFinds` pins both halves, and fails if the sum ever
+equals what is in play).
+
+**These are labels for a reader, never codes to send back.** `Off` carries codes and
+this carries words; a surface mixing them would send "Social security number (fr)" to a
+route that knows only `SSN_FR`, which fails with "no category named" and reads as a bug
+in the agent.
+
+**What is switched off survives the change**, which is the reason `Off` is served beside
+`Groups`: unloading a country and loading it again must not revive a category somebody
+had switched off.
+
+### Two headings, and only one of them can carry a switch
+
+The page files every family under **Personal data** or **Credentials**, and which
+heading a family goes under is the **agent's** answer: `/healthz` carries
+`HealthGroup.Credentials`, computed by `pii.IsCredentialGroup` over the whole family.
+A list of group codes in the page would be a second copy of the taxonomy, and the day a
+family was added it would be filed under the wrong heading — quietly, since both
+headings draw the same switches.
+
+**The personal side carries a whole-section switch; the credentials side carries none,
+and cannot.** `pii.Switchable` is the server's rule: a credential in clear is a live key
+handed to a provider, so the agent refuses to switch one off whatever asks. A control
+over that section would be a control that changes nothing, which is worse than no
+control — and a request naming a credential is refused *whole*, so it would not even
+switch off the categories beside it.
+
+**That flag is deliberately not `Locked()`.** A family can be entirely locked without
+being credentials: "Declared by this deployment" is what a deployment declared sensitive
+itself — personal data that happens to be unswitchable, because it is the one category
+somebody authored on purpose. A page splitting on "can I switch it" would file it among
+the API keys, and the locked line under it would call it a credential.
+
+**A locked family is listed, not summarised.** The menu bar drew one as a single line
+with a count, and that was right there: a row that cannot be clicked is a row of nothing
+to do, and a hundred of them buried the nineteen real ones. It is wrong on a page. A
+name is not a control, and *"is my vendor's key covered"* has no other answer anywhere
+in this agent — the list is the whole reason somebody opens that section, and plain text
+means the browser's own find works over a hundred and thirty-one of them. No checkbox
+beside them: one that cannot be ticked invites a click and says nothing the line above
+has not already said.
+
+**A locked category is shown by its notation, not its label.** `Health` carries
+`HealthCategory.Notations` — what this detector's patterns recognise the category by,
+from `Detector.Notations()` — and the locked lists show those: `Doppler credential
+(dp.pt.…)`, `1Password credential (A3-…) · 1Password credential (ops_eyJ…)`. The label
+says what a category *is* and a notation says what it *looks like*, which is the only
+thing those lists can offer when there is no control beside them.
+
+**"Connection string" is the case that forced it.** The category is a single entry
+whose pattern takes `[a-z][a-z0-9+.\-]{1,29}://` — postgres, mysql, mongodb, redis,
+amqp, and whatever a deployment runs that nobody here has heard of — so its own label
+says nothing about what it catches, and a card listing it read as a tautology. Its
+notation now names the shape, `URL carrying credentials (scheme://user:password@…)`,
+rather than three schemes: **a list of examples would read as a closed list** and be
+wrong in the direction that matters, with somebody concluding their own scheme is not
+covered.
+
+**From the detector, not the catalogue**, like everything else on this payload: a
+postcode has one notation per country, and an agent with only `fr` loaded that
+described the British shape would be naming something it cannot find
+(`TestNotationsAreWhatTheLoadedPatternsRecognise`, which also fails if any credential
+is recognised by a pattern carrying no label).
+
+The payload grew from 11.4 KB to **20.4 KB** with this, against the 32 KB at which
+`TestHealthPayloadFitsTheQueryBound` fails. That is a third of the remaining headroom
+for one field, and it is the field a future batch of a hundred credentials will push
+over — as the bound's own note says, the batch that breaks it is the one that still
+gets to choose the number.
+
+**The section switch has three states.** Some switches off is neither on nor off, and
+the checkbox's `indeterminate` says so. This is the one thing the menu bar could never
+do — `fyne.io/systray` offers a tick and no tick and nothing between, which is why a
+partly-off family had to spell the count into its own title there.
+
+**All or nothing, in that direction**: a click on a partly-off section switches the rest
+off too rather than reviving what somebody switched off one at a time. Reviving them
+makes one click undo several deliberate ones. It touches **only what is drawn**, so a
+category no loaded locale can emit keeps whatever intent it had.
+
+### What decides is kept out of what draws
+
+`internal/proxy/settings_decisions.js` holds the page's decisions — the whole-state
+rule (`policyFrom`), the set arithmetic behind a switch and behind the whole-section
+control (`toggledSet`, `bulkSet`, `switchableOf`, `masterState`), the two headings
+(`splitGroups`) and the panel a hash asks for (`panelFor`). `settings.html` keeps only
+what draws.
+
+It is `internal/tray`'s split one storey up, and it is here for the reason that one
+exists: **a browser cannot be asserted on in CI any more than a menu bar can**. `plan.go`
+held exactly these rules for the menu, and deleting it without this file would have moved
+a hundred tested lines into JavaScript nothing runs.
+`internal/proxy/settings_decisions.test.mjs` holds them to twelve cases under
+`node --test` — no npm project, no dependency — wired into `make test` and into the Go CI
+job, because a test in no target is a test nobody runs.
+
+**Inlined rather than served at a path of its own**, so the page stays one response with
+one inline script: no second reserved route, and nothing to exempt from the policy below.
+The guarded `if (typeof module !== "undefined")` at its foot is inert in a browser and is
+what lets the test load the same file the page is handed.
+
+### The page is served under a policy of its own
+
+`Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; script-src
+'unsafe-inline'; connect-src 'self'; form-action 'none'; base-uri 'none'`, plus
+`X-Content-Type-Options: nosniff`. `connect-src 'self'` is the load-bearing clause: it
+makes the control key unsendable anywhere but back to this agent. There is no injection
+point today — every agent-supplied string reaches the DOM through `textContent` and the
+key is escaped by `html/template` — and this is what keeps that true of a string somebody
+adds later. The test asserts the two clauses **by name**, since a policy that lost either
+would still look like one.
+
+### What the page must get right
+
+- **Every closed set it draws is the agent's, never its own.** The catalogue
+  (`Groups`), the countries (`AvailableLocales`), the two headings
+  (`HealthGroup.Credentials`), **and the substitution modes and secret levels**
+  (`Health.Substitutions`, `Health.SecretLevels`). The page held its own literals for
+  the last two and it was the same defect in a quieter place: a mode a rebuilt agent
+  no longer takes stays drawn, and the click fails with 422 on a name the page itself
+  suggested; a mode the build gains is simply missing, with nothing failing anywhere.
+  `TestTheOfferedNamesAreOnesTheAgentTakes` asks this of the **payload** rather than of
+  `SubstitutionModes()` — the two functions agreed with the parser all along while the
+  page drew something else, so the test passed over exactly the drift it was written
+  for. What stays with the page is the *sentence* describing each choice, which is
+  prose for a reader and not a fact about what exists; a value served without one is
+  drawn under its bare name rather than dropped.
+- **It redraws from the agent, never from its own request.** `PUT /policy` is not a
+  transaction — a good locale selection with a bad category leaves the locales applied and
+  returns an error — so a refusal is followed by a fresh read, not by putting the failed
+  request back on screen.
+- **The switched-off set it sends comes from `Health.Off`**, the agent's whole intent
+  including categories no loaded locale can emit, and never from the switches drawn on the
+  page. Rebuilt from what is drawn, a click made with `us` unloaded would silently revive a US
+  category somebody had switched off, and the stored file would make the loss permanent. This
+  is the same rule every surface follows, and the reason `Off` is served beside `Groups`.
+- **Every change carries the whole state**, because the route replaces rather than patches.
+- `/settings` is a reserved route, so a provider cannot take it.
 
 ## `-a` and `-v`: the one place a real value is printed or kept
 

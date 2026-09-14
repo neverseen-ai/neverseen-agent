@@ -330,3 +330,54 @@ test('a transport that cannot be masked is refused rather than forwarded', async
   assert.equal(target.navigator.sendBeacon('https://claude.ai/telemetry', 'x'), true);
   assert.equal(beaconed.length, 1);
 });
+
+const RETRY_URL =
+  'https://claude.ai/api/organizations/org-1/chat_conversations/9f1c0d2e-4b6a-4f31-8a5e-2c7d1e0b3a44/retry_completion';
+
+// Retry is a send by the site's own path — claudeAi.isSend matches it deliberately,
+// so that no path reaches the model outside this wrapper — but it carries no prompt:
+// it re-runs a turn the site already holds, from parent_message_uuid. Read through
+// the empty-texts refusal that guards a moved prompt field, every Retry on the page
+// was blocked outright and the request never left.
+//
+// Both halves, because either alone hides the failure the other would catch: a
+// forwarded retry whose answer is not restored renders the stored turn's stand-ins
+// to the person as [EMAIL_1].
+test('a retry is forwarded, and its answer is still restored', async () => {
+  let sent: Request | undefined;
+  const original = (async (input: RequestInfo | URL) => {
+    sent = input as Request;
+    return new Response('data: {"delta":{"text":"[EMAIL_1]"}}\n\n', {
+      headers: { 'Content-Type': 'text/event-stream' },
+    });
+  }) as typeof fetch;
+
+  const { asked, send } = relay({
+    mask: masking,
+    unmask: () => ({ ok: true, result: { expanded: 'claire@example.fr', tail: '' } }),
+  });
+
+  const body = JSON.stringify({ parent_message_uuid: '0d2e-4b6a', model: 'claude' });
+  const rendered = await (
+    await wrapFetch(original, claudeAi, send)(RETRY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    })
+  ).text();
+
+  assert.ok(sent, 'the retry never left: it was refused as carrying no field to mask');
+  assert.equal(await sent!.text(), body, 'the retry body was rewritten; it carries nothing to mask');
+  assert.ok(
+    rendered.includes('claire@example.fr'),
+    `the stored turn's stand-in was rendered to the person: ${rendered}`,
+  );
+  assert.ok(
+    asked.some((ask) => ask.kind === 'unmask'),
+    'the answer was not restored, so a retry shows [EMAIL_1] where the original was',
+  );
+  assert.ok(
+    !asked.some((ask) => ask.kind === 'mask'),
+    'a retry carries nothing typed, so asking /mask mints a mapping for nothing',
+  );
+});

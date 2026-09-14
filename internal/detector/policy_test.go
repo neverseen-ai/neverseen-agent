@@ -1,6 +1,7 @@
 package detector
 
 import (
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -566,5 +567,52 @@ func TestWithPolicyLeavesTheAgentUntouched(t *testing.T) {
 	}
 	if _, err := d.WithPolicy([]string{"fr"}, []pii.Category{pii.CatAnthropicKey}, pii.StrengthWeak); err == nil {
 		t.Error("a credential was switched off")
+	}
+}
+
+// A notation says what a category looks like, which is the only thing a surface can
+// show about one nobody may switch off.
+//
+// Read from the loaded patterns rather than the catalogue: a postcode has one
+// notation per country, and an agent that described the British shape while only
+// "fr" was loaded would be naming something it cannot find.
+func TestNotationsAreWhatTheLoadedPatternsRecognise(t *testing.T) {
+	fr := New(Config{Locales: []string{"fr"}})
+	gb := New(Config{Locales: []string{"gb"}})
+
+	frPostcode := fr.Notations()[pii.CatPostalCode]
+	gbPostcode := gb.Notations()[pii.CatPostalCode]
+	if len(frPostcode) == 0 || len(gbPostcode) == 0 {
+		t.Fatalf("a postcode is recognised by neither: fr=%v gb=%v", frPostcode, gbPostcode)
+	}
+	if slices.Equal(frPostcode, gbPostcode) {
+		t.Errorf("both countries describe a postcode the same way (%v), so nothing here "+
+			"shows the notations follow the loaded patterns", frPostcode)
+	}
+
+	// The case that forced the field: the category's own label says nothing about
+	// what it catches, because the pattern takes any URL scheme at all.
+	conn := fr.Notations()[pii.CatConnStr]
+	if len(conn) != 1 {
+		t.Fatalf("a connection string has %d notations, want 1: %v", len(conn), conn)
+	}
+	if conn[0] == pii.Label(pii.CatConnStr) {
+		t.Error("the notation repeats the label, so the page learns nothing from it")
+	}
+	if !strings.Contains(conn[0], "://") {
+		t.Errorf("the notation does not show the shape: %q", conn[0])
+	}
+
+	// A credential is a name and no control, so every one of them has to carry a
+	// notation or its line on the page says only what its label already said.
+	silent := 0
+	for _, cat := range fr.Categories() {
+		if pii.IsSecret(cat) && len(fr.Notations()[cat]) == 0 {
+			silent++
+		}
+	}
+	if silent > 0 {
+		t.Errorf("%d credentials are recognised by a pattern with no label, so they "+
+			"appear on the settings page with nothing said about their shape", silent)
 	}
 }
