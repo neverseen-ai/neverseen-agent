@@ -42,6 +42,16 @@ Usage:
 EOF
 }
 
+# Declared before the trap below is armed, never beside the code that fills
+# them. cleanup reads both, so under set -u a failure between arming the trap
+# and reaching those assignments died on an unbound variable inside the trap —
+# which is a trap that fails changing the exit status of the script, the exact
+# thing the `if`s below exist to avoid.
+TEMP_DIR=""
+# The name a binary is written under before it is renamed into place. Held in a
+# variable so an interrupted install does not leave it beside the real one.
+STAGED=""
+
 # An interrupted download must not leave an unpacked release behind. An `if`
 # rather than `[ … ] && …`: with set -e a false test as the last command of a
 # function makes it fail, and a trap that fails changes the exit status of a
@@ -91,10 +101,6 @@ if [ -f "$0" ]; then
 else
     SOURCE_DIR=.
 fi
-TEMP_DIR=""
-# The name a binary is written under before it is renamed into place. Held in a
-# variable so an interrupted install does not leave it beside the real one.
-STAGED=""
 
 say()  { printf '%s\n' "$*"; }
 warn() { printf '%s\n' "$*" >&2; }
@@ -154,7 +160,10 @@ verify_checksum() {
         die "neither sha256sum nor shasum is here, so the download cannot be verified"
     fi
 
-    expected=$(grep -E "[[:space:]]\*?$3\$" "$2" | cut -d' ' -f1)
+    # awk on the second field rather than a grep pattern built from the name:
+    # the name is full of dots, and as an ERE each one matches any character.
+    # The leading `*` is how the coreutils format marks a binary read.
+    expected=$(awk -v name="$3" '$2 == name || $2 == "*" name { print $1 }' "$2")
     [ -n "$expected" ] || die "$3 is not listed in checksums.txt; refusing to install it"
     # The likeliest cause by far is a proxy that served a cached archive from a
     # previous release, so the message names it: the alternative reading of a
@@ -205,6 +214,14 @@ fetch_release() {
     # and this script runs as the person whose home directory that is (CWE-22).
     if tar -tzf "$TEMP_DIR/$archive" | grep -qE '^/|(^|/)\.\.(/|$)'; then
         die "the archive names paths outside itself; refusing to unpack it"
+    fi
+    # And no links, which the check above cannot see. A symlink entry pointing at
+    # a directory outside, followed by a plain file under that name, has every
+    # entry looking relative while tar writes through the link — GNU tar does,
+    # recent bsdtar refuses, and this script must not depend on which is here.
+    # A release archive of two binaries has no business holding a link at all.
+    if tar -tvzf "$TEMP_DIR/$archive" | grep -qE '^[lh]'; then
+        die "the archive holds a link entry; refusing to unpack it"
     fi
 
     tar -xzf "$TEMP_DIR/$archive" -C "$TEMP_DIR"
@@ -357,7 +374,7 @@ wire_shell() {
     done
     [ -n "$profile" ] || { warn "No shell profile found; add this line yourself:"; say "  $SHELL_LINE"; return; }
 
-    if grep -qF 'neverseen env' "$profile" 2>/dev/null; then
+    if grep -qxF "$SHELL_LINE" "$profile" 2>/dev/null; then
         say "Your $profile already evaluates \`neverseen env\`"
         return
     fi
@@ -371,8 +388,15 @@ wire_shell() {
 unwire_shell() {
     for profile in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.profile"; do
         [ -f "$profile" ] || continue
-        grep -qF 'neverseen env' "$profile" 2>/dev/null || continue
+        grep -qxF "$SHELL_LINE" "$profile" 2>/dev/null || continue
 
+        # The whole line, anchored (-x), and never the substring `neverseen env`:
+        # that substring matched a line somebody had written themselves — an alias,
+        # or this one commented out — and --uninstall deleted it from their login
+        # file without saying so. A line from an older release whose comment has
+        # since changed is left behind instead, which costs nothing: with the agent
+        # stopped it prints nothing, which is the whole point of the line.
+        #
         # Written to a temporary file and moved, so an interrupted uninstall
         # cannot leave a truncated login file behind.
         # cp -p first so the copy carries the profile's own mode, which is the
@@ -389,7 +413,7 @@ unwire_shell() {
         tmp="$profile.neverseen.$$"
         cp -p "$profile" "$tmp"
         rc=0
-        grep -vF 'neverseen env' "$profile" > "$tmp" || rc=$?
+        grep -vxF "$SHELL_LINE" "$profile" > "$tmp" || rc=$?
         if [ "$rc" -gt 1 ]; then
             rm -f "$tmp"
             warn "Could not read $profile (grep exited $rc); left it untouched."
@@ -512,6 +536,10 @@ do_uninstall() {
 }
 
 WIRE_SHELL=0
+# One verb per invocation, and the rest is refused rather than dropped:
+# `--shell --status` installed and wired the shell, and said nothing about the
+# status it had been asked for.
+[ "$#" -le 1 ] || die "one option at a time (got $#; try --help)"
 case "${1:---install}" in
     --install)   do_install ;;
     --shell)     WIRE_SHELL=1; do_install ;;
