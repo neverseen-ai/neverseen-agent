@@ -326,6 +326,33 @@ func TestAFailureExitsCleanlyRatherThanInsideTheTrap(t *testing.T) {
 	}
 }
 
+// cleanup spells its two removals as `if`s, and that is not a style choice.
+//
+// Under `set -e` a false test as the *last* command of a function makes the
+// function fail — so `[ -n "$TEMP_DIR" ] && rm -rf "$TEMP_DIR"`, on the ordinary
+// run where no temporary directory was ever made, ends cleanup with a failure. The
+// shell then leaves the EXIT trap on that status and every invocation exits
+// non-zero, having done its work perfectly.
+//
+// Two other cases here already fail if the `if`s are turned back into `&&`, but
+// they are named for a login file and for wiring a shell: an incidental failure
+// records what the code does, where this records what it must. Somebody
+// "simplifying" the `if`s would otherwise read two unrelated failures and look in
+// the wrong place.
+func TestASuccessfulRunExitsZeroThroughTheTrap(t *testing.T) {
+	home := t.TempDir()
+	write(t, filepath.Join(home, ".zshrc"), "export EDITOR=vim\n")
+
+	// wire_shell touches nothing but the profile, and reaching the end of it runs
+	// the EXIT trap over a TEMP_DIR and a STAGED that were never set — which is the
+	// ordinary case, and the one the `&&` form gets wrong.
+	out, code := call(t, home, "wire_shell")
+
+	if code != 0 {
+		t.Fatalf("a run that did its work exited %d:\n%s", code, out)
+	}
+}
+
 // --- helpers ---------------------------------------------------------------
 
 type entry struct {
