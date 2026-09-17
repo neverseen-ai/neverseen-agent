@@ -209,10 +209,22 @@ fetch_release() {
 
     verify_checksum "$TEMP_DIR/$archive" "$TEMP_DIR/checksums.txt" "$archive"
 
-    # Every entry, before anything is written. An archive naming an absolute path
-    # or stepping out of the directory with .. has tar write wherever it likes,
-    # and this script runs as the person whose home directory that is (CWE-22).
-    if tar -tzf "$TEMP_DIR/$archive" | grep -qE '^/|(^|/)\.\.(/|$)'; then
+    refuse_unsafe_archive "$TEMP_DIR/$archive"
+
+    tar -xzf "$TEMP_DIR/$archive" -C "$TEMP_DIR"
+    SOURCE_DIR="$TEMP_DIR"
+}
+
+# refuse_unsafe_archive inspects every entry before anything is written.
+#
+# Separate from fetch_release because what makes an archive safe to unpack has
+# nothing to do with where it was downloaded from — and because a check reachable
+# only behind a network call is a check nothing exercises.
+refuse_unsafe_archive() {
+    # An archive naming an absolute path or stepping out of the directory with ..
+    # has tar write wherever it likes, and this script runs as the person whose
+    # home directory that is (CWE-22).
+    if tar -tzf "$1" | grep -qE '^/|(^|/)\.\.(/|$)'; then
         die "the archive names paths outside itself; refusing to unpack it"
     fi
     # And no links, which the check above cannot see. A symlink entry pointing at
@@ -220,12 +232,9 @@ fetch_release() {
     # entry looking relative while tar writes through the link — GNU tar does,
     # recent bsdtar refuses, and this script must not depend on which is here.
     # A release archive of two binaries has no business holding a link at all.
-    if tar -tvzf "$TEMP_DIR/$archive" | grep -qE '^[lh]'; then
+    if tar -tvzf "$1" | grep -qE '^[lh]'; then
         die "the archive holds a link entry; refusing to unpack it"
     fi
-
-    tar -xzf "$TEMP_DIR/$archive" -C "$TEMP_DIR"
-    SOURCE_DIR="$TEMP_DIR"
 }
 
 # claim_the_name refuses to install behind another neverseen.
@@ -536,6 +545,19 @@ do_uninstall() {
 }
 
 WIRE_SHELL=0
+
+# Sourced rather than run: define the functions and stop, so a test can call one
+# with inputs of its own choosing.
+#
+# It exists because the two checks that guard what is unpacked — the digest and the
+# refusal of link entries — sit behind a download, and there is no honest way to
+# reach them from outside. Pointing NEVERSEEN_REPO at a local server does not work
+# and must not be made to: `curl --proto '=https'` refuses http:// and file://, and
+# that guard is the reason the checksum is worth anything. So the seam is here
+# instead, where it costs one line and changes nothing for anybody running the
+# script.
+[ -z "${NEVERSEEN_INSTALL_LIB:-}" ] || return 0
+
 # One verb per invocation, and the rest is refused rather than dropped:
 # `--shell --status` installed and wired the shell, and said nothing about the
 # status it had been asked for.

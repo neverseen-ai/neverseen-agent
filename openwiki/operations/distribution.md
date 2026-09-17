@@ -141,6 +141,40 @@ and the branch of `install.sh` that unpacks one had nothing to fetch.
 `-ldflags "-X main.version=…"` stamp is silently inert and every release reports the same
 string — which is what Agent Veil shipped.
 
+### The installer is driven by a test, not only by hand
+
+`internal/install` holds nothing but `install_test.go`, and what it tests is a shell
+script. Five silent failures were found in `install.sh` by driving it by hand, and
+nothing in the tree exercised any of them — against a repository whose rule is that
+nothing enters it unexercised.
+
+A Go test rather than a shell harness, because it costs nothing to add: it is in
+`make test` and in CI already, `t.TempDir` gives every case a `HOME` and a
+`NEVERSEEN_PREFIX` to ruin, and a failure prints like every other failure here. The
+script is driven as a subprocess — the real file, not a copy with the awkward parts
+removed. `--uninstall` is safe to run in a case because `service_cmd` reaches for a
+binary under the temporary prefix, which is not there.
+
+**One seam was added for it**, and only one: `NEVERSEEN_INSTALL_LIB=1` makes the
+script define its functions and stop, instead of dispatching a verb. It exists
+because the two checks guarding what is unpacked — the digest and the refusal of link
+entries — sit behind a download. Pointing `NEVERSEEN_REPO` at a local server does not
+reach them and must not be made to: `curl --proto '=https'` refuses `http://` and
+`file://`, and that refusal is what makes the checksum worth anything. The archive
+checks moved out of `fetch_release` into `refuse_unsafe_archive` for the same reason —
+what makes an archive safe to unpack has nothing to do with where it came from.
+
+**Every case was verified by putting the bug back.** A test that passes against the
+defect it is named for is worse than no test, and this file proved the point twice
+while it was being written: an early draft read the output builders before the
+subprocess had run, so eight cases asserted over empty strings and failed for a reason
+that had nothing to do with the script. Seven mutations, seven failures, before it was
+committed.
+
+The known ceiling is named in the file: the download itself, the launchd and systemd
+registration, and the build from source are not reached. `make e2e-claude` and a real
+install are what cover those, and a case added here must not reach them either.
+
 ## The menu bar binary
 
 `cmd/neverseen-tray` is the **one exception** to the one-entrypoint rule, and its package
