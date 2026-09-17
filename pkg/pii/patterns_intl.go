@@ -138,7 +138,11 @@ var (
 
 // InternationalPatterns returns the identifiers that are not tied to a locale.
 func InternationalPatterns() []Pattern {
-	return []Pattern{
+	// The geographic notations come first: a Maps link is a long span carrying
+	// digits and an occasional address inside it, and the ordering rule is that
+	// the first pattern to claim a literal wins. Behind the narrower shapes, the
+	// link would be cut around whatever was found in its query string.
+	return append(geoPointPatterns(), []Pattern{
 		{Regex: emailRe, Group: 1, Category: CatEmail, Label: "Email address"},
 		{Regex: creditCardRe, Category: CatCreditCard, Label: "Payment card number"},
 		{Regex: ibanRe, Category: CatIBAN, Label: "IBAN", Refine: trimToIBAN},
@@ -146,5 +150,190 @@ func InternationalPatterns() []Pattern {
 		{Regex: ipv4Re, Category: CatIPAddr, Label: "IPv4 address"},
 		{Regex: ipv6Re, Category: CatIPv6, Label: "IPv6 address"},
 		{Regex: dateRe, Category: CatDOB, Label: "Date (ISO)"},
+	}...)
+}
+
+// --- Geographic points ------------------------------------------------------
+//
+// A place is personal data in the same way a postal address is, and it travels
+// in notations an address pattern cannot see: a link somebody pasted out of the
+// Share button, a pair of degrees out of a GPS unit, a Plus Code.
+//
+// **Only self-anchored notations are read.** Every expression below is anchored
+// on a literal somebody wrote on purpose — "geo:", a Maps host, "POINT(", a
+// degree sign, "///". The notation this deliberately leaves out is the most
+// common one of all: a bare decimal pair, "48.8584, 2.2945". There is nothing in
+// it but two floats in range, and a float pair in range is also a translate(), a
+// vector, a couple of measurements. Reading it needs the key beside it
+// ("lat"/"lng") rather than the value, which is the shape PHONE and POSTCODE
+// already have and the reason both carry NoisyInCode. A geohash ("u09tvw0f6szy")
+// is out for the same reason: base-32 with no anchor is an identifier.
+//
+// TODO: the bare decimal pair and the geohash are the known ceiling. The upgrade
+// path is a key-anchored pattern (`"lat"\s*:\s*<float>`) plus NoisyInCode, paid
+// for with its own precision floor in the corpus — not a widening of these.
+//
+// **GeoJSON is not here and cannot be.** `{"coordinates":[2.2945,48.8584]}` never
+// reaches a pattern as text: a body is masked value by value and numbers carry
+// nothing to mask (internal/proxy/jsonbody.go). The two floats arrive as two
+// separate JSON numbers, so no expression over a single value can see a pair.
+// Masking it would mean reading the *shape* of the document in jsonbody, which is
+// a different feature from a catalogue entry.
+var (
+	// The bounds live in the shapes rather than in a CategoryInfo.Verify, which
+	// would receive whole spans of six different notations and have to re-parse
+	// each of them to check two numbers. Spelled out the way the Mastercard BIN
+	// range is, and for the same reason: a loose `\d{1,3}` is three digits of
+	// nothing, and "999.888" would be masked as a place.
+	//
+	// The alternatives are ordered widest-value-first. Go's regexp prefers the
+	// leftmost alternative that lets the *rest* of the pattern match, so "180"
+	// has to be offered before "1[0-7]\d" — behind it, "18" matches and the
+	// trailing "0" is left for a comma that never comes.
+	geoLat = `[+-]?(?:90(?:\.0+)?|[0-8]?\d(?:\.\d+)?)`
+	geoLon = `[+-]?(?:180(?:\.0+)?|1[0-7]\d(?:\.\d+)?|\d{1,2}(?:\.\d+)?)`
+
+	// What a URL may contain, closing on a character that is not sentence
+	// punctuation. The final class is the rule noSentenceTail exists for: a
+	// permissive body one character shorter, so the span stops before the full
+	// stop that ends the sentence and before the ")" that closes a Markdown link.
+	// A Maps URL is full of "," and "!" — they are interior characters here, only
+	// the last one is constrained.
+	geoURLTail = `[^\s<>"']*[^\s<>"'` + noSentenceTail + `]`
+
+	// RFC 5870. WGS-84 unless ";crs=" says otherwise, an optional altitude, and
+	// ";u=" for the uncertainty radius.
+	//
+	// **No leading \b, deliberately**, and it is worth 350x: measured over
+	// docs/testCorpus.txt, `\bgeo:…` takes 301µs and `geo:…` takes 866ns. The
+	// boundary is what stops LiteralPrefix returning "geo:", and without a literal
+	// Go walks the whole text instead of scanning for four bytes. The rule is the
+	// one the second-tier vendor prefixes are split for; what is new here is that
+	// the documented parade — consume the preceding character and point Group at
+	// the value — is *worse* than the disease at 676µs, because a leading
+	// character class has no literal either.
+	//
+	// What the boundary bought, in exchange: "…ageo:48.8,2.2" now matches from
+	// "geo:". The pattern is case-sensitive and no word ends in a lowercase "ageo",
+	// so the shape is unreachable in practice. POINT below keeps its \b because
+	// there the same trade is real — see the note on it.
+	geoURIRe = regexp.MustCompile(`geo:` + geoLat + `,` + geoLon +
+		`(?:,[+-]?\d+(?:\.\d+)?)?` + // altitude in metres
+		`(?:;[a-zA-Z0-9\-]+=[a-zA-Z0-9.:_\-]+)*`)
+
+	// The whole link, not the coordinates inside it.
+	//
+	// A Maps URL carries the place in clear twice over: "/place/Eiffel+Tower/"
+	// and "&q=Eiffel+Tower" are the name of the destination, and a home address
+	// is a street name before it is a pair of floats. Masking "@48.8584,2.2945"
+	// and forwarding the rest masks nothing. CatConnStr takes a whole span for
+	// the same reason — the password alone is not what identifies the database.
+	//
+	// The scheme is optional because people paste hosts, and lowercase-only
+	// because that is how hosts are written; (?i) here would cost the literal
+	// scan for every match in the body.
+	//
+	// TODO: Waze ("waze.com/ul?ll=") and Bing ("bing.com/maps?cp=") use the same
+	// shape and are not read. They are one pattern each when somebody asks.
+	geoGoogleMapsRe = regexp.MustCompile(`\b(?:https?://)?(?:www\.)?(?:` +
+		`google\.[a-z]{2,3}(?:\.[a-z]{2})?/maps/` + // /maps/@, /maps/place/, /maps/dir/, /maps/search/
+		`|google\.[a-z]{2,3}(?:\.[a-z]{2})?/maps\?` + // ?q=48.8584,2.2945
+		`|maps\.google\.[a-z]{2,3}(?:\.[a-z]{2})?/` +
+		`|maps\.app\.goo\.gl/` + // what the Share button actually produces
+		`|goo\.gl/maps/` +
+		`)` + geoURLTail)
+
+	// maps.apple.com/?ll=48.8584,2.2945, and the unified "maps.apple/" short
+	// host. The host is already maps-specific, so any path below it is a place.
+	// "daddr=" and "saddr=" are the ones that matter most: a route names both
+	// ends, which is usually home and work.
+	geoAppleMapsRe = regexp.MustCompile(`\b(?:https?://)?maps\.apple(?:\.com)?/` + geoURLTail)
+
+	// OpenStreetMap is narrowed where the other two are not: its host serves a
+	// whole site, so "openstreetmap.org/copyright" is not a place. Only the two
+	// forms that actually carry a position are read.
+	geoOSMRe = regexp.MustCompile(`\b(?:https?://)?(?:www\.)?openstreetmap\.org/(?:` +
+		`[^\s<>"']*#map=\d{1,2}/` + geoLat + `/` + geoLon +
+		`|\?[^\s<>"']*mlat=` + geoLat + `[^\s<>"']*mlon=` + geoLon +
+		`)`)
+
+	// Well-known text, as PostGIS and the OGC write it. **Longitude first** — the
+	// opposite of every other notation here, which is why the two bounds are not
+	// interchangeable in this one expression.
+	//
+	// TODO: uppercase only. "POINT" is the canonical OGC spelling, and (?i) or a
+	// "POINT|point" alternation would each cost the literal for a form nothing
+	// emits.
+	//
+	// The leading \b stays, unlike the geo: URI above, and it costs 290µs over the
+	// corpus. Without it any identifier ending in POINT takes the match:
+	// "ENDPOINT(2.2945 48.8584)" comes out as "POINT(2.2945 48.8584)" — a token
+	// bound to a fragment, with "END" left in clear before it, which is the failure
+	// Go's ASCII \b already caused once for an accented email address.
+	//
+	// WKT's own MULTIPOINT is *not* the case that forces this: both of its
+	// notations, "MULTIPOINT(2.2945 48.8584, 3.1 49.2)" and the parenthesised
+	// "MULTIPOINT((2.2945 48.8584), …)", are already refused by the closing "\)"
+	// this expression requires. Measured before the comment was written, because
+	// the obvious collision and the real one were not the same one.
+	geoWKTRe = regexp.MustCompile(`\bPOINT[ \t]*(?:ZM|Z|M)?[ \t]*\([ \t]*` +
+		geoLon + `[ \t]+` + geoLat +
+		`(?:[ \t]+[+-]?\d+(?:\.\d+)?)?` + // altitude, for POINT Z
+		`[ \t]*\)`)
+
+	// Degrees-minutes-seconds and degrees-decimal-minutes in one expression: DDM
+	// is DMS with the seconds left out and the minutes carrying the fraction, so
+	// the seconds group is simply optional.
+	//
+	// Horizontal whitespace only, never \s: with \s a span that is already this
+	// permissive swallows the following line.
+	//
+	// The variants are the characters keyboards and word processors actually
+	// produce — the masculine ordinal for the degree sign, the typographic quotes
+	// for the prime and double prime. "O" is west in French.
+	geoDegreeSign  = `[°º]`
+	geoPrime       = `['\x{2032}\x{2019}]`
+	geoDoublePrime = `["\x{2033}\x{201D}]`
+	geoMinutes     = `[0-5]?\d(?:\.\d+)?`
+	geoDMSRe       = regexp.MustCompile(
+		`\b(?:90|[0-8]?\d)[ \t]*` + geoDegreeSign + `[ \t]*` + geoMinutes + `[ \t]*` + geoPrime +
+			`(?:[ \t]*` + geoMinutes + `[ \t]*` + geoDoublePrime + `)?[ \t]*[NSns]` +
+			`[,;]?[ \t]*` +
+			`(?:180|1[0-7]\d|\d{1,2})[ \t]*` + geoDegreeSign + `[ \t]*` + geoMinutes + `[ \t]*` + geoPrime +
+			`(?:[ \t]*` + geoMinutes + `[ \t]*` + geoDoublePrime + `)?[ \t]*[EWOewo]`)
+
+	// Open Location Code. Base-20 over an alphabet chosen to avoid vowels, so
+	// eight of those characters followed by "+" is not a coincidence any more
+	// than a vendor prefix is.
+	//
+	// TODO: the short form ("V75V+8Q Paris") is not read. Four characters and a
+	// "+" is a shape ordinary text satisfies, and the locality that disambiguates
+	// it is a word list this catalogue does not have.
+	geoPlusCodeRe = regexp.MustCompile(`\b[23456789CFGHJMPQRVWX]{8}\+[23456789CFGHJMPQRVWX]{2,7}\b`)
+
+	// what3words. Anchored on "///" with **no space after it**, which is what
+	// keeps it off a Rust or C# documentation comment: "/// the.value.returned"
+	// is prose behind a separator, "///the.value.returned" is not a comment
+	// anybody writes.
+	//
+	// TODO: ASCII words only. what3words issues the same square in forty-odd
+	// languages and the accented ones are not read; widening the class needs its
+	// own negatives, because three dot-separated accented words is a much commoner
+	// shape than three ASCII ones.
+	geoWhat3WordsRe = regexp.MustCompile(`///[a-z]{3,}\.[a-z]{3,}\.[a-z]{3,}\b`)
+)
+
+// geoPointPatterns returns the geographic-point notations, ordered specific
+// before broad.
+func geoPointPatterns() []Pattern {
+	return []Pattern{
+		{Regex: geoURIRe, Category: CatGeoPoint, Label: "geo: URI"},
+		{Regex: geoGoogleMapsRe, Category: CatGeoPoint, Label: "Google Maps link"},
+		{Regex: geoAppleMapsRe, Category: CatGeoPoint, Label: "Apple Maps link"},
+		{Regex: geoOSMRe, Category: CatGeoPoint, Label: "OpenStreetMap link"},
+		{Regex: geoWKTRe, Category: CatGeoPoint, Label: "WKT point"},
+		{Regex: geoDMSRe, Category: CatGeoPoint, Label: "Degrees, minutes, seconds"},
+		{Regex: geoPlusCodeRe, Category: CatGeoPoint, Label: "Plus Code"},
+		{Regex: geoWhat3WordsRe, Category: CatGeoPoint, Label: "what3words address"},
 	}
 }

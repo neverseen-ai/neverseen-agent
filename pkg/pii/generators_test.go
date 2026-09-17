@@ -71,6 +71,7 @@ func TestStandInsUseReservedRanges(t *testing.T) {
 		{CatIPAddr, "192.0.2.", "RFC 5737 reserves this block for documentation"},
 		{CatPhone, "06 39 98 ", "ARCEP reserves this block for fiction"},
 		{CatPostalCode, "99000 ", "French departments stop at 98"},
+		{CatGeoPoint, "geo:0.", "open ocean off Null Island — geography has no unallocated range, so the only point that cannot be somebody's is one nobody lives at"},
 	}
 
 	for _, tt := range tests {

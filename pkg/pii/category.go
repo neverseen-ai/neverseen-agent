@@ -37,6 +37,7 @@ const (
 	CatIPv6       Category = "IPV6_ADDRESS"
 	CatMongoID    Category = "MONGO_ID"
 	CatDOB        Category = "DOB"
+	CatGeoPoint   Category = "GEO_POINT"
 )
 
 // Identifiers whose shape is national. Which of these load is decided by the
@@ -304,6 +305,27 @@ var categoryRegistry = map[Category]CategoryInfo{
 	CatIPv6: {Prefix: "IPV6", Score: 75, Verify: IPAddressCheck, Group: GroupTechnical,
 		Label: "IPv6 address"},
 	CatMongoID: {Prefix: "MONGOID", Score: 85, Group: GroupTechnical, Label: "Database identifier"},
+
+	// A place somebody was, lives or works. Filed under personal data rather than
+	// technical: a home is identified by its coordinates exactly as it is by its
+	// street, and CatAddress is the same fact in the other notation.
+	//
+	// 85, level with the postal address, and for the same reason — every notation
+	// this category reads is anchored on a literal somebody wrote on purpose
+	// ("geo:", a Maps host, "POINT(", a degree sign, "///"). The confidence is in
+	// the anchor, not in the digits.
+	//
+	// No Verify, deliberately. The latitude and longitude bounds are written into
+	// each expression instead, the way the Mastercard BIN range is: a Verify hangs
+	// off the category and would receive whatever span fired — a whole Maps URL, a
+	// degrees-minutes-seconds string, a Plus Code — so it would have to re-parse
+	// six notations to check two numbers the shape can bound directly. The one
+	// notation where that trade would have paid, GeoJSON, is out of reach for a
+	// different reason (see geoPointPatterns).
+	//
+	// Not NoisyInCode: unlike a date or a bare run of digits, none of these shapes
+	// is satisfied by ordinary source. A Maps link in a README is still a place.
+	CatGeoPoint: {Prefix: "GEO", Score: 85, Group: GroupPersonal, Label: "Geographic point"},
 	// Marked noisy in code: a date in source is a changelog entry, a copyright
 	// year or a fixture. Sixteen of the hundred and twenty findings left in
 	// third-party TypeScript were dates of this kind, and DOBCheck cannot help —

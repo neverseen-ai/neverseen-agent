@@ -174,6 +174,32 @@ var fakeGenerators = map[Category]Generator{
 	CatMongoID: {Capacity: 99999999, Make: func(i int64) string {
 		return fmt.Sprintf("000000000000000%09x", i)
 	}},
+
+	// A point just off Null Island: the square degree at 0°N 0°E, in the Gulf of
+	// Guinea, roughly 600 km from the nearest coast.
+	//
+	// It is the reserved range this category gets, and it is the only one
+	// available. Every other shape in this table has an issuer who set some values
+	// aside — a documentation block, an unassigned prefix, a check digit that
+	// cannot occur. Geography has no such authority and no unallocated values: any
+	// coordinate that looks plausible *is* somewhere, and a plausible stand-in
+	// would not be masking but fabrication. Open ocean is the nearest equivalent —
+	// nobody's home, nobody's office, and 0,0 is already the conventional marker
+	// for a coordinate that was never set.
+	//
+	// Rendered as a geo: URI whatever notation was replaced. Generator.Make sees
+	// only the index — not the value and not the pattern that fired — so it cannot
+	// give a Maps link back as a Maps link. A geo: URI is the one notation that
+	// reads as a place in any surrounding text, which a bare decimal pair dropped
+	// where a URL used to be does not.
+	//
+	// TODO: the notation changes. Returning a Maps link for a Maps link means
+	// widening Generator.Make to see which pattern matched, which the other six
+	// generators here do not need.
+	CatGeoPoint: {Capacity: 10000 * 10000, Make: func(i int64) string {
+		i--
+		return fmt.Sprintf("geo:0.%04d,0.%04d", i/10000, i%10000)
+	}},
 }
 
 // luhnCheckDigit returns the digit that would make body pass the Luhn checksum.

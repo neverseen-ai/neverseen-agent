@@ -33,6 +33,19 @@ Serveur : 192.168.13.42, et 10.0.0.1 en secours
 Serveur IPv6 : fd00:1234:5678:0000:0000:8a2e:0370:7334, forme compacte fd00:1234::1, compactée au milieu fd00:1234:5678::8a2e:370:7334
 Identifiant document : 507f1f77bcf86cd799439011
 
+=== Points géographiques ===
+Un lieu est une donnée personnelle au même titre qu'une adresse. Seules les notations qui s'annoncent elles-mêmes sont lues : une paire décimale nue, 48.8584 / 2.2945, ne se distingue pas de deux flottants quelconques et reste en clair.
+geo: URI (RFC 5870) : geo:48.8584,2.2945, avec altitude geo:48.8584,2.2945,35, avec incertitude geo:48.8584,2.2945;u=35
+Lien Google Maps, ses cinq formes : https://www.google.com/maps/place/Tour+Eiffel/@48.8584,2.2945,17z https://www.google.com/maps?q=48.8584,2.2945 https://maps.google.fr/maps?q=48.8584,2.2945 https://maps.app.goo.gl/AbCdEf123456 https://goo.gl/maps/AbCdEf123456
+Lien Apple Maps, le point et le trajet : https://maps.apple.com/?ll=48.8584,2.2945&q=Tour+Eiffel https://maps.apple.com/?saddr=48.8584,2.2945&daddr=48.8606,2.3376
+Lien OpenStreetMap, ses deux formes : https://www.openstreetmap.org/#map=17/48.8584/2.2945 https://www.openstreetmap.org/?mlat=48.8584&mlon=2.2945
+WKT, longitude en premier : POINT(2.2945 48.8584), avec altitude POINT Z(2.2945 48.8584 35)
+Degrés minutes secondes : 48°51'30.2"N 2°17'40.2"E
+Degrés minutes décimales : 48°51.504'N 2°17.670'E
+Ouest, notation française : 48°51'30.2"N 2°17'40.2"O
+Plus Code (Open Location Code) : 8FW4V75V+8Q
+what3words : ///filed.most.heaters
+
 === Dates au format ISO ===
 LA MÊME DATE dans ses deux écritures ISO : 1987-03-14, 1987/03/14
 Autres dates ISO : 1998-11-30, 2019/03/01, 1977-04-04, 2001-07-08

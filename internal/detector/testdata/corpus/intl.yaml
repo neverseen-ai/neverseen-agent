@@ -284,3 +284,104 @@ cases:
     text: "The gateway answered from 1.3.101.110 this morning."
     expect:
       - {category: IP_ADDRESS, value: "1.3.101.110"}
+
+  # --- Geographic points ----------------------------------------------------
+
+  - id: intl-geo-uri
+    text: "Le relevé est parti en geo:48.8584,2.2945;u=35 ce matin."
+    expect:
+      - {category: GEO_POINT, value: "geo:48.8584,2.2945;u=35"}
+
+  # The whole link, not the coordinates inside it. "/place/Tour+Eiffel/" names the
+  # destination in clear, so a span cut around "@48.8584,2.2945" masks nothing —
+  # and the trailing comma belongs to the sentence, not to the URL.
+  - id: intl-geo-google-maps-place
+    text: "Rendez-vous sur https://www.google.com/maps/place/Tour+Eiffel/@48.8584,2.2945,17z, à midi."
+    expect:
+      - {category: GEO_POINT, value: "https://www.google.com/maps/place/Tour+Eiffel/@48.8584,2.2945,17z"}
+
+  # What the Share button actually produces. No coordinates in it at all: the link
+  # resolves to the place, which is the whole reason a shortener has to be read.
+  - id: intl-geo-google-short-link
+    text: "Partagé via https://maps.app.goo.gl/AbCdEf123456 hier soir."
+    expect:
+      - {category: GEO_POINT, value: "https://maps.app.goo.gl/AbCdEf123456"}
+
+  # A route names both ends, which is usually home and work.
+  - id: intl-geo-apple-maps-route
+    text: "Trajet https://maps.apple.com/?saddr=48.8584,2.2945&daddr=48.8606,2.3376 enregistré."
+    expect:
+      - {category: GEO_POINT, value: "https://maps.apple.com/?saddr=48.8584,2.2945&daddr=48.8606,2.3376"}
+
+  - id: intl-geo-openstreetmap
+    text: "Voir https://www.openstreetmap.org/#map=17/48.8584/2.2945 pour le cadastre."
+    expect:
+      - {category: GEO_POINT, value: "https://www.openstreetmap.org/#map=17/48.8584/2.2945"}
+
+  # Longitude first, the opposite of every other notation.
+  - id: intl-geo-wkt-point
+    text: "INSERT INTO sites (geom) VALUES (ST_GeomFromText('POINT(2.2945 48.8584)'));"
+    expect:
+      - {category: GEO_POINT, value: "POINT(2.2945 48.8584)"}
+
+  - id: intl-geo-dms
+    text: "Position relevée : 48°51'30.2\"N 2°17'40.2\"E au théodolite."
+    expect:
+      - {category: GEO_POINT, value: "48°51'30.2\"N 2°17'40.2\"E"}
+
+  # Degrees and decimal minutes, the Garmin and marine notation: the same shape
+  # with the seconds left out, which is why the seconds group is optional rather
+  # than a pattern of its own.
+  - id: intl-geo-ddm
+    text: "Le GPS affiche 48°51.504'N 2°17.670'O à l'arrivée."
+    expect:
+      - {category: GEO_POINT, value: "48°51.504'N 2°17.670'O"}
+
+  - id: intl-geo-plus-code
+    text: "Le livreur demande le plus code 8FW4V75V+8Q."
+    expect:
+      - {category: GEO_POINT, value: "8FW4V75V+8Q"}
+
+  - id: intl-geo-what3words
+    text: "L'entrée est en ///filed.most.heaters, derrière la grille."
+    expect:
+      - {category: GEO_POINT, value: "///filed.most.heaters"}
+
+  # The notation deliberately not read. Two floats in range are also a transform,
+  # a vector, a pair of measurements — there is nothing in the value that says
+  # which, and the key beside it is the evidence this pattern set does not use.
+  - id: intl-prec-geo-bare-decimal-pair-is-not-a-point
+    text: "element.style.transform = translate(48.8584, 2.2945);"
+    expect: []
+
+  # A Rust or C# documentation comment is three slashes and prose. What keeps it
+  # off the what3words pattern is the space: "///the.value.returned" is not a
+  # comment anybody writes.
+  - id: intl-prec-doc-comment-is-not-what3words
+    text: "/// the.value.returned by the caller is ignored"
+    expect: []
+
+  # Out of range on both sides. The bounds are written into the expressions rather
+  # than checked afterwards, so a pair like this is never a match to score down.
+  - id: intl-prec-out-of-range-is-not-a-point
+    text: "Le vecteur POINT(999.888 12.3) du test unitaire."
+    expect: []
+
+  # The host serves a whole site, so only the two paths that carry a position are
+  # read. A licence page is not a place.
+  - id: intl-prec-openstreetmap-copyright-is-not-a-place
+    text: "Les données viennent de https://www.openstreetmap.org/copyright sous ODbL."
+    expect: []
+
+  # What the leading \b on the WKT expression is for. Without it the span starts
+  # at "POINT(" and "END" is left in clear beside a token bound to a fragment.
+  # The pair below is one case, not two: the identifier must stay untouched and
+  # the geometry must still be masked, and neither half means anything alone.
+  - id: intl-prec-endpoint-is-not-a-wkt-point
+    text: "La fonction ENDPOINT(2.2945 48.8584) renvoie le dernier sommet."
+    expect: []
+
+  - id: intl-geo-wkt-point-still-masked
+    text: "La colonne vaut POINT(2.2945 48.8584) après migration."
+    expect:
+      - {category: GEO_POINT, value: "POINT(2.2945 48.8584)"}

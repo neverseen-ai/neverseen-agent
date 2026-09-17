@@ -630,6 +630,48 @@ The 150 that were added cost 0.56 ms, 1.4% on top of the scan as it stood.
 hand. Agent Veil's hand-written version shipped with one set missing, which silently
 exempted two thirds of the catalogue from every test that swept "each category".
 
+### Geographic points — only the notations that announce themselves
+
+A place is personal data the way a postal address is, and `CatAddress` cannot see most of
+how it travels: a link out of a Share button, a pair of degrees off a GPS unit, a Plus
+Code. `GEO_POINT` is one category with eight patterns, each carrying its own `Label` so a
+report says which notation fired — the shape the catalogue already uses for Slack's two
+token forms.
+
+**Every expression is anchored on a literal somebody typed on purpose**: `geo:`, a Maps
+host, `POINT(`, a degree sign, `///`. That is the whole selection rule, and what it
+excludes is the notation people write most often. A bare decimal pair — `48.8584, 2.2945`
+— contains nothing but two floats in range, and a float pair in range is equally a
+`translate()`, a vector, a couple of measurements. The evidence is the key beside it, not
+the value; that is the shape `PHONE` and `POSTCODE` have, and it is why both carry
+`NoisyInCode`. A geohash (`u09tvw0f6szy`) is excluded for the same reason: base-32 with no
+anchor is an identifier. Both are recorded as negative corpus cases rather than left
+undescribed.
+
+**GeoJSON cannot be read here at all, and not for want of a pattern.**
+`{"coordinates":[2.2945,48.8584]}` never reaches the detector as text: a body is masked
+value by value and *numbers carry nothing to mask*
+([`jsonbody.go`](../../internal/proxy/jsonbody.go)). The two floats arrive as two separate
+JSON numbers, so no expression over a single value can ever see a pair. Reading it would
+mean recognising the *shape of the document* in `jsonbody`, which is a different feature
+from a catalogue entry.
+
+**A Maps link is masked whole, not around its coordinates.** The URL carries the
+destination in clear twice over — `/place/Eiffel+Tower/` and `&q=Eiffel+Tower` — and a
+home is a street name before it is a pair of floats, so a span cut around `@48.8584,2.2945`
+masks nothing. `CatConnStr` takes a whole span for the same reason: the password alone is
+not what identifies the database. OpenStreetMap is the exception and is narrowed to its two
+positional forms, because its host serves a whole site and `/copyright` is not a place.
+
+**The stand-in is a point nobody can live at.** Every other generator uses a range its
+issuer set aside — a documentation block, an unissued prefix, an impossible check digit.
+Geography has no such authority and no unallocated values: any plausible coordinate *is*
+somewhere, so a plausible stand-in would be fabrication rather than masking. The reserved
+range is open ocean, the square degree at Null Island, about 600 km off the nearest coast.
+It is rendered as a `geo:` URI whatever notation it replaced, because `Generator.Make` sees
+only the index — not the value and not the pattern that fired — so it cannot give a Maps
+link back as a Maps link. A `TODO` names that ceiling.
+
 ### Writing a pattern — the rules and the leaks behind them
 
 - **RE2 has no lookbehind or backreference.** A pattern that must reject a preceding
@@ -662,6 +704,17 @@ exempted two thirds of the catalogue from every test that swept "each category".
   prefixes: 62 ms as the rules were written, 28 ms with the leading `\b` removed, 17 ms
   with `(?i)` removed too. The `(?i)` was wrong as well as slow, because a vendor prefix
   is case-significant: Figma issues `figd_`, never `FIGD_`.
+
+  Measured again on one pattern when the geographic notations were added, and the ratio
+  is larger than the aggregate suggests: `\bgeo:…` takes **301 us** over the same corpus
+  and `geo:…` takes **866 ns**, because `LiteralPrefix` returns `""` for the first and
+  `"geo:"` for the second. **The parade the bullet above recommends — consume the
+  preceding character and point `Group` at the value — is the slow option here, at
+  676 us**: a leading character class has no literal either, so it buys the boundary back
+  at more than twice the price of the `\b` it replaced. The two rules are about different
+  failures and they pull opposite ways; which one applies depends on whether the pattern
+  opens on a literal. `POINT(` keeps its `\b` for 290 us because there the boundary is
+  doing correctness work — see below.
 - **An alternation of prefixes is two patterns, not one expression.** RE2 scans for a
   *single* leading literal, so it can use neither branch of `(?:EAAA|sq0atp-)`: that
   alternation cost 465 us over the corpus, and the same two shapes as separate patterns

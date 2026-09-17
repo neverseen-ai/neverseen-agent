@@ -26,6 +26,11 @@
    "fp": 0,
    "fn": 0
   },
+  "GEO_POINT": {
+   "tp": 11,
+   "fp": 0,
+   "fn": 0
+  },
   "IBAN": {
    "tp": 12,
    "fp": 0,
@@ -757,5 +762,5 @@
    "fn": 0
   }
  },
- "negatives": 220
+ "negatives": 225
 }

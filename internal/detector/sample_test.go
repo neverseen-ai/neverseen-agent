@@ -92,6 +92,31 @@ func TestSampleShowsEveryNotation(t *testing.T) {
 				"fd00:1234:5678::8a2e:370:7334", pii.CatIPv6,
 				"1987-03-14", pii.CatDOB,
 				"1987/03/14", pii.CatDOB,
+				// Every geographic notation the catalogue reads, one row per
+				// branch of the expressions. A table with only the tidy forms in
+				// it lets the others be narrowed away unnoticed — the altitude on
+				// a geo: URI, the "?q=" Maps link beside the "/place/" one, the
+				// two OpenStreetMap forms, the seconds that DDM leaves out.
+				"geo:48.8584,2.2945", pii.CatGeoPoint,
+				"geo:48.8584,2.2945,35", pii.CatGeoPoint,
+				"geo:48.8584,2.2945;u=35", pii.CatGeoPoint,
+				"https://www.google.com/maps/place/Tour+Eiffel/@48.8584,2.2945,17z", pii.CatGeoPoint,
+				"https://www.google.com/maps?q=48.8584,2.2945", pii.CatGeoPoint,
+				"https://maps.google.fr/maps?q=48.8584,2.2945", pii.CatGeoPoint,
+				"https://maps.app.goo.gl/AbCdEf123456", pii.CatGeoPoint,
+				"https://goo.gl/maps/AbCdEf123456", pii.CatGeoPoint,
+				"https://maps.apple.com/?ll=48.8584,2.2945&q=Tour+Eiffel", pii.CatGeoPoint,
+				"https://maps.apple.com/?saddr=48.8584,2.2945&daddr=48.8606,2.3376", pii.CatGeoPoint,
+				"https://www.openstreetmap.org/#map=17/48.8584/2.2945", pii.CatGeoPoint,
+				"https://www.openstreetmap.org/?mlat=48.8584&mlon=2.2945", pii.CatGeoPoint,
+				// Longitude first, which is the opposite of every other row here.
+				"POINT(2.2945 48.8584)", pii.CatGeoPoint,
+				"POINT Z(2.2945 48.8584 35)", pii.CatGeoPoint,
+				"48°51'30.2\"N 2°17'40.2\"E", pii.CatGeoPoint,
+				"48°51.504'N 2°17.670'E", pii.CatGeoPoint,
+				"48°51'30.2\"N 2°17'40.2\"O", pii.CatGeoPoint,
+				"8FW4V75V+8Q", pii.CatGeoPoint,
+				"///filed.most.heaters", pii.CatGeoPoint,
 			),
 		},
 		{
