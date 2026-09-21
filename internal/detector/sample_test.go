@@ -521,7 +521,8 @@ func TestSampleShowsEveryCredential(t *testing.T) {
 		"YWRtaW46aHVudGVyMg==", pii.CatGenericSecret,
 		"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", pii.CatHexSecret,
 
-		// The twelve shapes qualified by hand in docs/secret-shapes-to-label.md.
+		// The twelve shapes qualified by hand, one at a time, against the rules
+		// that were refusing them.
 		// Each was a rule refusing a real credential on evidence about the *form*
 		// of the value — punctuation, length, the absence of a digit — and each is
 		// a row here because that is what stops the sample agreeing with whatever

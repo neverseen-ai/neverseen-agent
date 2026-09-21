@@ -615,7 +615,7 @@ func TestGenericSecretCheckKeepsCredentials(t *testing.T) {
 			"the leading digit alone — both segments are short, and no language names a member 37Zim",
 		},
 
-		// Qualified by hand in docs/secret-shapes-to-label.md. Each of these was
+		// Qualified by hand, one shape at a time. Each of these was
 		// forwarded in clear, and each was refused by a rule that read punctuation,
 		// length or the absence of a digit as evidence of code.
 		{"Wh4t?Really", "a question mark before a letter is typed punctuation; only `?.` is code"},

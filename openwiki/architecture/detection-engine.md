@@ -408,7 +408,7 @@ trimming the closing half of what the pattern had already eaten.
 
 **Each rule is narrower than the obvious version**, because the tree already held a
 case against each over-reach. Four of them were narrowed again after
-`docs/secret-shapes-to-label.md` put forty-four shapes to a person one at a time: twelve
+forty-four shapes were put to a person one at a time: twelve
 came back as credentials the engine was refusing, and the rules that refused them had all
 been reading the *form* of the value rather than anything about code.
 
