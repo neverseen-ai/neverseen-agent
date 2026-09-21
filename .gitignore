@@ -24,3 +24,6 @@ node_modules/
 # supervision. The same reason `.env` is here: `git add -A` is one keystroke, and a
 # token committed is a token to rotate.
 .secrets
+
+# Byte-code from the measurement scripts under docs/presidio-study/.
+__pycache__/
