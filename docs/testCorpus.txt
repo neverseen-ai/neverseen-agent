@@ -1,6 +1,10 @@
-# Corpus de test — différentes formes de secrets
+# Test corpus — the shapes a secret arrives in
 
-Ce document simule un ensemble de fichiers, configurations, logs, commentaires et extraits de code dans lesquels un détecteur de secrets pourrait rencontrer différentes représentations de credentials. Toutes les valeurs ci-dessous sont fictives et destinées exclusivement aux tests.
+**This file is fixture data, not documentation.** It simulates the files, configurations, logs, comments and code extracts a secret detector meets in one prompt, and it is what the pattern timings in `CLAUDE.md`, `pkg/pii/patterns_secret.go` and `pkg/pii/patterns_intl.go` are measured over.
+
+**The body below is deliberately in French**, and that is the exception to the repository's English rule rather than a lapse: this agent reads French prompts, and a corpus written in English would stop exercising the one thing it is here to measure — a credential sitting in the language its users actually write.
+
+**Every value is fabricated.** None is, or ever was, a live credential.
 
 ---
 
