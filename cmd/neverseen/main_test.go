@@ -93,7 +93,7 @@ func TestRun(t *testing.T) {
 			t.Setenv("NEVERSEEN_PII_ALLOWLIST", "")
 			// scan reads the stored policy as the agent does, and this workstation
 			// may have one.
-			t.Setenv("HOME", t.TempDir())
+			testHome(t)
 
 			var out bytes.Buffer
 			err := run(tt.args, strings.NewReader(tt.stdin), &out)
@@ -117,8 +117,7 @@ func TestRun(t *testing.T) {
 // reports a value as masked that the other forwards in clear. Before scan read the
 // stored policy, a category unticked in the menu bar was still reported by scan.
 func TestRunScanFollowsTheStoredPolicy(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := testHome(t)
 	t.Setenv("NEVERSEEN_PII_LOCALE", "fr")
 	t.Setenv("NEVERSEEN_PII_ALLOWLIST", "")
 
@@ -143,7 +142,7 @@ func TestRunScanFollowsTheStoredPolicy(t *testing.T) {
 }
 
 func TestRunScanReadsAFile(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	testHome(t)
 	t.Setenv("NEVERSEEN_PII_LOCALE", "fr")
 	t.Setenv("NEVERSEEN_PII_ALLOWLIST", "")
 
@@ -208,4 +207,20 @@ func TestRunSubcommandHelpIsNotAnError(t *testing.T) {
 	if !strings.Contains(out.String(), "Usage of scan") {
 		t.Errorf("the usage was not printed:\n%s", out.String())
 	}
+}
+
+// testHome moves the home directory this process resolves to a temporary one and
+// returns it.
+//
+// Both variables, because os.UserHomeDir reads $HOME on Unix and %USERPROFILE% on
+// Windows. Setting only one isolates the test on some runners and silently reads
+// the developer's own ~/.neverseen on the others — which is how this package went
+// green on the workstation that wrote it and red on every runner where the agent
+// had never been installed.
+func testHome(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	return home
 }

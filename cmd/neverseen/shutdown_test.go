@@ -86,7 +86,7 @@ func TestTheLastWindowIsFiledBeforeTheCommandReturns(t *testing.T) {
 	// is working exactly as written. Every other test names a temp file in Options;
 	// this one has nowhere to name it, so the home directory itself is moved, which
 	// keeps the control key out of the developer's ~/.neverseen as well.
-	t.Setenv("HOME", t.TempDir())
+	testHome(t)
 
 	addr := freePort(t)
 	t.Setenv("NEVERSEEN_LISTEN", addr)

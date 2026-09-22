@@ -14,8 +14,7 @@ const sampleKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abc
 // pbcopy` is what it is for, and a heading on the clipboard is a key the options
 // page refuses.
 func TestKeyPrintsTheControlKey(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := testHome(t)
 	if err := os.MkdirAll(filepath.Join(home, ".neverseen"), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +38,7 @@ func TestKeyPrintsTheControlKey(t *testing.T) {
 // never run — it writes this key on its first start — so the message names the
 // command that creates one rather than the error the read returned.
 func TestKeySaysWhereToGetOneWhenThereIsNone(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	testHome(t)
 
 	var out bytes.Buffer
 	err := run([]string{"key"}, strings.NewReader(""), &out)
@@ -57,8 +56,7 @@ func TestKeySaysWhereToGetOneWhenThereIsNone(t *testing.T) {
 // TestKeyNeverCreatesOne. A key minted by a reader is a key the agent does not know:
 // the route would refuse it while the options page reported it saved.
 func TestKeyNeverCreatesOne(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := testHome(t)
 
 	_ = run([]string{"key"}, strings.NewReader(""), &bytes.Buffer{})
 

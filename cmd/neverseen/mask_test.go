@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -59,6 +61,21 @@ func newFakeAgent(t *testing.T, off ...string) *fakeAgent {
 	a.server = httptest.NewServer(mux)
 	t.Cleanup(a.server.Close)
 	t.Setenv(proxy.EnvListen, strings.TrimPrefix(a.server.URL, "http://"))
+
+	// `neverseen mask` reads the control key through proxy.ReadControlKey, the one
+	// reader every surface uses, and takes no option pointing it elsewhere — so the
+	// home directory is moved and a key written into it. Without this the suite read
+	// whatever key the workstation running it happened to hold, and passed only on a
+	// machine with the agent already installed.
+	home := testHome(t)
+	if err := os.MkdirAll(filepath.Join(home, ".neverseen"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".neverseen", "control.key"),
+		[]byte(sampleKey+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
 	return a
 }
 
