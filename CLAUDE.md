@@ -482,6 +482,16 @@ you had a reason to open that page:
 - **CI must trigger on the real default branch.**
 - **`version` is a `var`, not a `const`** — declared `const`, the `-ldflags` stamp is
   silently inert and every release reports the same string.
+- **Never cut a release with work still uncommitted. Refuse, and say what is
+  pending.** A tag names a commit, so the working tree is invisible to it: whatever
+  is uncommitted is simply not in the release, and nothing about the release says so.
+  The trap is not that something is missing — it is that **what was verified is not
+  what shipped**. Every gate runs against the working tree: `make test`, `make lint`,
+  `make score`, a `goreleaser release --snapshot`. Green means the tree is sound. The
+  release is built from the commit, and if the two differ, that green describes code
+  nobody published. The person who asked for the release believes their work is in it,
+  because they watched the checks pass over it. Check `git status` before the tag,
+  never after.
 
 ## OpenWiki
 
