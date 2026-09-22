@@ -1,3 +1,12 @@
+//go:build !windows
+
+// Not on Windows, because the thing under test refuses to run there: install.sh's
+// platform() accepts Darwin and Linux and dies on anything else, so every case here
+// would assert against that one refusal. Windows has install.ps1 instead, and the CI
+// job for that platform parses it — the same coverage by the only means that exist
+// there. Without this constraint the windows job failed on `go test ./...` from the
+// day it was added, which is how it was found.
+
 // Package install holds nothing but a test, and the thing it tests is not Go.
 //
 // install.sh had five failures found by driving it by hand, every one of them
