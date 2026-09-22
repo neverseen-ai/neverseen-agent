@@ -833,6 +833,18 @@ func TestRunDrainsABacklogWithoutWaitingAnInterval(t *testing.T) {
 	// hour, a second pass can only be the backlog rule.
 	waitForHeartbeats(t, b, maxBucketsPerRequest+4)
 
+	// Stopped before the file is read, rather than read from underneath it. Run owns
+	// buffer.json for as long as it is going — it rewrites it after every delivery —
+	// and on Windows a second opener meets the writer's handle instead of an older
+	// version of the file: "The process cannot access the file because it is being
+	// used by another process", which is what this test did on that runner. POSIX
+	// hid it, since a rename there leaves a reader with a consistent older file.
+	//
+	// Reading the state Run left behind is also the stronger assertion: the shutdown
+	// drain is part of what the count above is about.
+	cancel()
+	stopped()
+
 	// And none of them went missing to the age bound rather than being delivered.
 	// Asserted separately because the count above cannot tell the two apart: a
 	// bucket pruned before the first request and a bucket never sent both read as
