@@ -171,11 +171,19 @@ jobs:
           version: latest
           args: check
 
-      - name: Build a snapshot release
+      # `release`, not `build`, and that is the whole point of this step. `build`
+      # stops once the binaries are compiled and never reaches `archives` or
+      # `checksum`, so the two steps install.sh actually depends on were the only
+      # ones CI could not see. Both broke there and both shipped: `checksums:` was
+      # written where goreleaser wants `checksum:`, and the archives carried a
+      # different number of binaries per platform, which goreleaser refuses. The
+      # first release failed on the second of those, on a tag, where the failure is
+      # a published tag with nothing attached to it.
+      - name: Build a snapshot release, archives and checksums included
         uses: goreleaser/goreleaser-action@v6
         with:
           version: latest
-          args: build --snapshot --clean
+          args: release --snapshot --clean --skip=publish
 
   # Its own job, on Linux, because shellcheck is installed with apt-get and the
   # release job no longer runs anywhere that has it.
