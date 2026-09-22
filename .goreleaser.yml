@@ -106,7 +106,7 @@ archives:
       - install.sh
       - install.ps1
 
-checksums:
+checksum:
   name_template: checksums.txt
 
 snapshot:
