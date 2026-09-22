@@ -409,7 +409,22 @@ func TestAnUnreachableBackendIsSurvivable(t *testing.T) {
 func TestRunReportsAtStartAndOnShutdown(t *testing.T) {
 	b := newBackend(t)
 	r := NewRecorder(epoch)
-	rep, _ := newTestReporter(t, b, r)
+
+	// A clock this test moves once, where every other test here pins one.
+	//
+	// Pinned, both buckets carry the same window — and a window is the only thing
+	// that identifies a bucket (pkg/telemetry/contract.go), so the two reports this
+	// test exists to tell apart were indistinguishable by the contract's own rule.
+	// A minute, because suspendAfter is two and a longer jump would have the loop
+	// decide the machine had slept and close a third window.
+	var clockMu sync.Mutex
+	clock := epoch
+	now := func() time.Time {
+		clockMu.Lock()
+		defer clockMu.Unlock()
+		return clock
+	}
+	rep, _ := reporterInHome(t, b, r, t.TempDir(), now)
 
 	r.Request("default", "", "")
 
@@ -427,6 +442,10 @@ func TestRunReportsAtStartAndOnShutdown(t *testing.T) {
 	// "exactly one heartbeat" held — on scheduling luck, not behaviour.
 	waitForHeartbeats(t, b, 1)
 
+	clockMu.Lock()
+	clock = epoch.Add(time.Minute)
+	clockMu.Unlock()
+
 	r.Request("default", "", "")
 	cancel()
 	select {
@@ -436,19 +455,38 @@ func TestRunReportsAtStartAndOnShutdown(t *testing.T) {
 	}
 
 	got, _, enrolments := b.received()
-	if len(got) != 2 {
-		t.Fatalf("the backend saw %d heartbeats, want one at start and one on shutdown", len(got))
-	}
 	if enrolments != 1 {
 		t.Errorf("enrolled %d times, want 1: the report at start must not re-enrol", enrolments)
+	}
+
+	// Counted by window rather than by arrival, because a bucket delivered twice is
+	// this contract working rather than failing. An agent forgets a batch only once
+	// the backend has answered, so a send cut off between the two is re-sent — which
+	// is exactly what cancelling here can do to the report at start — and the backend
+	// is required to key on (agent, window) and take the retry without counting it
+	// twice. Asserting on arrivals made this test fail about one run in a few hundred
+	// under a loaded scheduler, over the agent doing what it is specified to do.
+	windows := map[string]telemetry.Counters{}
+	for _, h := range got {
+		key := h.Window.Start.Format(time.RFC3339Nano) + ".." + h.Window.End.Format(time.RFC3339Nano)
+		if seen, repeat := windows[key]; repeat && seen.Requests != h.Counters.Requests {
+			t.Errorf("window %s arrived twice carrying %d then %d requests; a re-send is the same bucket",
+				key, seen.Requests, h.Counters.Requests)
+		}
+		windows[key] = h.Counters
+	}
+	if len(windows) != 2 {
+		t.Fatalf("the backend saw %d distinct windows in %d heartbeats, want one at start and one on shutdown",
+			len(windows), len(got))
 	}
 
 	// One request in each window, never the same one twice. A window that carried
 	// its predecessor's counters would double every number on the dashboard, and
 	// the report at start is exactly the kind of extra send that would do it.
-	if got[0].Counters.Requests != 1 || got[1].Counters.Requests != 1 {
-		t.Errorf("the two heartbeats carry %d and %d requests, want 1 and 1",
-			got[0].Counters.Requests, got[1].Counters.Requests)
+	for key, counters := range windows {
+		if counters.Requests != 1 {
+			t.Errorf("window %s carries %d requests, want 1", key, counters.Requests)
+		}
 	}
 }
 
