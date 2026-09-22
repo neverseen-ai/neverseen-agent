@@ -77,7 +77,67 @@ func main() {
 		if err := writeICO(name+".ico", img); err != nil {
 			log.Fatal(err)
 		}
+		if err := write(name+"-linux.png", tint(img, hueFor[state])); err != nil {
+			log.Fatal(err)
+		}
 	}
+}
+
+// hueFor is the colour each state is drawn in on Linux, and the reasoning is in
+// tint.
+//
+// Two states share one colour and that is the answer rather than a gap. stateUnmasked
+// and stateAbsent both mean the traffic is leaving in clear, which is the whole of
+// what a colour seen from across a desk can say; what separates them is what a person
+// has to *do* — choose a locale, or start the agent — and that is carried by the
+// glyph, which loses its divider in the second case.
+var hueFor = map[state]color.NRGBA{
+	stateMasking:  {R: 0x2E, G: 0x9E, B: 0x4F},
+	statePartial:  {R: 0xC7, G: 0x77, B: 0x00},
+	stateUnmasked: {R: 0xE0, G: 0x52, B: 0x52},
+	stateAbsent:   {R: 0xE0, G: 0x52, B: 0x52},
+}
+
+// tint redraws the coverage mask in one colour, for the platform that has room for
+// one.
+//
+// # Why Linux gets colour when macOS does not
+//
+// Because it is not asked the same question. macOS takes the PNG as a *template* and
+// recolours it for the bar it is drawn on, so a colour there is discarded at best. On
+// Linux there is no such notion: fyne.io/systray hands the decoded pixels straight to
+// the panel as a StatusNotifierItem IconPixmap, and the panel draws exactly what it is
+// given. The black template would be a black shape on a dark panel — working and
+// invisible, which reads as an agent that is not running, and is the same failure
+// writeICO exists to prevent on Windows.
+//
+// # Why colour is added to the shape rather than replacing it
+//
+// The glyph already says which state this is — the right square outlined, half filled
+// or filled. Colour is the channel that carries across a room, and it is the one about
+// eight percent of men read differently, so it is never the only one carrying a
+// meaning here. Somebody who cannot tell the green from the amber still has the square.
+//
+// # The ceiling
+//
+// TODO: one flat colour cannot clear 3:1 against every panel. Every hue here is chosen
+// in the luminance band that clears it against white and against the dark greys Adwaita
+// and Breeze use, which is as far as a single bitmap goes: on a panel of middling
+// luminance — a saturated blue, say — nothing in that band separates from the
+// background, and the grey writeICO already ships has the same limit. The upgrade is an
+// outline in the opposite luminance, which needs the renderer to draw a second pass
+// around the coverage rather than over it.
+func tint(mask *image.NRGBA, hue color.NRGBA) *image.NRGBA {
+	b := mask.Bounds()
+	out := image.NewNRGBA(b)
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			if a := mask.NRGBAAt(x, y).A; a != 0 {
+				out.SetNRGBA(x, y, color.NRGBA{R: hue.R, G: hue.G, B: hue.B, A: a})
+			}
+		}
+	}
+	return out
 }
 
 // writeICO writes the same glyph in the format Windows needs, in a colour it can

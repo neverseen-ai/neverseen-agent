@@ -305,10 +305,30 @@ else can, which is to say without being clicked whether the traffic is masked.
 
 `go run ./internal/tray/icons/generate.go`. Committed for the reason
 `testdata/heartbeats.json` is: a generated asset a reviewer can look at beats a build step
-nobody can, and the alternative is an SVG rasteriser in `go.mod` for four 32×32 pictures. The
-PNGs are black plus alpha because macOS is handed them as template images and recolours them
-for a light or a dark bar; the ICOs are a mid grey, because Windows draws exactly what it is
-given and a black shape on the Windows 11 taskbar is an icon that is working and invisible.
+nobody can, and the alternative is an SVG rasteriser in `go.mod` for four 32×32 pictures.
+
+**Three sets, and the question that splits them is whether the platform recolours what it is
+handed.** macOS does — that is what a template image is — so `*.png` is black plus alpha and
+the system redraws it for a light or a dark bar. Windows does not, and reads ICO rather than
+PNG, so `*.ico` is a mid grey that carries against both themes: a black shape on the Windows 11
+taskbar is an icon that is working and invisible, which reads as an agent that is not running.
+Linux does not either, and has room for more than grey — `fyne.io/systray` publishes the
+decoded pixels as a StatusNotifierItem `IconPixmap` and the panel paints them as they arrive,
+`SetTemplateIcon` there discarding the template and keeping the regular icon — so `*-linux.png`
+is coloured: green masking, amber with categories in clear, red when nothing is replaced.
+
+**The colour is added to the glyph, never instead of it.** The right square is still outlined,
+half filled or filled, because colour is the channel about eight percent of men read
+differently. `stateUnmasked` and `stateAbsent` share one red on purpose: both mean the traffic
+leaves in clear, which is all a colour seen from across a desk can say, and what separates them
+— choose a locale, or start the agent — is carried by the divider the glyph loses.
+
+Every hue sits in the luminance band that clears 3:1 (WCAG 1.4.11, graphical objects) against
+white and against Adwaita's dark bar, asserted on the committed bytes by
+`TestTheLinuxIconsAreVisibleOnAPanel`. **TODO:** no single flat colour clears that bar against a
+panel of middling luminance — a saturated blue — and the Windows grey has the same ceiling. The
+upgrade is an outline in the opposite luminance, which needs a second pass around the coverage
+rather than over it.
 
 **The state is carried by the mark's own vocabulary rather than by a badge over it**, and a
 strike was tried: it is eight pixels of diagonal at the size this is actually seen, and whether

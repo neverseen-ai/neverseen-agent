@@ -369,7 +369,14 @@ and it is deliberately not repeated here.
   variable, the CLI and the caveat together. Only verified pairs go in, and **the
   caveat travels to every place the line is handed over.**
 - **The icons are generated and committed**
-  (`go run ./internal/tray/icons/generate.go`).
+  (`go run ./internal/tray/icons/generate.go`), in **three sets split by one question**:
+  does the platform recolour what it is handed. macOS does, so its PNG is a black
+  template; Windows and Linux do not, so the ICO is a mid grey and the Linux PNG is
+  coloured. A black template on a dark panel is an icon working and invisible, which
+  reads as an agent that is not running. **Colour is added to the glyph, never instead
+  of it**, and every hue clears 3:1 against a light and a dark panel
+  (`TestTheLinuxIconsAreVisibleOnAPanel`). A `TODO:` names the ceiling: no flat colour
+  clears a panel of middling luminance.
 - **The installer never exports a base URL into a shell profile.** It adds
   `eval "$(neverseen env)"` — availability over enforcement, on purpose. It touches
   no login file unless asked (`--shell`), and `--uninstall` leaves `~/.neverseen/`

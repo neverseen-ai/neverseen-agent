@@ -209,8 +209,11 @@ func (m *menuBar) watchSlot(index int) {
 
 // show puts a rendered display on screen.
 func (m *menuBar) show(d display) {
-	// Both arguments are the same image: the template is what macOS wants, and on
-	// the platforms that have no notion of one it is the icon itself.
+	// Both arguments are the same image, and which image that is has already been
+	// decided by the build: icons.go embeds a template on macOS, an ICO on Windows and
+	// a coloured PNG on Linux. Passing one value for both is what makes this call the
+	// same everywhere — the toolkit keeps the template on darwin and the regular icon
+	// on the two platforms that draw exactly what they are handed.
 	systray.SetTemplateIcon(d.icon, d.icon)
 	systray.SetTooltip(d.tooltip)
 

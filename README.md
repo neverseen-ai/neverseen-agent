@@ -242,6 +242,11 @@ answers:
 | Half | `Masking, with N categories in clear` — you switched something off, and it names which |
 | Filled | Not masking — either no locale is loaded, or the agent is not answering |
 
+On Linux the same three are **also** green, amber and red, because the panel draws
+what it is handed rather than recolouring it the way macOS does. The colour is added
+to the shape and never replaces it: it is the channel about one man in twelve reads
+differently, and the square is what carries the meaning.
+
 Click it and the menu says what is happening — the address, the locales, the
 substitution mode, the version — and offers the few things a menu is the right
 shape for:
