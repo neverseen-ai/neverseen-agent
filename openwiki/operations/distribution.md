@@ -305,11 +305,28 @@ else can, which is to say without being clicked whether the traffic is masked.
 
 `go run ./internal/tray/icons/generate.go`. Committed for the reason
 `testdata/heartbeats.json` is: a generated asset a reviewer can look at beats a build step
-nobody can, and the alternative is an SVG rasteriser in `go.mod` for three 32×32 pictures. They
-are black plus alpha because macOS is handed them as template images and recolours them for a
-light or a dark bar. The state is carried by the mark's own vocabulary — the right-hand square
-outlined while that value is being replaced, filled when it is not — rather than by a badge
-over it: a strike was tried and is eight pixels of diagonal at the size this is actually seen.
+nobody can, and the alternative is an SVG rasteriser in `go.mod` for four 32×32 pictures. The
+PNGs are black plus alpha because macOS is handed them as template images and recolours them
+for a light or a dark bar; the ICOs are a mid grey, because Windows draws exactly what it is
+given and a black shape on the Windows 11 taskbar is an icon that is working and invisible.
+
+**The state is carried by the mark's own vocabulary rather than by a badge over it**, and a
+strike was tried: it is eight pixels of diagonal at the size this is actually seen, and whether
+it reads as "off" or as a smudge cannot be settled anywhere but a real menu bar. The four:
+
+| Icon | What it says | How it is drawn |
+| --- | --- | --- |
+| `masking` | every category the configuration loaded | right-hand square **outlined** — that value is being replaced |
+| `partial` | masking, with categories switched off | the outline, **half filled** — some of it is |
+| `unmasked` | answering and replacing nothing | right-hand square **filled** — it is not |
+| `absent` | no agent answering at all | filled, and **no divider** |
+
+`absent` is the one a coloured dot would have been for. It cannot be coloured on macOS — a
+template image keeps only its alpha — so it says the same thing in the vocabulary that is
+available: the divider is the agent standing between a value and where it was going, and there
+is no agent. It differs from `unmasked` by that stroke alone, which is why `TestTheIcons`
+compares all four pairwise. Both leave the traffic in clear; only one of them is fixed from the
+settings page.
 
 ## Pointing a tool at the agent
 

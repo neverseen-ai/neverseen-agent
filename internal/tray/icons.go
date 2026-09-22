@@ -1,6 +1,6 @@
 package tray
 
-// The three status icons, generated and committed, in two formats.
+// The four status icons, generated and committed, in two formats.
 //
 // Regenerate both with:
 //
@@ -26,6 +26,12 @@ package tray
 // third option: such an agent is masking, so the masking icon would be the green light
 // over the values that are not being replaced, and the unmasked one would be a lie
 // about the twenty-odd categories that are.
+//
+// absentIcon is no agent answering at all. It carries the same two filled squares as
+// unmaskedIcon and loses the divider between them, because the divider is the agent
+// standing between a value and where it was going. Both states leave the traffic in
+// clear, which is why they were one picture until now; what separates them is what a
+// person has to do next, and the icon is what they look at before doing it.
 
 // (The embeds live in icons_other.go and icons_windows.go, which differ only in
 // the file each name points at.)

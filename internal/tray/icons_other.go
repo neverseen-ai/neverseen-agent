@@ -13,4 +13,7 @@ var (
 
 	//go:embed icons/unmasked.png
 	unmaskedIcon []byte
+
+	//go:embed icons/absent.png
+	absentIcon []byte
 )

@@ -200,7 +200,16 @@ and it is deliberately not repeated here.
 - **Everywhere else: counts and category names, never content.**
 - **Three levels, not two.** `Status.Masking` is deliberately not `Answering`;
   `Status.Level` is deliberately not `Masking`. The exit code of `neverseen status`
-  and the menu bar icon both follow **Level**.
+  follows **Level**.
+- **Four icons, because the menu bar has a question the exit code does not.** The icon
+  follows Level and then `Answering` over it (`internal/tray/tray.go`): a stopped agent
+  reaches `render` as `LevelNone`, wearing the picture of one that is running and
+  replacing nothing. Both leave the traffic in clear — which is why they were one
+  picture — but one is fixed from the settings page and the other is not, and the icon
+  is what somebody looks at before going there. `absentIcon` is `unmaskedIcon` without
+  the divider, because the divider is the agent standing between a value and where it
+  was going. **Not a strike through the mark**: that was tried and is eight pixels of
+  diagonal at the size this is actually seen (`internal/tray/icons/generate.go`).
 - **A level counts the effect, `Disabled` records the intent**, and the level counts
   only what the loaded patterns can emit (`disabledInPlay`).
   `TestTheLevelCountsOnlyWhatTheDetectorCanEmit`.

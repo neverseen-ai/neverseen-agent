@@ -51,18 +51,22 @@ func TestTheIconFollowsWhetherValuesAreReplaced(t *testing.T) {
 		wantLine string
 	}{
 		"masking": {masking, maskingIcon, "Masking"},
-		// Up, healthy, and recognising almost nothing. It gets the same icon as a
-		// stopped agent because it has the same consequence: the traffic leaves in
-		// clear. An icon that called this protected would be the icon somebody
-		// trusted while it did not.
+		// Up, healthy, and recognising almost nothing. Not the masking icon, because
+		// an icon that called this protected would be the icon somebody trusted
+		// while their traffic went out in clear. Not the absent one either: the
+		// agent is there, and what fixes this is a setting rather than a start.
 		"no locale": {
 			proxy.Status{Addr: "127.0.0.1:9787", Answering: true,
 				Health: proxy.Health{Version: "1.4.2", Substitution: "token"}},
 			unmaskedIcon, "Not masking",
 		},
+		// The fourth picture. It shared the unmasked one until the day somebody read
+		// it, opened the settings page and found nothing to switch on, because the
+		// agent was not running. Both leave the traffic in clear; only one of them is
+		// fixed from that page.
 		"not answering": {
 			proxy.Status{Addr: "127.0.0.1:9787"},
-			unmaskedIcon, "Not masking",
+			absentIcon, "Not masking",
 		},
 	}
 
@@ -117,6 +121,10 @@ func TestTheMenuSaysWhatIsHappeningToTheTraffic(t *testing.T) {
 func TestTheIcons(t *testing.T) {
 	icons := map[string][]byte{
 		"masking": maskingIcon, "partial": partialIcon, "unmasked": unmaskedIcon,
+		// absent differs from unmasked by the divider alone, which is the pair the
+		// distinctness check below matters most for: they are the two that say
+		// "in clear" and they must not be the same picture.
+		"absent": absentIcon,
 	}
 	for name, raw := range icons {
 		// Read through iconSize, which is per-platform: these are PNGs everywhere but
@@ -185,8 +193,8 @@ func TestWatchAppliesOnlyWhatChanged(t *testing.T) {
 	mu.Unlock()
 
 	waitFor(t, func() bool { return view.updates() >= 2 })
-	if !bytes.Equal(view.last().icon, unmaskedIcon) {
-		t.Error("the icon did not change when the agent stopped")
+	if !bytes.Equal(view.last().icon, absentIcon) {
+		t.Error("the agent stopped and the icon is not the one that says so")
 	}
 
 	cancel()

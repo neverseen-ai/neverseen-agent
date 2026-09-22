@@ -68,6 +68,7 @@ func main() {
 		"masking":  stateMasking,
 		"partial":  statePartial,
 		"unmasked": stateUnmasked,
+		"absent":   stateAbsent,
 	} {
 		img := glyph(state)
 		if err := write(name+".png", img); err != nil {
@@ -133,8 +134,8 @@ func writeICO(name string, mask *image.NRGBA) error {
 	return nil
 }
 
-// state is how much of the catalogue is being applied, in the three answers the
-// agent gives.
+// state is what the icon has to say: how much of the catalogue is being applied,
+// and whether there is an agent applying it at all.
 type state int
 
 const (
@@ -142,11 +143,14 @@ const (
 	stateMasking state = iota
 	// statePartial is masking with categories switched off.
 	statePartial
-	// stateUnmasked is not masking at all: stopped, or no locale loaded.
+	// stateUnmasked is an agent that is answering and replacing nothing: no locale
+	// loaded, or every category switched off.
 	stateUnmasked
+	// stateAbsent is no agent answering at all.
+	stateAbsent
 )
 
-// glyph renders the mark in one of the three states.
+// glyph renders the mark in one of the four states.
 //
 // The state is carried by the mark's own vocabulary rather than by a badge over it:
 // the left square is a value in clear, the right one is that value replaced. So the
@@ -159,12 +163,17 @@ const (
 // settled anywhere but a real menu bar. Filled against outlined is the strongest
 // contrast available at that size and needs no sub-pixel luck.
 //
-// # Why there are three now, when the reasoning here said two
+// # Why there are four now, when the reasoning here said two and then three
 //
 // It said two because what mattered was whether values were being replaced, and an
 // agent up with no locale selected belonged with one that was down: both mean the
-// traffic leaves in clear. That reasoning still holds and those two are still one
-// picture.
+// traffic leaves in clear.
+//
+// That is true and it is not enough, which is what the fourth picture is for. Both
+// leave the traffic in clear, but what a person has to *do* about them is different
+// — start the agent, or choose a locale — and the icon is the only thing they look
+// at before doing it. One picture for both sent somebody to the settings page for an
+// agent that was not running.
 //
 // What changed is that a category can now be switched off from the menu. Such an
 // agent is masking — most of the catalogue, and the credentials always — while the
@@ -217,7 +226,13 @@ func glyph(s state) *image.NRGBA {
 func inked(x, y float64, s state) bool {
 	// The divider, shortened to the squares it separates: the SVG runs it from 4.5
 	// to 19.5 because it has a plate to span.
-	if toSegment(x, y, 12, 7.25, 12, 16.75) <= 1.5/2 {
+	//
+	// Absent when no agent is. The divider is the agent standing between a value and
+	// where it was going, so removing it is the one change that means what it draws
+	// — and it is the largest change available at sixteen points, a full stroke
+	// present or gone, where the strike-through rejected above was eight pixels of
+	// diagonal that had to miss the glyph it crossed.
+	if s != stateAbsent && toSegment(x, y, 12, 7.25, 12, 16.75) <= 1.5/2 {
 		return true
 	}
 	// The value in clear, filled: x=4.75 y=9.25 5.5×5.5 rx=1.25.
@@ -235,6 +250,11 @@ func inked(x, y float64, s state) bool {
 	switch s {
 	case stateMasking:
 		return outline
+	case stateAbsent:
+		// Filled, exactly as stateUnmasked is: nothing is being replaced either way.
+		// The whole difference is the divider above, which is the difference that
+		// matters — there is no agent between the two squares.
+		return right <= 1.6/2
 	case statePartial:
 		// The outline, plus the left half of what it encloses. Half rather than a
 		// smaller inner square: at this size an inner shape is three pixels with a

@@ -325,8 +325,10 @@ would call fine while the traffic went out in clear.
 further in. An agent with a category switched off *is* masking: most of the catalogue, and
 the credentials always. Reporting that as simply "masking" is the green light over the
 values that are not being replaced, so there are three answers (`detector.LevelNone`,
-`LevelPartial`, `LevelFull`), and the exit code of `neverseen status` and the menu bar
-icon both follow this rather than `Masking()`. An agent that answers without the field is
+`LevelPartial`, `LevelFull`), and the exit code of `neverseen status` follows this
+rather than `Masking()`. The menu bar icon follows it too and then reads `Answering`
+over it, because a stopped agent arrives as `LevelNone` and needs a picture of its own
+— see [Distribution](../operations/distribution.md). An agent that answers without the field is
 read from what it did carry: a build with no policy route cannot have anything switched
 off, so `LevelFull` is a fact about that build rather than an assumption.
 

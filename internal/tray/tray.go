@@ -108,11 +108,15 @@ type view interface {
 
 // render turns a status into what the menu bar shows.
 //
-// The icon follows Masking and nothing else, so the picture and the exit code of
-// `neverseen status` cannot disagree. Being up is not enough to earn the masking
-// icon: an agent with no locale selected is healthy and recognises almost nothing,
-// and an icon that called that protected would be the icon somebody trusted while
-// their traffic went out in clear.
+// The icon follows Level, and then Answering over it, so the picture and the exit
+// code of `neverseen status` cannot disagree about whether anything is being masked.
+// Being up is not enough to earn the masking icon: an agent with no locale selected
+// is healthy and recognises almost nothing, and an icon that called that protected
+// would be the icon somebody trusted while their traffic went out in clear.
+//
+// Answering is read after Level rather than folded into it because it is a different
+// question: Level says how much of the catalogue is being applied, and an agent that
+// is not there applies none of it without that being a setting anybody chose.
 func render(s proxy.Status) display {
 	verdict := "Not masking — traffic is leaving in clear"
 	icon := unmaskedIcon
@@ -128,6 +132,15 @@ func render(s proxy.Status) display {
 		off := s.SwitchedOff()
 		verdict = fmt.Sprintf("Masking, with %d categor%s in clear", len(off), plural(len(off), "y", "ies"))
 		icon = partialIcon
+	}
+
+	// Last, and over whatever Level chose, because an agent that is not answering has
+	// no level to report: Level reads Masking, Masking reads Answering, so a stopped
+	// agent arrives here as LevelNone wearing the same picture as one that is running
+	// and replacing nothing. The verdict line is right for both — the traffic leaves
+	// in clear either way — and the remedy is not, so the picture has to differ.
+	if !s.Answering {
+		icon = absentIcon
 	}
 
 	var lines []string
