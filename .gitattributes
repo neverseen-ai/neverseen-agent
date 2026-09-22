@@ -1,0 +1,19 @@
+# Line endings are content in this repository, not formatting.
+#
+# Four packages compare something generated to something committed, byte for
+# byte: the service definitions (internal/service), the extension contract
+# (internal/proxy), the heartbeat golden (pkg/telemetry), and the embedded icons
+# (internal/tray). Git on Windows rewrites LF to CRLF at checkout unless told
+# otherwise, so all four failed there — and the windows job said only "Test",
+# which is why it sat red from the day it was added without anybody knowing what
+# it meant.
+#
+# eol=lf rather than text=auto alone: `auto` still normalises to the platform's
+# native ending in the working tree, and the working tree is what `go test` reads.
+* text=auto eol=lf
+
+# Never touched at all. The icons are generated and committed, `go:embed`
+# compiles them into the binary, and a byte rewritten in one is an icon that
+# does not decode.
+*.png binary
+*.ico binary
