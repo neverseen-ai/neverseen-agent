@@ -175,7 +175,10 @@ func Render(l Layout) ([]Definition, error) {
 	case "darwin":
 		return renderLaunchd(l), nil
 	case "linux":
-		return renderSystemd(l), nil
+		// Two registries rather than one, because Linux keeps a background job and a
+		// desktop job in two different places. The order is the package's: the agent,
+		// then the icon.
+		return append(renderSystemd(l), renderAutostart(l)), nil
 	case "windows":
 		return renderSchtasks(l), nil
 	default:

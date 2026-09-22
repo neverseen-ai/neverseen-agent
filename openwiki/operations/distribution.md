@@ -103,7 +103,8 @@ home directory carrying an ampersand no longer produces a plist launchd silently
 refuses.
 
 **The agent is restarted and the icon is not**, on every platform that registers one:
-`KeepAlive` on launchd, `RestartOnFailure` on Task Scheduler, and neither for the icon.
+`KeepAlive` on launchd, `Restart=always` on systemd, `RestartOnFailure` on Task Scheduler,
+and none of the three for the icon.
 `TestOnlyTheAgentIsRestarted` holds both halves rather than leaving them to the golden
 files — a golden file records what the code does, and this records what it must.
 
@@ -114,19 +115,53 @@ files — a golden file records what the code does, and this records what it mus
 - **macOS, the icon** — a second launchd agent, `ai.neverseen.tray.plist`, deliberately
   **without** `KeepAlive`: the menu offers "Quit the icon", and launchd would put it straight
   back while the person watched nothing happen. Closing a window has to work.
-- **Linux** — a systemd user unit at `~/.config/systemd/user/neverseen.service`. No tray,
-  and the reason recorded here for years was wrong: the icon is cgo on **darwin alone**, and
-  `GOOS=linux CGO_ENABLED=0 go build ./cmd/neverseen-tray` succeeds today —
-  `fyne.io/systray` speaks StatusNotifierItem over dbus in pure Go. What actually stops it
-  is the desktop. Plasma hosts a StatusNotifierItem natively; GNOME needs the AppIndicator
-  extension. Shipping the icon would put one on most Linux machines that silently draws
-  nothing, which reads as an agent that is not running.
+- **Linux** — a systemd user unit at `~/.config/systemd/user/neverseen.service`.
+- **Linux, the icon** — an XDG desktop entry at
+  `~/.config/autostart/neverseen-tray.desktop`, **not** a second unit. The two jobs go to
+  two registries because Linux keeps a background job and a desktop job in two different
+  places: a unit would have to be `WantedBy=graphical-session.target`, which only the
+  desktops with systemd session integration ever reach, and it would start without
+  `DISPLAY`, `WAYLAND_DISPLAY` or `DBUS_SESSION_BUS_ADDRESS` unless the session remembered
+  to import them. `~/.config/autostart` is read by GNOME, KDE, XFCE, Cinnamon, MATE and
+  LXQt without exception, and what it starts is a child of the graphical session.
+
+  The entry runs `/bin/sh -c "exec … >> ~/.neverseen/agent.log 2>&1"` rather than the
+  binary bare, because a desktop entry has no `StandardErrorPath` the way a plist does and
+  the icon's one message on this platform is written on the way out. Nothing supervises
+  it, for the same reason nothing supervises the launchd one.
+
+  **What changed, and why it was wrong before.** This repository shipped no icon on Linux
+  at all, and the reason recorded here for years was that it needs cgo — it does not:
+  cgo is darwin's alone, and `GOOS=linux CGO_ENABLED=0 go build ./cmd/neverseen-tray`
+  succeeds, `fyne.io/systray` speaking StatusNotifierItem over dbus in pure Go. The real
+  reason was the desktop: Plasma hosts a StatusNotifierItem natively, GNOME needs the
+  AppIndicator extension, and a job that silently draws nothing reads as an agent that is
+  not running. That was a real failure and the wrong remedy — it took the icon away from
+  KDE, XFCE, Cinnamon, MATE and every Ubuntu session to spare stock GNOME a message. The
+  fix is the message: `internal/tray/sni.go` asks the session bus whether anything owns
+  `org.kde.StatusNotifierWatcher`, and when nothing does the binary says which extension
+  to install, says the agent is masking regardless, and exits non-zero.
+
+  It asks that one question and deliberately **does not** read
+  `IsStatusNotifierHostRegistered` beside it. Some hosts never set that property, so
+  requiring it would refuse to draw on a desktop that works — absent where it used to be
+  absent *and* absent where it would have shown.
+
+  The message naming the agent as unaffected is the load-bearing half.
+  `TestEveryRefusalSaysTheAgentIsUnaffected` holds it: an icon disappearing is exactly
+  what it looks like when masking stops, so the one case where it goes for an unrelated
+  reason has to say so on its way out.
 
 ## Release (`.goreleaser.yml`)
 
-Two build ids. `neverseen` (`./cmd/neverseen`) builds for darwin and linux; `neverseen-tray`
-(`./cmd/neverseen-tray`) for darwin only, since it needs cgo for AppKit. The macOS archives
-carry both binaries, the Linux archives only the agent. CI runs `goreleaser check` and builds
+Four build ids, because the icon needs a different build on each platform and the agent
+needs one. `neverseen` (`./cmd/neverseen`) builds for darwin and linux, pure Go.
+`./cmd/neverseen-tray` builds three times: `neverseen-tray` with `CGO_ENABLED=1` on darwin,
+where it links AppKit; `neverseen-tray-linux` with `CGO_ENABLED=0`, where it speaks dbus;
+`neverseen-tray-windows` with `CGO_ENABLED=0` and `-H windowsgui`, where it speaks win32.
+Three ids rather than one entry with three `goos`, because the cgo flag and the linker
+flags differ — and because a broken Cocoa build then costs the icon on macOS rather than
+the release of the masking agent. Every archive carries both binaries. CI runs `goreleaser check` and builds
 a snapshot on every run, so a broken release configuration fails before a tag does
 (`.github/workflows/ci.yml`).
 

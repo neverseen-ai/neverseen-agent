@@ -106,9 +106,9 @@ iwr -useb https://raw.githubusercontent.com/neverseen-ai/neverseen-agent/main/in
 The service is a launchd agent on macOS, a systemd user unit on Linux, a logon
 task on Windows. It is supervised on all three — `KeepAlive`, `Restart=always`,
 `RestartOnFailure` — because nobody is meant to be able to stop the masking by
-killing a process. On macOS you also get an icon in the menu bar, and that one is
-deliberately *not* restarted: its menu offers "Quit the icon", and a supervisor
-would put it straight back.
+killing a process. You also get an icon in the menu bar or the notification area,
+and that one is deliberately *not* restarted: its menu offers "Quit the icon", and
+a supervisor would put it straight back.
 
 It does **not** touch your shell profile unless you ask for it with `--shell`.
 Already cloned at step 1? `./install.sh` from that directory skips the download
@@ -217,7 +217,7 @@ neverseen mask --off EMAIL      # switch a category off
 neverseen mask --substitution fake
 ```
 
-…or click it in the macOS menu bar, which shows the same state and hands you the
+…or click the icon in the menu bar, which shows the same state and hands you the
 line that points a tool at the agent.
 
 *A credential can never be switched off — the detector refuses, so no menu and no
@@ -225,7 +225,7 @@ API call can route around it.*
 
 ---
 
-## The menu bar icon (macOS)
+## The menu bar icon
 
 A masking agent has one failure nobody notices: it stopped. Your tools keep
 working — they reach the provider directly — and nothing on screen says the
@@ -242,14 +242,16 @@ answers:
 | Half | `Masking, with N categories in clear` — you switched something off, and it names which |
 | Filled | Not masking — either no locale is loaded, or the agent is not answering |
 
-Click it and the menu shows the address, the locales, the substitution mode and
-the version — then lets you change what the agent is doing, live:
+Click it and the menu says what is happening — the address, the locales, the
+substitution mode, the version — and offers the few things a menu is the right
+shape for:
 
-- **tick or untick a category or a whole family** (credentials excepted — the
-  detector refuses, so the menu cannot offer it);
-- **switch the substitution mode** between `token` and `fake`;
-- **move the secret level** between weak, medium and strong;
-- **load or unload a locale**;
+- **Settings…**, which opens the agent's own page. That is where a category is
+  switched off, the substitution mode is chosen and a locale is loaded: a menu bar
+  gives you titles and ticks, with no radio group, no mixed tick and no room for the
+  sentence that says what a choice costs, and every one of those absences used to be
+  answered by writing the sentence into an entry's own title;
+- **Mask everything again**, one click back to the whole catalogue;
 - **copy the command that points one tool at the agent**, one entry per provider
   the agent actually serves — `ANTHROPIC_BASE_URL=… claude`, ready to paste. The
   first line of that submenu is a caution rather than a command: what belongs in a
@@ -257,8 +259,10 @@ the version — then lets you change what the agent is doing, live:
 - **open the test page**;
 - **quit the icon**, which leaves the agent masking.
 
-Everything you change there survives a restart — it goes through the same
+Everything you change on that page survives a restart — it goes through the same
 `PUT /policy` as `neverseen mask`, and is stored in `~/.neverseen/policy.json`.
+A credential can never be switched off from either: the detector refuses, so no
+page and no menu can route around it.
 
 It is a **separate process** (`neverseen-tray`) on purpose. An icon living inside
 the proxy would vanish at the exact moment it became useful, since the state most
@@ -266,10 +270,41 @@ worth seeing is that the agent is *not* there. It holds nothing and decides
 nothing, and its own service is deliberately not restarted — the menu offers
 "Quit the icon", and a supervisor would put it straight back.
 
-On Linux the same answers are in `neverseen status`, which exits non-zero unless
-the agent is masking its whole catalogue, so a script can use it. There is no
-icon there: it is cgo on darwin only, and GNOME will not show one without an
-extension.
+### On Linux
+
+The same icon, started from `~/.config/autostart/neverseen-tray.desktop` at login
+rather than by systemd — a desktop job goes where the desktop looks for one, and a
+user unit would have to be wanted by `graphical-session.target`, which not every
+desktop reaches.
+
+Whether anything *draws* it is the desktop's decision, not the agent's. Linux has
+no notification area as a platform feature; it has a convention, StatusNotifierItem,
+published on the session bus and drawn by whatever happens to be listening. KDE
+Plasma, XFCE, Cinnamon, MATE, Budgie, LXQt and Ubuntu's GNOME all listen. **Stock
+GNOME does not** — the default on Fedora, Debian and RHEL — until you install the
+*AppIndicator and KStatusNotifierItem Support* extension and log back in.
+
+So the icon checks before it draws. Finding nothing that would host it, it says so
+and exits rather than sitting in the process table publishing to an empty bus:
+
+```
+$ ~/.local/bin/neverseen-tray
+neverseen-tray: nothing on this desktop draws tray icons, so there is no icon to
+show. The agent is unaffected and still masking — `neverseen status` answers the
+same question, and exits non-zero unless it is masking everything.
+GNOME shows a StatusNotifierItem only through an extension: install "AppIndicator
+and KStatusNotifierItem Support", then log out and back in.
+```
+
+Started at login there is no terminal to say that in, so the desktop entry redirects
+to `~/.neverseen/agent.log` — a desktop entry has no `StandardErrorPath` the way a
+launchd plist does. `./install.sh --status` points you at it.
+
+The message matters more than it looks. An icon disappearing is exactly what it is
+meant to look like when masking has stopped, so the one case where it goes for an
+unrelated reason has to say the agent is fine. `neverseen status` is the answer that
+needs no desktop at all, and it exits non-zero unless the agent is masking its whole
+catalogue, so a script can use it.
 
 ---
 

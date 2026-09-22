@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Neverseen
+Comment=Whether this workstation is masking
+Exec=/bin/sh -c "exec \"/home/o'brien/.local/bin/neverseen-tray\" >> \"/home/o'brien/.neverseen/agent.log\" 2>&1"
+Terminal=false
+X-GNOME-Autostart-enabled=true
+# Nothing restarts this, unlike the agent's unit. The icon's own menu offers "Quit
+# the icon", and a supervisor would put it straight back — the person would click it
+# and watch nothing happen. The agent is supervised because nobody is meant to be
+# able to stop the masking by accident; the icon is only a window onto it, and
+# closing a window has to work. It returns at the next login.

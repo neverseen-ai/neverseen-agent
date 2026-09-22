@@ -338,8 +338,24 @@ and it is deliberately not repeated here.
   golden files, which record what the code does where the test records what it must.
 - **The menu bar is a separate process on purpose.** An icon inside the proxy
   vanishes at the moment it becomes useful.
+- **A background job and a desktop job go to two registries on Linux**: the agent is
+  a systemd user unit, the icon an XDG desktop entry under `~/.config/autostart`. A
+  unit for the icon would need `graphical-session.target`, which not every desktop
+  reaches, and would start without the session's environment — a job that never runs
+  and says nothing. The entry redirects to `agent.log` because it has no
+  `StandardErrorPath`.
+- **The icon refuses to draw into an empty bus, and says which extension is
+  missing** (`internal/tray/sni.go`). Linux has no notification area as a platform
+  feature; whether a StatusNotifierItem is drawn is the desktop's decision, and stock
+  GNOME needs an extension. It asks **only** whether anything owns
+  `org.kde.StatusNotifierWatcher` — reading `IsStatusNotifierHostRegistered` beside it
+  would refuse the desktops whose hosts never set it. **Every refusal says the agent
+  is still masking**: an icon disappearing is what it looks like when masking stops.
+  `TestEveryRefusalSaysTheAgentIsUnaffected`.
 - **Everything in `internal/tray` that decides what to show is separate from the
-  toolkit.** `render` and `watch` touch no part of fyne.io/systray and are tested.
+  toolkit.** `render` and `watch` touch no part of fyne.io/systray and are tested,
+  and `hostAdvice` is the same split for the session bus: `sni_linux.go` asks, `sni.go`
+  decides, and only the second has a test.
 - **`shellTools` is the one owner of how a tool is pointed at this agent** — the
   variable, the CLI and the caveat together. Only verified pairs go in, and **the
   caveat travels to every place the line is handed over.**

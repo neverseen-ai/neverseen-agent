@@ -69,6 +69,25 @@ builds:
       - -s -w -X main.version={{ .Version }}
     mod_timestamp: "{{ .CommitTimestamp }}"
 
+  # The icon on Linux, which needs no cgo either: fyne.io/systray publishes a
+  # StatusNotifierItem over dbus there, in pure Go. Its own build id rather than a goos
+  # added to the entry above, because that one is CGO_ENABLED=1 for AppKit.
+  #
+  # Whether anything draws it depends on the desktop — GNOME needs an extension — and
+  # the binary now says so on the way out rather than sitting there drawing nothing.
+  # See internal/tray/sni.go. Shipping it is what lets the desktops that do draw one
+  # have it; not shipping it took the icon from KDE and XFCE to spare GNOME a message.
+  - id: neverseen-tray-linux
+    main: ./cmd/neverseen-tray
+    binary: neverseen-tray
+    env:
+      - CGO_ENABLED=0
+    goos: [linux]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
   # The icon on Windows, which needs no cgo at all: fyne.io/systray speaks win32
   # syscalls there, exactly as it speaks dbus on Linux. Its own build id rather than a
   # goos added to the entry above, because that one is CGO_ENABLED=1 for AppKit and

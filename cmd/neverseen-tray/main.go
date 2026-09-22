@@ -81,14 +81,30 @@ func main() {
 		_, _ = os.Stderr.WriteString("neverseen-tray: " + err.Error() + "\n")
 	}
 
+	// The error is the desktop having nowhere to put an icon, which on Linux is the
+	// common case and on the other two impossible. Non-zero on the way out, because
+	// this is a job somebody registered and a job that exits 0 having done nothing is
+	// a job nobody investigates.
+	if err := show(); err != nil {
+		_, _ = os.Stderr.WriteString("neverseen-tray: " + err.Error() + "\n")
+		os.Exit(1)
+	}
+}
+
+// show runs the icon until the session ends.
+//
+// A function of its own so that the signal handler is released on the way out: an
+// os.Exit beside a deferred stop() skips it, and the deferred call is the whole reason
+// the context exists.
+func show() error {
 	// Cancelled on the way out, so the icon leaves the bar when the session ends
 	// rather than sitting there dead until the user logs out.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// On this goroutine, and it has to be: systray owns the platform event loop,
-	// and on macOS that loop must be the main thread — AppKit refuses to be driven
-	// from anywhere else. It blocks until the context is done or the icon's own
-	// Quit is chosen.
-	tray.Run(ctx, proxy.ListenAddress())
+	// On this goroutine, and it has to be: systray owns the platform event loop, and
+	// on macOS that loop must be the main thread — AppKit refuses to be driven from
+	// anywhere else. It blocks until the context is done or the icon's own Quit is
+	// chosen.
+	return tray.Run(ctx, proxy.ListenAddress())
 }

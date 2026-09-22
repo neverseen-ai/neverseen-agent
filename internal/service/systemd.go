@@ -15,10 +15,9 @@ const SystemdUnit = "neverseen.service"
 // all belong to one person, and a system unit would run this as root on behalf of
 // whoever happened to be logged in.
 //
-// Only one definition comes back, and that is not an omission. There is no icon on
-// Linux — the binary compiles, but whether a StatusNotifierItem is shown depends on
-// the desktop, and GNOME needs an extension for it. An entry here would register a
-// job that draws nothing on the most common desktop.
+// The agent alone. The icon is a desktop job rather than a background one and is
+// registered as an XDG desktop entry beside this — see renderAutostart for why a
+// second unit would have been the wrong shape.
 func renderSystemd(l Layout) []Definition {
 	return []Definition{{
 		Job:   JobAgent,

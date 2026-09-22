@@ -7,7 +7,9 @@ credentials with a substitution, on the way back it restores the originals. The 
 never sees the data, and the person using the tool never sees a placeholder.
 
 Module path: `github.com/neverseen-ai/neverseen-agent` (see `go.mod`). Go 1.26; the only
-dependencies are `fyne.io/systray` (menu bar icon) and `gopkg.in/yaml.v3` (test corpus).
+dependencies are `fyne.io/systray` (menu bar icon), `github.com/godbus/dbus/v5` (asking the
+Linux session bus whether anything would draw one — already linked by systray there) and
+`gopkg.in/yaml.v3` (test corpus).
 
 **Licence:** FSL-1.1-ALv2 — *source available, not open source*. Say "source available".
 Each release converts to Apache 2.0 two years after it ships (`LICENSE.md`).

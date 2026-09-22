@@ -2,6 +2,7 @@ package tray
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"sync"
@@ -23,7 +24,16 @@ import (
 // offers no switch — a stop button on a security control is a product decision and
 // not a convenience, and nothing here holds anything that could turn masking back
 // on.
-func Run(ctx context.Context, addr string) {
+//
+// It returns an error when nothing on this desktop would draw an icon, rather than
+// blocking forever on a toolkit publishing to an empty bus. See sni.go: on Linux the
+// notification area is a convention rather than a platform feature, and the icon is
+// registered on every desktop precisely because it can now say which of them will
+// not honour it.
+func Run(ctx context.Context, addr string) error {
+	if why := whyNoIcon(); why != "" {
+		return errors.New(why)
+	}
 	if addr == "" {
 		addr = proxy.DefaultListen
 	}
@@ -40,6 +50,7 @@ func Run(ctx context.Context, addr string) {
 			systray.Quit()
 		}()
 	}, func() {})
+	return nil
 }
 
 // menuBar is the view backed by the real menu bar.

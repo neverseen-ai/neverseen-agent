@@ -66,7 +66,7 @@ func TestRenderMatchesTheGoldenDefinitions(t *testing.T) {
 			}
 
 			for _, d := range defs {
-				name := platform + "-" + d.Job.String() + goldenExt(platform)
+				name := platform + "-" + d.Job.String() + goldenExt(platform, d.Job)
 				path := filepath.Join("testdata", name)
 
 				if *update {
@@ -89,19 +89,25 @@ func TestRenderMatchesTheGoldenDefinitions(t *testing.T) {
 	}
 }
 
-func goldenExt(platform string) string {
+// goldenExt names the file by what the platform calls that kind of definition, which
+// on Linux is two things: the agent is a systemd unit and the icon is a desktop entry.
+// A golden called linux-tray.service would describe it as something it is not.
+func goldenExt(platform string, job Job) string {
 	switch platform {
 	case "darwin":
 		return ".plist"
 	case "windows":
 		return ".xml"
 	default:
+		if job == JobTray {
+			return ".desktop"
+		}
 		return ".service"
 	}
 }
 
 // TestOnlyTheAgentIsRestarted holds the one difference between the two jobs that
-// matters, on both platforms that register an icon.
+// matters, on every platform that registers an icon.
 //
 // The icon must not be restarted: its own menu offers "Quit the icon", and a
 // supervisor that put it straight back would have the person click it and watch
@@ -109,9 +115,13 @@ func goldenExt(platform string) string {
 // file records what the code does and this records what it must do — the two part
 // company on the commit that regenerates a golden without reading it.
 func TestOnlyTheAgentIsRestarted(t *testing.T) {
+	// Spelled as it appears in each format rather than as a bare word, because the
+	// three formats say the same thing three ways and a substring test on "Restart"
+	// alone would match the unit's RestartSec and pass on a unit that restarts nothing.
 	restartMarker := map[string]string{
-		"darwin":  "KeepAlive",
-		"windows": "RestartOnFailure",
+		"darwin":  "<key>KeepAlive</key>",
+		"linux":   "Restart=always",
+		"windows": "<RestartOnFailure>",
 	}
 
 	for platform, marker := range restartMarker {
@@ -122,8 +132,7 @@ func TestOnlyTheAgentIsRestarted(t *testing.T) {
 
 		var sawTray bool
 		for _, d := range defs {
-			has := strings.Contains(d.Content, "<key>"+marker+"</key>") ||
-				strings.Contains(d.Content, "<"+marker+">")
+			has := strings.Contains(d.Content, marker)
 
 			switch d.Job {
 			case JobAgent:
@@ -143,17 +152,59 @@ func TestOnlyTheAgentIsRestarted(t *testing.T) {
 	}
 }
 
-// TestLinuxRegistersNoIcon holds the absence as a decision rather than an oversight.
-// The tray binary compiles for Linux, so nothing about the build stops an entry
-// appearing here; what stops it is that GNOME shows a StatusNotifierItem only with an
-// extension installed, and a job that draws nothing is worse than no job.
-func TestLinuxRegistersNoIcon(t *testing.T) {
+// TestLinuxRegistersTheIconSomewhereTheDesktopReads.
+//
+// The two jobs go to two registries on this platform and the icon must not drift into
+// the agent's. A systemd unit for the icon would have to be wanted by
+// graphical-session.target, which only some desktops reach, and would start without
+// the session's environment: the failure is a job that never runs and says nothing,
+// which is what registering the icon at all was meant to stop.
+func TestLinuxRegistersTheIconSomewhereTheDesktopReads(t *testing.T) {
 	defs, err := Render(sample("linux"))
 	if err != nil {
 		t.Fatalf("Render(linux): %v", err)
 	}
-	if len(defs) != 1 || defs[0].Job != JobAgent {
-		t.Fatalf("Render(linux) = %d definitions, want the agent alone", len(defs))
+	if len(defs) != 2 {
+		t.Fatalf("Render(linux) = %d definitions, want the agent and the icon", len(defs))
+	}
+
+	for _, d := range defs {
+		switch d.Job {
+		case JobAgent:
+			if !strings.HasSuffix(d.Path, "/.config/systemd/user/"+SystemdUnit) {
+				t.Errorf("the agent is registered at %s, which systemd does not read", d.Path)
+			}
+		case JobTray:
+			if !strings.HasSuffix(d.Path, "/.config/autostart/"+AutostartEntry) {
+				t.Errorf("the icon is registered at %s, which no desktop reads at login", d.Path)
+			}
+			if strings.Contains(d.Content, "[Unit]") || strings.Contains(d.Content, "WantedBy=") {
+				t.Errorf("the icon is rendered as a systemd unit:\n%s", d.Content)
+			}
+		}
+	}
+}
+
+// TestTheIconWritesWhereSomebodyCanReadIt.
+//
+// A desktop entry has no StandardErrorPath, and what the icon has to say on Linux it
+// says on the way out — that nothing on this desktop will draw it, and that the agent
+// is masking all the same. Started bare, that message goes to a stream the session
+// discards, and the person is left with the one symptom the icon exists to prevent
+// being ambiguous: no icon.
+func TestTheIconWritesWhereSomebodyCanReadIt(t *testing.T) {
+	l := sample("linux")
+	defs, err := Render(l)
+	if err != nil {
+		t.Fatalf("Render(linux): %v", err)
+	}
+	for _, d := range defs {
+		if d.Job != JobTray {
+			continue
+		}
+		if !strings.Contains(d.Content, l.LogFile) {
+			t.Errorf("the icon's entry names no log file, so its one message goes nowhere:\n%s", d.Content)
+		}
 	}
 }
 
@@ -197,7 +248,7 @@ func TestTheWindowsTaskNamesItselfConsistently(t *testing.T) {
 }
 
 // TestAPercentInAPathIsNotASystemdSpecifier is the Linux twin of the apostrophe case
-// above, and it fails the same silent way.
+// above, and it fails the same silent way — in both of the platform's two formats.
 //
 // systemd reads "%" as the start of a specifier, so a home directory or a --prefix
 // carrying one yields a unit it refuses to parse: "Failed to resolve unit specifiers",
@@ -215,7 +266,11 @@ func TestAPercentInAPathIsNotASystemdSpecifier(t *testing.T) {
 	}
 	for _, d := range defs {
 		for _, line := range strings.Split(d.Content, "\n") {
-			if !strings.HasPrefix(line, "EnvironmentFile=") && !strings.HasPrefix(line, "ExecStart=") {
+			// Exec= is the desktop entry's half of the same failure: "%" introduces a
+			// field code there, so a literal one has to arrive doubled or the desktop
+			// swallows it with the character after it.
+			if !strings.HasPrefix(line, "EnvironmentFile=") && !strings.HasPrefix(line, "ExecStart=") &&
+				!strings.HasPrefix(line, "Exec=") {
 				continue
 			}
 			if !strings.Contains(line, "50%%off") {

@@ -63,10 +63,15 @@ cleanup() {
 trap cleanup EXIT
 
 BIN_NAME=neverseen
-# The menu bar icon is its own binary, and only on macOS. Not because it cannot be
-# built elsewhere — it is cgo on darwin alone, and it cross-compiles to Linux and
-# Windows in pure Go — but because on Linux whether it is shown depends on the
-# desktop: GNOME needs the AppIndicator extension for it. See internal/tray.
+# The menu bar icon is its own binary. cgo on darwin alone — it is pure Go on Linux
+# and Windows, where fyne.io/systray speaks dbus and win32 — so the source build
+# below is the one place the platform still matters.
+#
+# Installed on Linux too, and whether anything draws it there depends on the desktop:
+# KDE, XFCE, Cinnamon, MATE and Ubuntu's GNOME do, stock GNOME needs the AppIndicator
+# extension. The binary says which of the two it found and leaves, rather than sitting
+# in the process table drawing nothing — see internal/tray/sni.go. Not shipping it at
+# all was taking the icon away from every desktop that works to spare one a message.
 TRAY_NAME=neverseen-tray
 PREFIX="${NEVERSEEN_PREFIX:-$HOME/.local}"
 BIN_DIR="$PREFIX/bin"
@@ -288,31 +293,38 @@ install_binary() {
     STAGED=""
     say "Installed $BIN_DIR/$BIN_NAME"
 
-    # The icon, on macOS only, and never a reason to fail. If it cannot be built or
-    # is not in the archive, the agent is installed and masking anyway — the icon
-    # is how somebody sees that, not part of it.
-    if [ "$PLATFORM" = darwin ]; then
-        STAGED="$BIN_DIR/$TRAY_NAME.install.$$"
-        if [ -f "$SOURCE_DIR/go.mod" ] && command -v go >/dev/null 2>&1; then
-            if (cd "$SOURCE_DIR" && go build -ldflags "-s -w -X main.version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)" \
-                -o "$STAGED" ./cmd/neverseen-tray 2>/dev/null); then
-                chmod 0755 "$STAGED"
-                mv -f "$STAGED" "$BIN_DIR/$TRAY_NAME"
-                say "Installed $BIN_DIR/$TRAY_NAME"
-            else
-                # A failed build can still have written something under the
-                # staged name, and it must not be left beside the real icon.
-                rm -f "$STAGED"
-                say "Could not build $TRAY_NAME (it needs a C toolchain); skipping the menu bar icon"
-            fi
-        elif [ -f "$SOURCE_DIR/$TRAY_NAME" ]; then
-            cp "$SOURCE_DIR/$TRAY_NAME" "$STAGED"
+    # The icon, and never a reason to fail. If it cannot be built or is not in the
+    # archive, the agent is installed and masking anyway — the icon is how somebody
+    # sees that, not part of it.
+    #
+    # Windows is excluded because install.ps1 owns that platform; everything this
+    # script runs on has somewhere to put an icon.
+    STAGED="$BIN_DIR/$TRAY_NAME.install.$$"
+    if [ -f "$SOURCE_DIR/go.mod" ] && command -v go >/dev/null 2>&1; then
+        if (cd "$SOURCE_DIR" && go build -ldflags "-s -w -X main.version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)" \
+            -o "$STAGED" ./cmd/neverseen-tray 2>/dev/null); then
             chmod 0755 "$STAGED"
             mv -f "$STAGED" "$BIN_DIR/$TRAY_NAME"
             say "Installed $BIN_DIR/$TRAY_NAME"
+        else
+            # A failed build can still have written something under the staged
+            # name, and it must not be left beside the real icon. The toolchain is
+            # named only on macOS because that is the only platform where the icon
+            # needs one.
+            rm -f "$STAGED"
+            if [ "$PLATFORM" = darwin ]; then
+                say "Could not build $TRAY_NAME (it needs a C toolchain); skipping the menu bar icon"
+            else
+                say "Could not build $TRAY_NAME; skipping the icon"
+            fi
         fi
-        STAGED=""
+    elif [ -f "$SOURCE_DIR/$TRAY_NAME" ]; then
+        cp "$SOURCE_DIR/$TRAY_NAME" "$STAGED"
+        chmod 0755 "$STAGED"
+        mv -f "$STAGED" "$BIN_DIR/$TRAY_NAME"
+        say "Installed $BIN_DIR/$TRAY_NAME"
     fi
+    STAGED=""
 
     case ":$PATH:" in
         *":$BIN_DIR:"*) ;;
@@ -499,7 +511,23 @@ do_status() {
                 launchctl list | grep -F "$TRAY_LABEL" || say "  the menu bar icon is not loaded"
             fi
             ;;
-        linux)  systemctl --user is-active neverseen.service || true ;;
+        linux)
+            systemctl --user is-active neverseen.service || true
+            # The icon is not a unit here — it is a desktop entry the session reads
+            # at login — so systemctl has nothing to say about it. The same condition
+            # `neverseen service install` uses to decide whether to register one.
+            if [ -x "$BIN_DIR/$TRAY_NAME" ]; then
+                if [ -f "$HOME/.config/autostart/neverseen-tray.desktop" ]; then
+                    say "  the icon starts at login"
+                    # Named because this is where it lands, and where it explains
+                    # itself when the desktop has nowhere to put an icon — GNOME
+                    # without the AppIndicator extension is the common case.
+                    say "  if none appears, see $LOG_FILE"
+                else
+                    say "  the icon is installed but not registered to start"
+                fi
+            fi
+            ;;
     esac
 
     # Through the agent's own command rather than curl and a raw body. One place
