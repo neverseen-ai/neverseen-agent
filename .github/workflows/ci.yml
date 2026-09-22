@@ -83,44 +83,16 @@ jobs:
       - name: Build
         run: go build ./...
 
-      # One step per package, and `if: always()` on each, so every failure is
-      # named rather than only the first. A job log needs a token to read; the
-      # steps API does not, and a step name is the one diagnostic this job can
-      # publish to somebody without one. TODO: fold back into a single
-      # `go test ./...` once this job has been green for a while.
-      - name: 'Test ./cmd/neverseen'
-        if: always()
-        run: go test ./cmd/neverseen
-      - name: 'Test ./cmd/neverseen-tray'
-        if: always()
-        run: go test ./cmd/neverseen-tray
-      - name: 'Test ./internal/detector'
-        if: always()
-        run: go test ./internal/detector
-      - name: 'Test ./internal/proxy'
-        if: always()
-        run: go test ./internal/proxy
-      - name: 'Test ./internal/secure'
-        if: always()
-        run: go test ./internal/secure
-      - name: 'Test ./internal/service'
-        if: always()
-        run: go test ./internal/service
-      - name: 'Test ./internal/telemetry'
-        if: always()
-        run: go test ./internal/telemetry
-      - name: 'Test ./internal/tray'
-        if: always()
-        run: go test ./internal/tray
-      - name: 'Test ./internal/vault'
-        if: always()
-        run: go test ./internal/vault
-      - name: 'Test ./pkg/pii'
-        if: always()
-        run: go test ./pkg/pii
-      - name: 'Test ./pkg/telemetry'
-        if: always()
-        run: go test ./pkg/telemetry
+      # `go test ./...` again, the eleven per-package steps folded back now that this
+      # job is green. They were scaffolding and said so: a job log needs a token to
+      # read and the steps API does not, so naming one step per package was the only
+      # way to publish which package failed to somebody without one. It found three
+      # causes — the installer's tests driving a script that refuses Windows, the
+      # checkout rewriting LF to CRLF under four packages that compare bytes, and
+      # assertions reading the platform's shell while asserting a POSIX spelling.
+      # Split it again the same way if this ever goes red without an explanation.
+      - name: Test
+        run: go test ./...
 
       # The installer for this platform, parsed rather than run. There is no runner
       # anywhere else that can parse it, and a script that is only ever read at the
