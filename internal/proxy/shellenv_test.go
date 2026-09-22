@@ -15,7 +15,7 @@ import (
 func TestShellEnvPrintsNothingWhenTheAgentIsDown(t *testing.T) {
 	var out strings.Builder
 	// Nothing listens on port 1.
-	if err := ShellEnv(t.Context(), &out, "127.0.0.1:1", false); err != nil {
+	if err := ShellEnvFor(t.Context(), &out, "127.0.0.1:1", false, ShellPosix); err != nil {
 		t.Fatal(err)
 	}
 
@@ -41,7 +41,7 @@ func TestShellEnvPrintsTheExportsWhenTheAgentAnswers(t *testing.T) {
 	addr := strings.TrimPrefix(agent.URL, "http://")
 
 	var out strings.Builder
-	if err := ShellEnv(t.Context(), &out, addr, false); err != nil {
+	if err := ShellEnvFor(t.Context(), &out, addr, false, ShellPosix); err != nil {
 		t.Fatal(err)
 	}
 	got := out.String()
@@ -88,7 +88,7 @@ func TestShellEnvPrintsTheExportsWhenTheAgentAnswers(t *testing.T) {
 // anybody debugging why nothing was exported.
 func TestShellEnvForcePrintsWithoutChecking(t *testing.T) {
 	var out strings.Builder
-	if err := ShellEnv(t.Context(), &out, "127.0.0.1:1", true); err != nil {
+	if err := ShellEnvFor(t.Context(), &out, "127.0.0.1:1", true, ShellPosix); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "export ANTHROPIC_BASE_URL=http://127.0.0.1:1/anthropic") {
@@ -105,7 +105,7 @@ func TestShellEnvGivesUpQuicklyOnAHungAgent(t *testing.T) {
 	hung.Close() // closed, so the connection is refused rather than hanging
 
 	var out strings.Builder
-	if err := ShellEnv(t.Context(), &out, strings.TrimPrefix(hung.URL, "http://"), false); err != nil {
+	if err := ShellEnvFor(t.Context(), &out, strings.TrimPrefix(hung.URL, "http://"), false, ShellPosix); err != nil {
 		t.Fatal(err)
 	}
 	if exportsIn(out.String()) {
@@ -165,8 +165,8 @@ func TestPointAtIsTheLineForOneShell(t *testing.T) {
 		"a provider with no standard variable": {"gemini", "http://" + addr + "/gemini"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if got := PointAt(tc.code, addr); got != tc.want {
-				t.Errorf("PointAt(%q) = %q, want %q", tc.code, got, tc.want)
+			if got := PointAtFor(tc.code, addr, ShellPosix); got != tc.want {
+				t.Errorf("PointAtFor(%q, posix) = %q, want %q", tc.code, got, tc.want)
 			}
 		})
 	}

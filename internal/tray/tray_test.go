@@ -276,14 +276,14 @@ func TestTheLineIsTheAgentsOwn(t *testing.T) {
 	// A provider whose variable *and* CLI are both de-facto gets a line somebody
 	// can paste and press return on. A prefixed assignment, not an export: it
 	// applies to that one run and leaves the shell as it was.
-	if got, want := proxy.PointAt("anthropic", "127.0.0.1:9787"),
+	if got, want := proxy.PointAtFor("anthropic", "127.0.0.1:9787", proxy.ShellPosix),
 		"ANTHROPIC_BASE_URL=http://127.0.0.1:9787/anthropic claude"; got != want {
 		t.Errorf("PointAt = %q, want %q", got, want)
 	}
 	// A provider whose variable is de-facto but whose obvious CLI does not read it
 	// gets the export and no command: codex takes its base URL from its own config
 	// file alone, so naming it here produced a line that went out unmasked.
-	if got, want := proxy.PointAt("openai", "127.0.0.1:9787"),
+	if got, want := proxy.PointAtFor("openai", "127.0.0.1:9787", proxy.ShellPosix),
 		"export OPENAI_BASE_URL=http://127.0.0.1:9787/openai"; got != want {
 		t.Errorf("PointAt = %q, want %q", got, want)
 	}
@@ -291,7 +291,7 @@ func TestTheLineIsTheAgentsOwn(t *testing.T) {
 	// a variable name nor a command name, because either would fail after somebody
 	// had already pasted it and believed it. Six of the eight are in this case, and
 	// the table is where that stops being true, one verified pair at a time.
-	if got, want := proxy.PointAt("gemini", "127.0.0.1:9787"),
+	if got, want := proxy.PointAtFor("gemini", "127.0.0.1:9787", proxy.ShellPosix),
 		"http://127.0.0.1:9787/gemini"; got != want {
 		t.Errorf("PointAt = %q, want %q", got, want)
 	}
