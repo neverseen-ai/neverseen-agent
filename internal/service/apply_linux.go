@@ -70,9 +70,13 @@ func Uninstall(l Layout) error {
 
 // Restart reloads the agent's unit from disk and restarts it.
 //
-// The icon is deliberately untouched, on this platform as on the other two: its own
-// menu offers "Quit the icon", and something that put it straight back would have the
-// person click it and watch nothing happen.
+// The agent only — and not because the icon is spared on purpose here, the way the
+// Windows task deliberately spares it. There is nothing on this platform to restart it
+// through: the icon is an XDG desktop entry, which starts a process at login and
+// supervises nothing, so there is no equivalent of the unload-and-load that does reload
+// it on macOS. Somebody who quit it here gets it back by logging in again, or by running
+// the binary; `neverseen service restart` cannot, and a comment claiming the three
+// platforms agree sends them to a command that reports success and changes nothing.
 //
 // daemon-reload first, because a restart alone runs the unit systemd already has in
 // memory — so a definition this package had just rewritten would take effect at the
