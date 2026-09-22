@@ -27,3 +27,11 @@ node_modules/
 
 # Byte-code from the measurement scripts under docs/presidio-study/.
 __pycache__/
+
+# Working notes: reviews, plans, and the reading of somebody else's product that a
+# plan sometimes is. Here rather than in .git/info/exclude, which is where it was:
+# that file never leaves the machine it is on, so the protection was one clone wide.
+# Two of these were committed once by a `git add -A` and had to be taken out of the
+# history to get them back out — on a machine where the exclude did not exist, that
+# happens again.
+plans/
