@@ -316,6 +316,9 @@ and it is deliberately not repeated here.
 - **`snapshotInterval` (30s) bounds what a hard kill loses.**
 - **`NewRecorder` counts the restart**, because a process builds exactly one.
 - **The OpenAI cached-token breakdown is deliberately not read.**
+- **rtk is read from its daily rows, never its summary, and never its history**
+  (`rtkTally`): the summary falls when rtk purges past ninety days, and the history
+  is command lines. Spawned in `collectAt` only, wired in `reporterFromEnv` only.
 - **A map keyed on something the agent observes is keyed on a closed vocabulary, and
   the rest is `Other`** (`pkg/telemetry/vocabulary.go`). The recorder re-checks every
   key (`inVocabulary`). Widening a list is a contract change.

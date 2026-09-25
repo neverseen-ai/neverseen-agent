@@ -87,6 +87,23 @@ The split is deliberately not quote-aware. What that can cost is a word inside a
 quoted string counted as a program *when it is on the list*; what it never costs is
 a word outside the list reaching the wire.
 
+### What rtk saved
+
+[rtk](https://github.com/rtk-ai/rtk) shortens the output of the commands a coding
+agent runs before the model reads it. Where the agent finds the binary, it reads
+`rtk gain --daily --format json` as each bucket closes and files the difference.
+
+| Field | What it holds |
+|---|---|
+| `state.rtk` | The rtk binary was found — a workstation without it and one where it sat idle are different answers |
+| `rtk.commands` | Commands rtk ran in the window |
+| `rtk.input`, `rtk.output` | Tokens of command output before and after rtk shortened it; the saving is the difference |
+
+These are **rtk's estimates for the whole workstation**, not a provider's count and
+not limited to traffic through this agent. Only the daily totals are read — never
+`--history`, whose rows are command lines — and the first reading after a start is a
+baseline, so what rtk did while the agent was stopped is not reported.
+
 ### The control's own health
 
 | Field | What it says |
@@ -143,7 +160,7 @@ It is **read-only**: the batch is printed, never queued and never sent, because 
 bucket rebuilt from traces shares no window boundary with one the agent filed live,
 and the backend's `(agent, window)` key would count both. Two things a trace does
 not hold, so a replay never reports them: the client's User-Agent and the
-provider's status. `restarts` is zero.
+provider's status. `restarts` and `rtk` are zero.
 
 ## For the backend
 

@@ -289,6 +289,12 @@ type State struct {
 	// exemptions is an agent masking less than its catalogue says, and that is all
 	// a fleet view needs to know.
 	Allowlisted int `json:"allowlisted,omitempty"`
+
+	// RTK reports that the rtk binary was found on this workstation at the last
+	// bucket closed. Said apart from Counters.RTK so a fleet view can tell a
+	// machine without the tool from one that has it and did not use it — the
+	// adoption question, which a count of zero cannot answer.
+	RTK bool `json:"rtk,omitempty"`
 }
 
 // Counters are the tallies for one window.
@@ -371,6 +377,28 @@ type Counters struct {
 
 	// Tools counts what the model asked the workstation to run.
 	Tools Tools `json:"tools,omitzero"`
+
+	// RTK is what rtk recorded on this workstation during the window.
+	RTK RTK `json:"rtk,omitzero"`
+}
+
+// RTK is what rtk (github.com/rtk-ai/rtk), a proxy that shortens the output of
+// the commands a coding agent runs, recorded during a window: read from its own
+// `rtk gain --daily --format json`, never from its history, whose rows carry the
+// command lines.
+//
+// Estimates rather than a provider's count — rtk measures the text it shortened,
+// not what a model was billed — and for the whole workstation, whether or not
+// that traffic went through this agent. The saving is Input minus Output; it is
+// not sent, so the two sides cannot disagree about it. Converting it to money is
+// the backend's, for the reason Models is raw counts.
+type RTK struct {
+	// Commands is how many commands rtk ran.
+	Commands int `json:"commands,omitempty"`
+	// Input is the tokens the commands' output would have cost unshortened.
+	Input int `json:"input,omitempty"`
+	// Output is the tokens it cost as rtk handed it over.
+	Output int `json:"output,omitempty"`
 }
 
 // Upstream is how the providers answered, by status class. Five integers rather

@@ -189,6 +189,19 @@ func (r *Recorder) Degraded() {
 	r.changes++
 }
 
+// RTK adds what rtk recorded since the last reading.
+func (r *Recorder) RTK(delta telemetry.RTK) {
+	if delta == (telemetry.RTK{}) {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.counters.RTK.Commands += delta.Commands
+	r.counters.RTK.Input += delta.Input
+	r.counters.RTK.Output += delta.Output
+	r.changes++
+}
+
 // Masked counts values replaced, by category. Repeats included: a value masked
 // three times in one body is three values that did not leave the machine.
 func (r *Recorder) Masked(session string, counts map[pii.Category]int) {

@@ -188,6 +188,7 @@ func TestHeartbeatWireFormat(t *testing.T) {
 			Exposed:     true,
 			Rerouted:    []string{"anthropic"},
 			Allowlisted: 12,
+			RTK:         true,
 		},
 		// Two buckets, not one. A batch of one would be a golden in which the
 		// plural case — the whole reason the message is a batch — never appears,
@@ -243,6 +244,7 @@ func TestHeartbeatWireFormat(t *testing.T) {
 						Programs: map[string]int{"git": 12, "grep": 9, "python3": 4, Other: 5},
 						Classes:  map[string]int{"network": 2, "privilege": 1},
 					},
+					RTK: RTK{Commands: 41, Input: 182_400, Output: 14_210},
 				},
 			},
 			{

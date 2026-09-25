@@ -99,6 +99,12 @@ type Reporter struct {
 	// awake is the last moment the loop below was known to be running, which is
 	// the moment a window is cut at when the machine turns out to have slept.
 	awake time.Time
+
+	// gain reads rtk; nil reads nothing. rtk is what it last made of it, and
+	// rtkFound whether the binary was there — both touched only by Run's goroutine.
+	gain     func(context.Context) ([]byte, bool, error)
+	rtk      rtkTally
+	rtkFound bool
 }
 
 // Config is what a Reporter needs.
@@ -128,6 +134,11 @@ type Config struct {
 	Client *http.Client
 	// Now defaults to time.Now.
 	Now func() time.Time
+
+	// Gain is read as each bucket closes, for what rtk recorded during it — Gain in
+	// this package for the agent. Nil reads nothing, which is what a test wants: the
+	// real one would count whatever rtk the machine running it happens to have.
+	Gain func(context.Context) ([]byte, bool, error)
 }
 
 // NewReporter builds a reporter, refusing a configuration it could not act on:
@@ -172,6 +183,7 @@ func NewReporter(cfg Config) (*Reporter, error) {
 		interval: cfg.Interval,
 		log:      cfg.Logger,
 		now:      cfg.Now,
+		gain:     cfg.Gain,
 	}
 	if r.client == nil {
 		r.client = &http.Client{Timeout: 30 * time.Second}
@@ -335,6 +347,7 @@ func (r *Reporter) collectAt(at time.Time) {
 		r.recorder.Drop(dropped)
 		r.log.Error("abandoned buckets the backend never accepted", "count", dropped)
 	}
+	r.readRTK()
 
 	counters, window := r.recorder.Take(at)
 	r.queue.add(bucket{Window: window, Counters: counters}, at)
@@ -346,6 +359,41 @@ func (r *Reporter) collectAt(at time.Time) {
 	r.queue.setLive(nil)
 	r.snapshotted = 0
 	r.persist()
+}
+
+// readRTK counts what rtk recorded since the last bucket into the one closing.
+//
+// Here, on the interval, and not on the snapshot: a process to spawn every
+// thirty seconds is more than the figure is worth. Looked up every time rather
+// than once, so an rtk installed or removed while the agent runs is noticed at
+// the next bucket instead of at the next restart. A failure is logged and costs
+// the window's figure, never the bucket.
+func (r *Reporter) readRTK() {
+	if r.gain == nil {
+		return
+	}
+	out, found, err := r.gain(context.Background())
+	r.rtkFound = found
+	if !found {
+		return
+	}
+	if err != nil {
+		r.log.Warn("rtk is installed but its gain could not be read", "error", err)
+		return
+	}
+	delta, err := r.rtk.add(out)
+	if err != nil {
+		r.log.Warn("rtk printed a gain this agent cannot read", "error", err)
+		return
+	}
+	r.recorder.RTK(delta)
+}
+
+// currentState is the agent's state with what only the reporter knows added.
+func (r *Reporter) currentState() telemetry.State {
+	state := r.state()
+	state.RTK = r.rtkFound
+	return state
 }
 
 // snapshot writes the bucket in progress, so that a kill this process cannot
@@ -430,7 +478,7 @@ func (r *Reporter) drain(ctx context.Context) bool {
 		// Said once for the batch: it describes what the agent is applying now, and
 		// stamping a week-old bucket with it would be no more true for being
 		// repeated on every one of them.
-		State:   r.state(),
+		State:   r.currentState(),
 		Buckets: make([]telemetry.Bucket, 0, len(sending)),
 	}
 	// Summed while the batch is built, for the line below. A count of buckets alone
@@ -497,7 +545,7 @@ func (r *Reporter) ensureEnrolled(ctx context.Context) (Identity, error) {
 	body, err := json.Marshal(telemetry.EnrolRequest{
 		Schema: telemetry.SchemaVersion,
 		Token:  r.token,
-		State:  r.state(),
+		State:  r.currentState(),
 	})
 	if err != nil {
 		return Identity{}, fmt.Errorf("encode the enrolment: %w", err)

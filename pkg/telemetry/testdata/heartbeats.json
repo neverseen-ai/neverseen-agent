@@ -32,7 +32,8 @@
     "rerouted": [
       "anthropic"
     ],
-    "allowlisted": 12
+    "allowlisted": 12,
+    "rtk": true
   },
   "buckets": [
     {
@@ -263,6 +264,11 @@
             "network": 2,
             "privilege": 1
           }
+        },
+        "rtk": {
+          "commands": 41,
+          "input": 182400,
+          "output": 14210
         }
       }
     },

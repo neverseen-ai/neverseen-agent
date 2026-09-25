@@ -138,6 +138,29 @@ to be nil without a console so that an agent not auditing paid nothing per tool 
 every agent now pays the reduction — a JSON decode and a split, once per tool call.
 Anthropic's shape only, the gap `jsonFragment` already records.
 
+### What rtk saved
+
+`Counters.RTK` (commands, input and output tokens) and `State.RTK` (the binary was
+found) come from the one place in this agent that spawns a process: `Gain`
+(`internal/telemetry/rtk.go`) runs `rtk gain --daily --format json` from
+`collectAt`, on the reporter's goroutine, under a five-second bound — never on the
+snapshot and never on the request path. Wired in `reporterFromEnv` alone, so a
+reporter built by a test reads nothing and no rtk on the machine running it can reach
+an assertion.
+
+**The daily rows, never the summary.** rtk deletes its history past ninety days each
+time it records a command, so its totals fall; a day's row (UTC) only grows until the
+date is over. `rtkTally` subtracts each day's last reading, treats a shrinking day as a
+new baseline (`rtk gain --reset`, or the purge trimming the oldest day) and ignores a
+past date appearing — `TestRTKTallyCountsWhatTheDaysGained` walks each case. The
+saving is `Input − Output` and is not sent, so the two sides cannot disagree about it.
+
+**Found, not configured**, and looked up at every bucket so an install is noticed
+without a restart. `rtkPath` tries `PATH`, then the Homebrew, cargo and `~/.local`
+locations, because under launchd the service's `PATH` has none of them. Two `TODO`s
+name the ceilings: a fixed list of locations, and a first reading per process that is
+a baseline, so what rtk did while the agent was down is lost.
+
 ### The agent's own exposure, and the health of the control
 
 `State` carries what the detector is applying — `Masking`, `SwitchedOff`, `SecretLevel`,

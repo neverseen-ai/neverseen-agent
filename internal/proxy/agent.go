@@ -308,5 +308,8 @@ func reporterFromEnv(logger *slog.Logger, recorder *telemetry.Recorder, srv *Ser
 		Recorder:   recorder,
 		State:      srv.State,
 		Logger:     logger,
+		// Found rather than configured: a setting would leave the fleet view's
+		// count of workstations running rtk counting only those somebody set up.
+		Gain: telemetry.Gain,
 	})
 }
