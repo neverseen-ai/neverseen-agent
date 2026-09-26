@@ -343,6 +343,30 @@ stand-in. `TestStandInsFailTheirOwnChecksum` now carries the plate.
 `TestPlateCheckRejectsWhatTheSeriesNeverIssues` and `TestPlateCheckKeepsRealPlates` are
 one pair; the `prec-plate-*` cases hold the measured false positives.
 
+**Each country's rule hangs off its pattern, not the category** (`Pattern.Verify`). A plate
+is one category and countries number differently: France's letter rules would refuse half
+of Spain's series. `PlateCheck` is on the French pattern, `ProvincialPlateCheck` on the
+Spanish provincial one.
+
+**Spain: the letters are the rule, and an amount needs a vehicle named.** The national plate
+since 2000 is four digits and three letters from twenty — no vowel, no Ñ, no Q — which keeps
+`1500 EUR` out by itself. It does not keep out `1500 GBP` or `2400 MHZ`: a currency written
+in consonants and a unit are the plate's shape exactly. They are not dropped outright,
+because GBP is a series Spain has issued; `isAmount` sends them to the same rule as the
+lowercase French notations, so they need a word naming a vehicle (`esAmountSuffixes`, ISO
+4217 filtered to the twenty letters, plus the units). A crypto ticker or a model year —
+`3000 BTC`, `2019 BMW` — is still read as a plate.
+
+The provincial plate (1971–2000, `M-1234-AB`) is dashed or spaced and uppercase only: run
+together it is any reference code. The province list is the only evidence it has, and it
+is checked in `ProvincialPlateCheck` rather than written into the expression — fifty-odd
+codes as an alternation cost 11.6ms over 88KB of text, the loose shape and a map lookup 4ms.
+
+**Every plate stand-in must not be a plate to any country** (`TestPlateStandInsAreNotPlates`,
+which runs every stand-in past every country's plate pattern and its `Verify`): a plate has
+no checksum to fail, so this is what stands in for one. The Spanish stand-in is
+`nnnn AEU` — vowels are never issued.
+
 #### `GenericSecretCheck`, and the premise that fails in a repository
 
 `genericSecretQuotedRe` and `genericSecretBareRe` read `NAME=value` and treat the
@@ -786,8 +810,14 @@ link back as a Maps link. A `TODO` names that ceiling.
 
 ## Locales
 
-`localeRegistry` (`pkg/pii/locale.go:65`) holds `fr` (priority 10), `gb` (20), `us` (30).
-Each entry carries a code, a `Priority`, a pattern set, a sample and a stand-in table.
+`localeRegistry` (`pkg/pii/locale.go`) holds `fr` (priority 10), `gb` (20), `us` (30) and
+`es` (40). Each entry carries a code, a `Priority`, whether it is `European`, a pattern set,
+a sample and a stand-in table.
+
+**A country can arrive with one category.** `es` carries the licence plate alone, because
+the plate was what was asked for; the DNI, NIE and NIF join it as patterns in the same
+file. A locale is a country's set, not a promise that the set is complete, and `.env.example`
+says what each one finds.
 
 **`Priority` is load order, and load order is a decision:** it settles which country claims
 a value two of them could both read. Nine bare digits are a French SIREN under Luhn and a
@@ -797,8 +827,9 @@ US routing number under the ABA weights; the earlier locale in the registry name
 a new locale gets it without anybody remembering to. That stamp is load-bearing — see
 stand-ins below.
 
-`ParseLocales` (`internal/detector/config.go:85`) accepts a code, a comma-separated list, or
-`none`. **Unset means none**, deliberately: a wrong locale is worse than none — scanning
+`ParseLocales` (`internal/detector/config.go`) accepts a code, a comma-separated list, `eu`
+(every `European` entry, expanded where it is read — see
+[Configuration](../operations/configuration.md)), or `none`. **Unset means none**, deliberately: a wrong locale is worse than none — scanning
 French data with the Vietnamese set masks its invoice numbers and timestamps as identity
 cards — and an operator who never set the variable has not chosen that
 (`DefaultConfig`, `config.go:77`).

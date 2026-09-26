@@ -66,10 +66,10 @@ type Locale struct {
 // localeRegistry is the whole set. Order in the slice is not meaningful;
 // Priority is.
 //
-// TODO: Germany, Spain, Italy and the Netherlands are the next four, in that
-// order of market size. Each is one entry here plus a pattern file, a corpus
-// suite and a regenerated score floor — the registry is what keeps that from
-// touching anything else.
+// TODO: Germany, Italy and the Netherlands are the next three, in that order of
+// market size, and Spain carries only its plate so far. Each is one entry here
+// plus a pattern file, a corpus suite and a regenerated score floor — the
+// registry is what keeps that from touching anything else.
 var localeRegistry = []Locale{
 	{
 		Code: "fr", Priority: 10, European: true,
@@ -82,6 +82,10 @@ var localeRegistry = []Locale{
 	{
 		Code: "us", Priority: 30,
 		Patterns: UnitedStatesPatterns, Sample: unitedStatesSample, Fakes: unitedStatesFakes,
+	},
+	{
+		Code: "es", Priority: 40, European: true,
+		Patterns: SpainPatterns, Sample: spainSample, Fakes: spainFakes,
 	},
 }
 

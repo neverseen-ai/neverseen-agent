@@ -83,6 +83,7 @@ func RejectedByPlacement(cat Category, value string, p Placement) bool {
 // "vehicle" and it is neither a substring of that nor of "véhicule".
 var vehicleWords = []string{
 	"immat", "plaque", "véhicule", "vehic" + "ule", "voiture", "camion", "fourgon",
+	"matrícula", "matricula", "coche", "vehículo", "vehic" + "ulo",
 	"plate", "registration", "vehicle", "reg ",
 }
 
@@ -98,11 +99,11 @@ var vehicleWords = []string{
 //
 // The hash rule is narrow on purpose: "ab123cd" with no word before it is left
 // alone, "gh123jk" is masked, because no hash contains a g.
+//
+// The Spanish national plate adds a third: four digits and a currency or a unit
+// is an amount — "1500 GBP", "2400 MHZ" — in any case and any notation.
 func isUnnamedPlate(value string, p Placement) bool {
-	if value != strings.ToLower(value) || strings.Contains(value, "-") {
-		return false
-	}
-	if !strings.Contains(value, " ") && !isHexadecimal(value) {
+	if !readsAsSomethingElse(value) {
 		return false
 	}
 	before := strings.ToLower(p.Before)
@@ -112,6 +113,27 @@ func isUnnamedPlate(value string, p Placement) bool {
 		}
 	}
 	return true
+}
+
+// readsAsSomethingElse reports whether a plate's notation is one ordinary text
+// also produces, so that only a word naming a vehicle can say which it is.
+func readsAsSomethingElse(value string) bool {
+	if isAmount(value) {
+		return true
+	}
+	if value != strings.ToLower(value) || strings.Contains(value, "-") {
+		return false
+	}
+	return strings.Contains(value, " ") || isHexadecimal(value)
+}
+
+// isAmount reports whether a value is four digits and a currency or a unit.
+func isAmount(value string) bool {
+	v := strings.NewReplacer(" ", "", "-", "").Replace(strings.ToUpper(value))
+	if len(v) != 7 || strings.Trim(v[:4], "0123456789") != "" {
+		return false
+	}
+	return esAmountSuffixes[v[4:]]
 }
 
 // isHexadecimal reports whether every character is a hexadecimal digit.

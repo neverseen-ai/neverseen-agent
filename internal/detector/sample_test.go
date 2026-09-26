@@ -215,6 +215,28 @@ func TestSampleShowsEveryNotation(t *testing.T) {
 			),
 		},
 		{
+			locale: "es",
+			want: notations(
+				// Every separator, each case whole. The spaced and hexadecimal
+				// lowercase forms need the word in front of them, and so does a
+				// series that is also a currency: "1500 GBP" is an amount until a
+				// vehicle is named.
+				"1234 BCD", pii.CatLicPlate,
+				"1234-BCD", pii.CatLicPlate,
+				"1234BCD", pii.CatLicPlate,
+				"5678-kls", pii.CatLicPlate,
+				"5678kls", pii.CatLicPlate,
+				"9012 fgh", pii.CatLicPlate,
+				"3456bcd", pii.CatLicPlate,
+				"1500 GBP", pii.CatLicPlate,
+				// The provincial plate, dashed and spaced, a province of one letter
+				// and one of two.
+				"M-1234-AB", pii.CatLicPlate,
+				"PO-9385-BH", pii.CatLicPlate,
+				"B 5678 CD", pii.CatLicPlate,
+			),
+		},
+		{
 			locale: "us",
 			want: notations(
 				"123-45-6789", pii.CatSSN,

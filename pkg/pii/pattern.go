@@ -42,7 +42,10 @@ type Pattern struct {
 	// inside it is the password's own, while a bare span ends where the text
 	// resumes and an unclosed opener says it was cut out of an expression. Read on
 	// the category alone, `password="Ab(12cd"` was refused as code and went out in
-	// clear. Nil for almost every pattern.
+	// clear. It is also where a value rule goes when one category's patterns come
+	// from countries that number differently: a licence plate is one category, and
+	// France's letter rules would refuse half of Spain's plates. Nil for almost
+	// every pattern.
 	Verify func(string) bool
 
 	// Refine shortens a span the regex had to over-match, returning the real end

@@ -57,8 +57,9 @@ func TestLocalesAreSortedByPriority(t *testing.T) {
 
 	// Not a style assertion: the order decides which country names a value two
 	// of them could both claim. Nine bare digits are a French SIREN under Luhn
-	// and a US routing number under the ABA weights.
-	if got, want := LocaleCodes(), []string{"fr", "gb", "us"}; !reflect.DeepEqual(got, want) {
+	// and a US routing number under the ABA weights. Spain loads last: its plate
+	// shapes are read by no earlier country, so after them it decides nothing.
+	if got, want := LocaleCodes(), []string{"fr", "gb", "us", "es"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("LocaleCodes() = %v, want %v", got, want)
 	}
 }
@@ -142,7 +143,7 @@ func TestAllPatternsCoversEveryLocale(t *testing.T) {
 // and the property worth pinning is that the United Kingdom is in and the United
 // States is out.
 func TestEuropeanLocalesAreTheEuropeanCountries(t *testing.T) {
-	if got, want := EuropeanLocales(), []string{"fr", "gb"}; !reflect.DeepEqual(got, want) {
+	if got, want := EuropeanLocales(), []string{"fr", "gb", "es"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("EuropeanLocales() = %v, want %v", got, want)
 	}
 }

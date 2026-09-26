@@ -122,6 +122,14 @@ Other dates: 12/25/2024, 07/04/1976, 1/1/2000
 
 // Fabricated to match, never a revoked real key. The vendor prefix is the part
 // under test; the body is filler.
+const spainSample = `=== España ===
+Matrícula, como se imprime: 1234 BCD
+Matrícula tecleada: 1234-BCD, 1234BCD, 5678-kls, 5678kls
+Matrícula en minúsculas, nombrada: matrícula 9012 fgh, coche 3456bcd
+Una cifra con su moneda, nombrada: matrícula 1500 GBP
+Matrícula provincial: M-1234-AB, PO-9385-BH, B 5678 CD
+`
+
 const secretsSample = `=== Identifiants techniques ===
 OpenAI : sk-proj-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGH, compte de service sk-svcacct-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGH, administration sk-admin-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGH, ancienne forme sk-abcdefghijklmnopqrstuvwxyz0123
 Anthropic : sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789

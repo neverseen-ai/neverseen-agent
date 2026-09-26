@@ -409,3 +409,37 @@ func TestDateStandInsFollowTheNotationOfTheirLocale(t *testing.T) {
 		}
 	}
 }
+
+// A plate stand-in must not be read back as a plate by any country's pattern. A
+// plate has no checksum to fail, so this is the half that stands in for one: the
+// French stand-in was a real series once, and the pattern detected it in its own
+// output.
+func TestPlateStandInsAreNotPlates(t *testing.T) {
+	var plates []Pattern
+	for _, p := range LocalePatterns(LocaleCodes()) {
+		if p.Category == CatLicPlate {
+			plates = append(plates, p)
+		}
+	}
+
+	for _, l := range Locales() {
+		if _, ok := l.Fakes[CatLicPlate]; !ok {
+			continue
+		}
+		for _, index := range []int64{1, 42, 1000} {
+			value, ok := FakeValue(CatLicPlate, l.Code, index)
+			if !ok {
+				t.Fatalf("no %s stand-in for index %d", l.Code, index)
+			}
+			for _, p := range plates {
+				m := p.Regex.FindStringSubmatch(" " + value + " ")
+				if m == nil || m[p.Group] != value {
+					continue
+				}
+				if p.Verify == nil || p.Verify(value) {
+					t.Errorf("the %s stand-in %q is read as a plate by %q (%s)", l.Code, value, p.Label, p.Locale)
+				}
+			}
+		}
+	}
+}

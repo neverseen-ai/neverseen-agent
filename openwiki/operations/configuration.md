@@ -10,7 +10,7 @@ it, which is how Agent Veil ended up applying a default on one path and not the 
 
 | Variable | Owner | Default | Notes |
 | --- | --- | --- | --- |
-| `NEVERSEEN_PII_LOCALE` | `detector.EnvLocale` | unset = **none** | `fr`, `gb`, `us`, `eu` (every European locale, the UK included), `none`, or a comma-separated mix |
+| `NEVERSEEN_PII_LOCALE` | `detector.EnvLocale` | unset = **none** | `fr`, `gb`, `us`, `es`, `eu` (every European locale, the UK included), `none`, or a comma-separated mix |
 | `NEVERSEEN_PII_ALLOWLIST` | `detector.EnvAllowList` | empty | values never to mask, comma-separated; compared ignoring case and spacing |
 | `NEVERSEEN_PII_SUBSTITUTION` | `detector.EnvSubstitution` | `token` | `token` or `fake` |
 | `NEVERSEEN_SECRET_LEVEL` | `detector.EnvSecretLevel` | `weak` | `weak`, `medium` or `strong`; grades the catch-all named-secret pattern only — see [the secret level](../architecture/detection-engine.md#the-secret-level) |

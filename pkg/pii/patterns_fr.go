@@ -205,7 +205,7 @@ func nirKey(body string) int {
 func FrancePatterns() []Pattern {
 	return []Pattern{
 		{Regex: frNIRRe, Category: CatNIR, Label: "Numéro de sécurité sociale (NIR)"},
-		{Regex: frPlateRe, Group: 1, Category: CatLicPlate, Label: "Plaque d'immatriculation (SIV)"},
+		{Regex: frPlateRe, Group: 1, Verify: PlateCheck, Category: CatLicPlate, Label: "Plaque d'immatriculation (SIV)"},
 		{Regex: frPhoneRe, Category: CatPhone, Label: "Numéro de téléphone français"},
 		{Regex: frDateRe, Category: CatDOB, Label: "Date (jour d'abord)"},
 		{Regex: frSIRETRe, Category: CatSIRET, Label: "SIRET"},

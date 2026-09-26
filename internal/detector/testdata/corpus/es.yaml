@@ -1,0 +1,78 @@
+# Spain suite. For now the licence plate alone, in both notations on the road.
+#
+# No Spanish plate carries a check character. The national shape is held by its
+# twenty letters — no vowel, no Ñ, no Q — and the provincial one by the list of
+# provinces; the rest of what is here is text that has one of those shapes and is
+# not a plate.
+locale: es
+min_precision: 100
+min_recall: 100
+
+cases:
+  - id: es-plate-national
+    text: "El coche 2468 DFG está en el garaje."
+    expect:
+      - {category: LICENSE_PLATE, value: "2468 DFG"}
+
+  - id: es-plate-national-dashed
+    text: "Multa para la matrícula 1357-HJK de ayer."
+    expect:
+      - {category: LICENSE_PLATE, value: "1357-HJK"}
+
+  - id: es-plate-national-compact-in-a-table
+    text: "furgoneta;8642LMN;diésel"
+    expect:
+      - {category: LICENSE_PLATE, value: "8642LMN"}
+
+  - id: es-plate-lowercase-named
+    text: "matrícula: 9753 prs, revisada"
+    expect:
+      - {category: LICENSE_PLATE, value: "9753 prs"}
+
+  - id: es-plate-currency-series-named
+    text: "La matrícula 4321 GBP no pasó la ITV."
+    expect:
+      - {category: LICENSE_PLATE, value: "4321 GBP"}
+
+  - id: es-plate-provincial
+    text: "Vendo coche con matrícula SE-4821-BK, muy cuidado."
+    expect:
+      - {category: LICENSE_PLATE, value: "SE-4821-BK"}
+
+  - id: es-plate-provincial-one-letter
+    text: "El taxi V 7310 Z sigue en servicio."
+    expect:
+      - {category: LICENSE_PLATE, value: "V 7310 Z"}
+
+  # What must come out untouched.
+  - id: es-prec-amount
+    text: "El presupuesto es de 1500 GBP o 2000 CHF, según el cambio."
+    expect: []
+
+  - id: es-prec-unit
+    text: "La CPU va a 2400 MHZ y el motor a 6000 RPM."
+    expect: []
+
+  - id: es-prec-vowels
+    text: "El lote 2024 AOC y el pedido 1234 EUR están listos."
+    expect: []
+
+  - id: es-prec-prose-lowercase
+    text: "unos 1200 km por semana, a 2500 rpm de media"
+    expect: []
+
+  - id: es-prec-short-hash
+    text: "arreglado en 1234bcd, y luego en 5678dfb"
+    expect: []
+
+  - id: es-prec-provincial-not-a-province
+    text: "La referencia QX-1234-AB no es una matrícula."
+    expect: []
+
+  - id: es-prec-provincial-run-together
+    text: "El código M1234AB caduca mañana."
+    expect: []
+
+  - id: es-prec-stand-in
+    text: "Sustituida por 0041 AEU en la respuesta."
+    expect: []
