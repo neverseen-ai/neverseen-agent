@@ -16,3 +16,20 @@ cases:
     text: "rendszám AEAB456 — noted."
     expect:
       - {category: LICENSE_PLATE, value: "AEAB456"}
+
+  - id: hu-prec-identifiers
+    text: "Run test123, then item456 and demo123; HTTP200 came back for ABCD123."
+    expect: []
+
+  - id: hu-prec-ticket-key
+    text: "Fixed in PROJ-123 and DATA-456 before the release."
+    expect: []
+
+  - id: hu-plate-old-named
+    text: "A rendszám ABC-123 volt."
+    expect:
+      - {category: LICENSE_PLATE, value: "ABC-123"}
+
+  - id: hu-prec-standards-in-code
+    text: "import crypto/internal/fips140; see IEEE754 and ecma262 for the details."
+    expect: []

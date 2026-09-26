@@ -350,6 +350,7 @@ func TestSampleShowsEveryNotation(t *testing.T) {
 		{
 			locale: "hu",
 			want: notations(
+				"ABC-"+"123", pii.CatLicPlate,
 				"AA AB-123", pii.CatLicPlate,
 				"AEAB456", pii.CatLicPlate,
 			),
@@ -415,6 +416,13 @@ func TestSampleShowsEveryNotation(t *testing.T) {
 			want: notations(
 				"ZG 1234-AB", pii.CatLicPlate,
 				"ST 567-C", pii.CatLicPlate,
+			),
+		},
+		{
+			locale: "rs",
+			want: notations(
+				"BG 123-AB", pii.CatLicPlate,
+				"NS 4567-CD", pii.CatLicPlate,
 			),
 		},
 		{

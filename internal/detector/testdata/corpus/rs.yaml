@@ -1,0 +1,22 @@
+# Serbia suite. For now the licence plate alone, read on its own.
+#
+# No plate here carries a check character; the city is a closed list, and the
+# zero number no series issues is refused.
+locale: rs
+min_precision: 100
+min_recall: 100
+
+cases:
+  - id: rs-plate-1
+    text: "tablica BG 123-AB — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "BG 123-AB"}
+
+  - id: rs-plate-2
+    text: "Vozilo NS 4567-CD je parkirano."
+    expect:
+      - {category: LICENSE_PLATE, value: "NS 4567-CD"}
+
+  - id: rs-prec-not-a-city
+    text: "Šifra QX 123-AB nije tablica."
+    expect: []

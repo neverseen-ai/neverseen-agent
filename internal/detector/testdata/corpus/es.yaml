@@ -76,3 +76,7 @@ cases:
   - id: es-prec-stand-in
     text: "Sustituida por 0041 AEU en la respuesta."
     expect: []
+
+  - id: es-prec-time-zone
+    text: "The layout is Mon Jan 2 15:04:05 0700 MST, epoch 1970 GMT."
+    expect: []

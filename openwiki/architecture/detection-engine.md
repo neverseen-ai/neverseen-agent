@@ -422,8 +422,12 @@ countries carries its plate alone, and each plate is a set of signatures, a rule
 stand-in, so thirty-three countries are thirty-three entries rather than thirty-three files; a
 country that gains a national identifier moves to a file of its own, as `de` already has.
 
-**Two kinds of country, and the word decides the second.** A shape nothing else writes is read
-on its own — Ireland's `231-D-12345`, Czechia's `1A2 3456`, Romania's county and letters. A
+**Two kinds of notation, and the word decides the second.** A shape nothing else writes is
+read on its own — Ireland's `231-D-12345`, Czechia's `1A2 3456`, Romania's county and letters.
+A plate *run together* is a run of letters and digits like any identifier (`test123`,
+`1st2023`, `B737MAX`, each measured matching a plate read on its own), so outside the five
+countries whose shapes are theirs (`fr`, `es`, `gb`, `be`, `it`) the run-together notation is
+read only behind a word, even where the printed one is not (`anyPlateFinder`). A
 shape ordinary text also takes is read only when the word *right in front of it* names a
 vehicle (`namedPlateFinder`, `vehicleWords`): `DIN EN 1090` is a German plate from Dinslaken,
 `ISO 9001` a Greek one, `BE 2024` a Swiss one, `10 AB 12` (a version and two numbers) a Turkish
@@ -431,7 +435,10 @@ one. Germany, Poland, Austria, Switzerland, the Nordic and Baltic countries, Gre
 Turkey and the rest of that list are in the second kind, and every such country's corpus holds
 the same plate with no word in front and asserts it is left alone. Right in front, not anywhere
 in the window: with `Fahrzeug HH XY 99E` the word vouches for the plate and not for `XY 99E`
-inside it. And a word must open a word of the text — `plate` is inside `template`.
+inside it. And a vehicle word is matched **whole**, or as a stem its entry declares with `*`
+(`immat*`, `véhicul*`): matched as a prefix, `plateau`, `Plakat`, `Targaryen` and `numerisch`
+each vouched for the value after them, and `reg ` — written with a space so as not to open
+`regex` — could never match the one word `namedPlateFinder` reads.
 
 **Germany's district is a closed list** (`deDistricts`, the Kraftfahrt-Bundesamt's 730 codes),
 and a run-together plate is tried at every split: `MAB1234` is M-AB or MA-B. A district with an
@@ -448,7 +455,7 @@ literal `E` in a notation expands to a signature no text has; the German `E` suf
 that `GermanPlateCheck` narrows. The guard caught the first draft of Liechtenstein, written as
 `FL(…)`.
 
-**Measured.** With `eu` — forty plate countries — a scan of 88KB costs ~300ms against ~263ms
+**Measured.** With `eu` — forty-one plate countries — a scan of 88KB costs ~300ms against ~263ms
 for `fr,gb,us`: about 1ms per country, the ceiling the `TODO` on `plateFinder` names. Over a
 paragraph of versions, standards, flight numbers, invoice references and hardware model numbers,
 `eu` flags nothing. `/healthz` with every locale is 23KB against a 32KB test line. Plates written
@@ -912,7 +919,7 @@ link back as a Maps link. A `TODO` names that ceiling.
 
 `localeRegistry` (`pkg/pii/locale.go`) holds `fr` (priority 10), `gb` (20), `us` (30), `es`
 (40), `be` (50), `it` (60), `nl` (70), `pt` (80), `de` (90), and then the rest of Europe from
-`pl` (100) to `tr` (410), largest market first — forty-one locales, forty of them in `eu`. Each entry carries a code, a `Priority`, whether it is `European`, a pattern set,
+`pl` (100) to `tr` (410), largest market first — forty-two locales, forty-one of them in `eu`. Each entry carries a code, a `Priority`, whether it is `European`, a pattern set,
 a sample and a stand-in table.
 
 **A country can arrive with one category.** Every locale after `us` carries the licence

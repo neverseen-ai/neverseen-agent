@@ -12,19 +12,28 @@ import (
 // that would each hold six lines. A country that gains a national identifier
 // moves to a file of its own, as es, be, it, nl and pt already have.
 //
-// Two kinds. A shape nothing else writes is read on its own, like the French
-// plate (plateFinder). A shape ordinary text also takes — "ABC 123" is a course
+// Two kinds, and often both in one country. A shape nothing else writes is read
+// on its own, like the French plate (plateFinder). A shape ordinary text also takes — "ABC 123" is a course
 // code, "AB 12345" a country and a postcode — is read only behind a word naming a
 // vehicle (namedPlateFinder), because the word is the only evidence there is.
-// Which kind a country is follows the measurements in the research the wiki
-// cites, and every "named" country's corpus holds the text that forced it.
+// Which kind a notation is follows the measurements in the research the wiki
+// cites, and every "named" country's corpus holds the text that forced it. A
+// plate run together is a run of letters and digits like any identifier —
+// "test123", "1st2023", "B737MAX" — so outside the five countries whose plate
+// shapes are their own (fr, es, gb, be, it), the run-together notation is read
+// only behind a word even where the printed one is read without.
 //
 // Every stand-in carries a number made of zeros, which no series issues, and
 // plateNoZeroNumber is in every rule that reads a shared shape: a stand-in one
 // country mints must not be a plate to any other.
 //
 // TODO: no plate written in Cyrillic or Greek letters (Bulgaria, Ukraine,
-// Greece): a chunk with a character outside ASCII is never part of a plate.
+// Greece), and no Latin letter outside ASCII either: a chunk with a character
+// outside ASCII is never part of a plate. So the Croatian and Serbian cities
+// spelled with Č, Ć, Ž, Š or Đ, listed below because the lists are the
+// countries', are unreachable, as the German districts with an umlaut are. The
+// upgrade is a signature read per rune, with every country's rule refusing the
+// letters its series never uses — which is why it is not a one-line change.
 
 // euroFake is the stand-in generator for a plate: a template whose number is all
 // zeros, with the index written into its letters — every "@" is one, the last
@@ -96,7 +105,9 @@ var euroPlates = map[string]euroPlate{
 	// Czechia: a digit, the region letter, then a digit or a letter, and four
 	// digits — "1A2 3456".
 	"cz": {
-		find: plateFinder(false, "DLD DDDD", "DLDDDDD", "DLL DDDD", "DLLDDDD"),
+		find: anyPlateFinder(
+			plateFinder(false, "DLD DDDD", "DLL DDDD"),
+			namedPlateFinder("DLDDDDD", "DLLDDDD")),
 		verify: func(v string) bool {
 			u := strings.ToUpper(v)
 			return strings.IndexByte(czRegions, u[1]) >= 0 && plateNoZeroNumber(v)
@@ -112,10 +123,15 @@ var euroPlates = map[string]euroPlate{
 		fake:   "@Q-000@@",
 		label:  "EČV (Slovak)",
 	},
-	// Hungary: since 2022 four letters and three digits — "AA AB-123" — and the
-	// 1990–2022 three letters and three digits, read only behind a word.
+	// Hungary: since 2022 four letters and three digits — "AA AB-123" — read on
+	// its own only as printed, spaced after the first pair. Run together or dashed
+	// whole it is "test123", "HTTP200" or a ticket key like "PROJ-123", and the
+	// 1990–2022 three letters and three digits is a course code or an ISO number;
+	// those are read only behind a word.
 	"hu": {
-		find:   plateFinder(false, "LL LL-DDD", "LLLL-DDD", "LL LL DDD", "LLLLDDD"),
+		find: anyPlateFinder(
+			plateFinder(false, "LL LL-DDD", "LL LL DDD"),
+			namedPlateFinder("LLLL-DDD", "LLLLDDD", "LLL-DDD", "LLL DDD", "LLLDDD")),
 		verify: plateNoZeroNumber,
 		fake:   "A@ @@-000",
 		label:  "Rendszám (Hungarian, 2022)",
@@ -123,7 +139,9 @@ var euroPlates = map[string]euroPlate{
 	// Romania: county, two digits, three letters — "CJ 12 ABC" — and Bucharest,
 	// "B 123 ABC". The United Kingdom's shape; the county decides.
 	"ro": {
-		find: plateFinder(false, "LL DD LLL", "LLDDLLL", "LL-DD-LLL", "L DD LLL", "L DDD LLL", "LDDLLL", "LDDDLLL"),
+		find: anyPlateFinder(
+			plateFinder(false, "LL DD LLL", "LL-DD-LLL", "L DD LLL", "L DDD LLL"),
+			namedPlateFinder("LLDDLLL", "LDDLLL", "LDDDLLL")),
 		verify: func(v string) bool {
 			r := plateRuns(v)
 			return len(r) == 3 && roCounties[r[0]] && plateNoZeroNumber(v) &&
@@ -155,7 +173,9 @@ var euroPlates = map[string]euroPlate{
 	// Bulgaria: province, four digits, two letters — "CA 1234 AB" — in the letters
 	// Latin and Cyrillic share.
 	"bg": {
-		find: plateFinder(false, expandSignatures("L{1,2} DDDD LL", "L{1,2}DDDDLL", "L{1,2}-DDDD-LL")...),
+		find: anyPlateFinder(
+			plateFinder(false, expandSignatures("L{1,2} DDDD LL", "L{1,2}-DDDD-LL")...),
+			namedPlateFinder(expandSignatures("L{1,2}DDDDLL")...)),
 		verify: func(v string) bool {
 			r := plateRuns(v)
 			return len(r) == 3 && bgProvinces[r[0]] && plateHasOnly(v, "ABEKMHOPCTYX") && plateNoZeroNumber(v)
@@ -310,7 +330,9 @@ var euroPlates = map[string]euroPlate{
 		label: "Targa (Kosovan)",
 	},
 	"ua": {
-		find:   plateFinder(false, "LL DDDD LL", "LLDDDDLL", "LL-DDDD-LL"),
+		find: anyPlateFinder(
+			plateFinder(false, "LL DDDD LL", "LL-DDDD-LL"),
+			namedPlateFinder("LLDDDDLL")),
 		verify: func(v string) bool { return plateHasOnly(v, "ABEIKMHOPCTX") && plateNoZeroNumber(v) },
 		fake:   "A@ 0000 @@",
 		label:  "Номерний знак (Ukrainian, in Latin letters)",

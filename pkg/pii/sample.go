@@ -173,7 +173,8 @@ Behind a word naming a vehicle: Kontrollschild ZH 123456, Kontrollschild VD 4321
 `
 
 const sampleCZ = `=== Czechia ===
-As printed and as typed: 1A2 3456, 4AB5678
+As printed: 1A2 3456
+Run together, behind a word naming a vehicle: SPZ 4AB5678
 `
 
 const sampleSK = `=== Slovakia ===
@@ -181,7 +182,8 @@ As printed and as typed: BA-123AB, KE 456CD
 `
 
 const sampleHU = `=== Hungary ===
-As printed and as typed: AA AB-123, AEAB456
+As printed: AA AB-123
+Run together, behind a word naming a vehicle: rendszám AEAB456, rendszám ABC-123
 `
 
 const sampleRO = `=== Romania ===
@@ -213,11 +215,16 @@ Behind a word naming a vehicle: πινακίδα IKN-1234, πινακίδα ZHK 
 `
 
 const sampleBG = `=== Bulgaria ===
-As printed and as typed: CA 1234 AB, PB5678HK
+As printed: CA 1234 AB
+Run together, behind a word naming a vehicle: номер PB5678HK
 `
 
 const sampleHR = `=== Croatia ===
 As printed and as typed: ZG 1234-AB, ST 567-C
+`
+
+const sampleRS = `=== Serbia ===
+As printed and as typed: BG 123-AB, NS 4567-CD
 `
 
 const sampleSI = `=== Slovenia ===
@@ -277,7 +284,8 @@ Behind a word naming a vehicle: targa 01-123-AB, targa 05 456 CD
 `
 
 const sampleUA = `=== Ukraine ===
-As printed and as typed: AA 1234 BC, KA5678HE
+As printed: AA 1234 BC
+Run together, behind a word naming a vehicle: номер KA5678HE
 `
 
 const sampleMD = `=== Moldova ===

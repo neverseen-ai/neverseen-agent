@@ -79,8 +79,9 @@ func ProvincialPlateCheck(value string) bool {
 }
 
 // esAmountSuffixes are the series that are also what follows a number in prose:
-// the ISO 4217 currencies written in the plate's twenty letters, and the units.
-// "1500 GBP" and "2400 MHZ" are the national shape exactly.
+// the ISO 4217 currencies written in the plate's twenty letters, the units, and
+// the time zones. "1500 GBP", "2400 MHZ" and "0700 MST" are the national shape
+// exactly — the last from a time layout in Go's own time package, measured.
 //
 // Asked by the placement rule, never used to drop a value outright: GBP is a
 // series Spain has issued, and a plate on it named as one ("matrícula 1500 GBP")
@@ -93,7 +94,8 @@ var esAmountSuffixes = func() map[string]bool {
 		KZT LBP LKR LRD LSL LYD MDL MKD MMK MNT MWK MXN MXV MZN NGN NPR NZD PGK
 		PHP PKR PLN PYG RSD RWF SBD SDG SGD SHP SLL SRD SSP STN SVC SYP SZL THB
 		TJS TMT TTD TWD TZS VND WST XCD XDR XPD XPF XTS ZMW ZWG ZWL
-		KHZ MHZ GHZ THZ KWH MWH GWH RPM BPM MPH KPH KMH PPM FPS`) {
+		KHZ MHZ GHZ THZ KWH MWH GWH RPM BPM MPH KPH KMH PPM FPS
+		GMT MST PST CST BST CDT MDT PDT HST JST KST MSK SGT WST`) {
 		out[code] = true
 	}
 	return out

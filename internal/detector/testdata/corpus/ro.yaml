@@ -20,3 +20,7 @@ cases:
   - id: ro-prec-1
     text: "Codul XY 12 ABC nu e valid."
     expect: []
+
+  - id: ro-prec-aircraft-model
+    text: "The fleet has one B737MAX and two A320NEO on order."
+    expect: []

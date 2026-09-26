@@ -20,3 +20,7 @@ cases:
   - id: cz-prec-1
     text: "Verze 1A2 build."
     expect: []
+
+  - id: cz-prec-ordinal-and-duration
+    text: "Released on the 1st2023 build after 1h23456 of soak."
+    expect: []

@@ -94,6 +94,23 @@ func plateFinder(upperOnly bool, signatures ...string) func(string) [][]int {
 	}
 }
 
+// plateSeparators strips the separators a plate is written with, for a rule that
+// reads the characters alone. One value, not one per call: the rules run for
+// every candidate span on the scan.
+var plateSeparators = strings.NewReplacer("-", "", " ", "")
+
+// anyPlateFinder returns the spans every given finder returns, for a country
+// that reads some notations on their own and others only behind a word.
+func anyPlateFinder(finders ...func(string) [][]int) func(string) [][]int {
+	return func(text string) [][]int {
+		var out [][]int
+		for _, f := range finders {
+			out = append(out, f(text)...)
+		}
+		return out
+	}
+}
+
 // namedPlateFinder is plateFinder for a shape too common to be read on its own:
 // it keeps a span only when the word right in front of it names a vehicle.
 //

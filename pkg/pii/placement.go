@@ -74,9 +74,15 @@ func RejectedByPlacement(cat Category, value string, p Placement) bool {
 }
 
 // vehicleWords are what a text puts in front of a registration it is naming, in
-// the languages this catalogue reads plates for. Matched as a substring of the
-// lowercased window, so "immatriculé", "immatriculation" and "immat" are one
-// entry, and so are "véhicule" and "véhicules".
+// the languages this catalogue reads plates for.
+//
+// A word is matched whole, and an entry ending in "*" is a stem that may run on:
+// "immat*" covers "immat", "immatriculé" and "immatriculation", "véhicul*" the
+// word and its plural. Matched whole otherwise, because a longer word opening on
+// a vehicle word is a different word: "plate" opens "plateau", "targa" opens
+// "Targaryen", "coche" opens "cochera", "plaka" opens "Plakat", "numeris" opens
+// "numerisch" — and each vouched for the value after it while this matched
+// prefixes. "reg" is whole for that reason too: it opens "regex" and "region".
 //
 // TODO: a CSV names the column once, in a header more than WindowSize away, so a
 // lowercase plate on its own row goes out in clear. The upgrade is a placement
@@ -86,21 +92,21 @@ func RejectedByPlacement(cat Category, value string, p Placement) bool {
 // word right in front of it (namedPlateFinder), so "valstybinis numeris" is
 // "numeris".
 //
-// "vehic" + "ule" is the French word typed without its accent, as a spreadsheet
-// header is; written whole, the British-spelling linter reads it as a misspelt
-// "vehicle" and it is neither a substring of that nor of "véhicule".
+// "vehic" + "ul*" is the French and Spanish word typed without its accent, as a
+// spreadsheet header is; written whole, the British-spelling linter reads it as a
+// misspelt "vehicle".
 var vehicleWords = []string{
-	"immat", "plaque", "véhicule", "vehic" + "ule", "voiture", "camion", "fourgon",
-	"matrícula", "matricula", "coche", "vehículo", "vehic" + "ulo",
-	"nummerplaat", "kenteken", "targa", "veicolo", "viatura",
-	"kennzeichen", "nummernschild", "kontrollschild", "fahrzeug", "kfz", "pkw", "lkw",
-	"rejestracyjn", "tablic", "pojazd", "samoch",
-	"spz", "špz", "ečv", "vozidl", "registrační", "evidenčn",
-	"rendszám", "înmatriculare", "inmatriculare", "registarsk", "registrsk",
-	"nummerplade", "registreringsnummer", "kjennemerke", "bilnummer", "regnr", "regnummer",
-	"rekisteri", "numbrimärk", "registreerimis", "numurzīm", "reģistr", "numeris",
-	"bílnúmer", "skráningarnúmer", "nummerplack", "plaka", "πινακίδα", "номер",
-	"plate", "registration", "vehicle", "reg ",
+	"immat*", "plaque", "plaques", "véhicul*", "vehic" + "ul*", "voiture*", "camion*", "fourgon*",
+	"matrícul*", "matricul*", "coche", "coches", "vehícul*",
+	"nummerpla*", "kenteken*", "targa", "targhe", "veicol*", "viatur*",
+	"kennzeichen*", "nummernschild*", "kontrollschild*", "fahrzeug*", "kfz", "pkw", "lkw",
+	"rejestracyjn*", "tablic*", "pojazd*", "samochod*",
+	"spz", "špz", "ečv", "vozidl*", "registrační*", "evidenčn*",
+	"rendszám*", "înmatricul*", "inmatricul*", "registarsk*", "registrsk*",
+	"registreringsnummer*", "kjennemerke*", "bilnummer*", "regnr", "regnummer*",
+	"rekisteri*", "numbrimärk*", "registreerimis*", "numurzīm*", "reģistr*", "numeris", "numerio",
+	"bílnúmer*", "skráningarnúmer*", "plaka", "plakası", "plakasi", "πινακίδ*", "номер*",
+	"plate", "plates", "registration", "vehicle", "vehicles", "reg",
 }
 
 // isUnnamedPlate reports whether a lowercase plate is one no word names.
@@ -127,25 +133,39 @@ func isUnnamedPlate(value string, p Placement) bool {
 
 // namesAVehicle reports whether a stretch of text carries a word naming a
 // vehicle, which is what vouches for a plate in a shape ordinary text also takes.
-//
-// Each word must open a word of the text: "plate" is inside "template" and
-// "targa" inside "stargazers", and either would otherwise vouch for whatever
-// followed.
-func namesAVehicle(before string) bool {
-	before = strings.ToLower(before)
+func namesAVehicle(text string) bool {
+	text = strings.ToLower(text)
 	for _, w := range vehicleWords {
-		for rest := before; ; {
-			i := strings.Index(rest, w)
+		stem := strings.HasSuffix(w, "*")
+		w = strings.TrimSuffix(w, "*")
+		for from := 0; ; {
+			i := strings.Index(text[from:], w)
 			if i < 0 {
 				break
 			}
-			if r, _ := utf8.DecodeLastRuneInString(rest[:i]); i == 0 || !unicode.IsLetter(r) {
+			start, end := from+i, from+i+len(w)
+			if !letterAt(text, start, -1) && (stem || !letterAt(text, end, +1)) {
 				return true
 			}
-			rest = rest[i+len(w):]
+			from = end
 		}
 	}
 	return false
+}
+
+// letterAt reports whether the rune just before (dir -1) or at (dir +1) offset i
+// is a letter, so a word's edges can be told from the middle of a longer one.
+func letterAt(text string, i, dir int) bool {
+	var r rune
+	switch {
+	case dir < 0 && i > 0:
+		r, _ = utf8.DecodeLastRuneInString(text[:i])
+	case dir > 0 && i < len(text):
+		r, _ = utf8.DecodeRuneInString(text[i:])
+	default:
+		return false
+	}
+	return unicode.IsLetter(r)
 }
 
 // readsAsSomethingElse reports whether a plate's notation is one ordinary text
@@ -162,7 +182,7 @@ func readsAsSomethingElse(value string) bool {
 
 // isAmount reports whether a value is four digits and a currency or a unit.
 func isAmount(value string) bool {
-	v := strings.NewReplacer(" ", "", "-", "").Replace(strings.ToUpper(value))
+	v := plateSeparators.Replace(strings.ToUpper(value))
 	if len(v) != 7 || strings.Trim(v[:4], "0123456789") != "" {
 		return false
 	}

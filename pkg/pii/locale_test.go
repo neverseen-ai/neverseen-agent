@@ -60,7 +60,7 @@ func TestLocalesAreSortedByPriority(t *testing.T) {
 	// and a US routing number under the ABA weights. Spain and Belgium load last:
 	// their plate shapes are read by no earlier country, so after them they
 	// decide nothing.
-	if got, want := LocaleCodes(), []string{"fr", "gb", "us", "es", "be", "it", "nl", "pt", "de", "pl", "at", "ch", "cz", "sk", "hu", "ro", "ie", "dk", "se", "no", "fi", "gr", "bg", "hr", "si", "lt", "lv", "ee", "lu", "mt", "cy", "is", "li", "al", "mk", "ba", "me", "xk", "ua", "md", "tr"}; !reflect.DeepEqual(got, want) {
+	if got, want := LocaleCodes(), []string{"fr", "gb", "us", "es", "be", "it", "nl", "pt", "de", "pl", "at", "ch", "cz", "sk", "hu", "ro", "ie", "dk", "se", "no", "fi", "gr", "bg", "hr", "rs", "si", "lt", "lv", "ee", "lu", "mt", "cy", "is", "li", "al", "mk", "ba", "me", "xk", "ua", "md", "tr"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("LocaleCodes() = %v, want %v", got, want)
 	}
 }
@@ -145,7 +145,7 @@ func TestAllPatternsCoversEveryLocale(t *testing.T) {
 // and the property worth pinning is that the United Kingdom is in and the United
 // States is out.
 func TestEuropeanLocalesAreTheEuropeanCountries(t *testing.T) {
-	if got, want := EuropeanLocales(), []string{"fr", "gb", "es", "be", "it", "nl", "pt", "de", "pl", "at", "ch", "cz", "sk", "hu", "ro", "ie", "dk", "se", "no", "fi", "gr", "bg", "hr", "si", "lt", "lv", "ee", "lu", "mt", "cy", "is", "li", "al", "mk", "ba", "me", "xk", "ua", "md", "tr"}; !reflect.DeepEqual(got, want) {
+	if got, want := EuropeanLocales(), []string{"fr", "gb", "es", "be", "it", "nl", "pt", "de", "pl", "at", "ch", "cz", "sk", "hu", "ro", "ie", "dk", "se", "no", "fi", "gr", "bg", "hr", "rs", "si", "lt", "lv", "ee", "lu", "mt", "cy", "is", "li", "al", "mk", "ba", "me", "xk", "ua", "md", "tr"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("EuropeanLocales() = %v, want %v", got, want)
 	}
 }
@@ -155,5 +155,16 @@ func TestEuropeanLocalesAreTheEuropeanCountries(t *testing.T) {
 func TestNoLocaleIsRegisteredUnderTheEuropeanAlias(t *testing.T) {
 	if _, ok := LocaleByCode(LocaleEurope); ok {
 		t.Errorf("a locale is registered as %q, which a selection reads as every European country", LocaleEurope)
+	}
+}
+
+// Every plate the European table defines is one a deployment can load. An entry
+// with no registry line is never scanned, even under "eu", and nothing else would
+// notice: Serbia sat in the table unregistered, with no sample and no corpus.
+func TestEveryEuropeanPlateIsRegistered(t *testing.T) {
+	for code := range euroPlates {
+		if _, ok := LocaleByCode(code); !ok {
+			t.Errorf("euroPlates defines %q but no locale registers it", code)
+		}
 	}
 }

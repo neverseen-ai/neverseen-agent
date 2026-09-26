@@ -1186,7 +1186,7 @@ var ibanLengths = map[string]int{
 // nothing to say so.
 func PlateCheck(value string) bool {
 	v := strings.ToUpper(value)
-	v = strings.NewReplacer("-", "", " ", "").Replace(v)
+	v = plateSeparators.Replace(v)
 	if len(v) != 7 {
 		return false
 	}

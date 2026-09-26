@@ -34,3 +34,7 @@ cases:
   - id: de-prec-2
     text: "Die Norm EN 1090 gilt."
     expect: []
+
+  - id: de-prec-word-that-opens-on-plaka
+    text: "Das Plakat M-AB 1234 hängt im Flur."
+    expect: []

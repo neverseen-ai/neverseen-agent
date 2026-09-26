@@ -21,3 +21,12 @@ cases:
   - id: dk-prec-no-word
     text: "Reference AB 12 345 — noted."
     expect: []
+
+  - id: dk-plate-reg
+    text: "Reg AB 12 345 — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "AB 12 345"}
+
+  - id: dk-prec-word-that-opens-on-plate
+    text: "The plateau AB 12 345 holds the site."
+    expect: []

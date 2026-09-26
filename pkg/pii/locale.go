@@ -126,6 +126,7 @@ var localeRegistry = []Locale{
 	euroPlateLocale("gr", 220, sampleGR),
 	euroPlateLocale("bg", 230, sampleBG),
 	euroPlateLocale("hr", 240, sampleHR),
+	euroPlateLocale("rs", 245, sampleRS),
 	euroPlateLocale("si", 250, sampleSI),
 	euroPlateLocale("lt", 260, sampleLT),
 	euroPlateLocale("lv", 270, sampleLV),
