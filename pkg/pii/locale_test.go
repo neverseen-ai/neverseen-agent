@@ -136,3 +136,21 @@ func TestAllPatternsCoversEveryLocale(t *testing.T) {
 		}
 	}
 }
+
+// "eu" is Europe the continent, in load order. Written out rather than derived
+// from the European field: deriving it would agree with whatever the field says,
+// and the property worth pinning is that the United Kingdom is in and the United
+// States is out.
+func TestEuropeanLocalesAreTheEuropeanCountries(t *testing.T) {
+	if got, want := EuropeanLocales(), []string{"fr", "gb"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("EuropeanLocales() = %v, want %v", got, want)
+	}
+}
+
+// A country registered under the alias's code could never be selected on its
+// own: the selection expands "eu" before it looks the code up in the registry.
+func TestNoLocaleIsRegisteredUnderTheEuropeanAlias(t *testing.T) {
+	if _, ok := LocaleByCode(LocaleEurope); ok {
+		t.Errorf("a locale is registered as %q, which a selection reads as every European country", LocaleEurope)
+	}
+}

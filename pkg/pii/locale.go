@@ -36,6 +36,14 @@ type Locale struct {
 	// order silently and wrongly.
 	Priority int
 
+	// European puts the locale in the selection LocaleEurope names. Europe the
+	// continent, not the Union: a French fleet crossing the Channel meets British
+	// identifiers, and an "eu" that left them out would forward them in clear.
+	//
+	// A field on the locale rather than a list beside the alias, so a country
+	// added to the registry joins "eu" in the same line that adds it.
+	European bool
+
 	// Patterns is the ordered set this locale contributes.
 	Patterns func() []Pattern
 
@@ -64,11 +72,11 @@ type Locale struct {
 // touching anything else.
 var localeRegistry = []Locale{
 	{
-		Code: "fr", Priority: 10,
+		Code: "fr", Priority: 10, European: true,
 		Patterns: FrancePatterns, Sample: franceSample, Fakes: franceFakes,
 	},
 	{
-		Code: "gb", Priority: 20,
+		Code: "gb", Priority: 20, European: true,
 		Patterns: UnitedKingdomPatterns, Sample: unitedKingdomSample, Fakes: unitedKingdomFakes,
 	},
 	{
@@ -103,6 +111,30 @@ func LocaleCodes() []string {
 	codes := make([]string, 0, len(locales))
 	for _, l := range locales {
 		codes = append(codes, l.Code)
+	}
+	return codes
+}
+
+// LocaleEurope is the selection that loads every European locale at once.
+//
+// It is a word a selection may use, not a Locale. As a registry entry it would
+// stamp its own code on every pattern it carried, and a French telephone number
+// would stop getting a French stand-in — the stamp is what picks the stand-in.
+// So it is expanded where a selection is read, and nothing past that point ever
+// sees it.
+const LocaleEurope = "eu"
+
+// EuropeanLocales lists the codes LocaleEurope stands for, in load order.
+//
+// Expanded when the selection is read, never stored: an environment naming "eu"
+// picks up a country added in a later build on the next start, where a stored
+// expansion would have frozen the list it was written with.
+func EuropeanLocales() []string {
+	var codes []string
+	for _, l := range Locales() {
+		if l.European {
+			codes = append(codes, l.Code)
+		}
 	}
 	return codes
 }

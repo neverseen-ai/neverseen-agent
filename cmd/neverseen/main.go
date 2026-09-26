@@ -75,7 +75,8 @@ text, both representations side by side, in this agent's configuration.
 
 Configuration:
   %-28s which country pattern sets to load: %s,
-                               none, or a comma-separated list. Unset means none.
+                               %s (every European one), none, or a
+                               comma-separated list. Unset means none.
   %-28s values never to mask, separated by commas.
   %-28s what a masked value looks like: token or fake.
   %-28s weakest named secret to mask: weak, medium or strong.
@@ -212,7 +213,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintf(w, usage,
 		defaultTraceDir,
 		listen, listen, listen,
-		detector.EnvLocale, strings.Join(pii.LocaleCodes(), ", "),
+		detector.EnvLocale, strings.Join(pii.LocaleCodes(), ", "), pii.LocaleEurope,
 		detector.EnvAllowList,
 		detector.EnvSubstitution,
 		detector.EnvSecretLevel,

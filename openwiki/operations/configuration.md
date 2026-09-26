@@ -10,7 +10,7 @@ it, which is how Agent Veil ended up applying a default on one path and not the 
 
 | Variable | Owner | Default | Notes |
 | --- | --- | --- | --- |
-| `NEVERSEEN_PII_LOCALE` | `detector.EnvLocale` | unset = **none** | `fr`, `gb`, `us`, `none`, or a comma-separated mix |
+| `NEVERSEEN_PII_LOCALE` | `detector.EnvLocale` | unset = **none** | `fr`, `gb`, `us`, `eu` (every European locale, the UK included), `none`, or a comma-separated mix |
 | `NEVERSEEN_PII_ALLOWLIST` | `detector.EnvAllowList` | empty | values never to mask, comma-separated; compared ignoring case and spacing |
 | `NEVERSEEN_PII_SUBSTITUTION` | `detector.EnvSubstitution` | `token` | `token` or `fake` |
 | `NEVERSEEN_SECRET_LEVEL` | `detector.EnvSecretLevel` | `weak` | `weak`, `medium` or `strong`; grades the catch-all named-secret pattern only — see [the secret level](../architecture/detection-engine.md#the-secret-level) |
@@ -33,6 +33,16 @@ was missing from both for a while, and nothing failed.
 **`NEVERSEEN_PII_LOCALE` unset means none, deliberately.** Scanning one country's data with
 another country's patterns is worse than scanning none of it, and an operator who never set
 the variable has not chosen that.
+
+**`eu` is a word a selection may use, not a locale** (`pii.LocaleEurope`). It is expanded
+where the selection is read, into every registry entry marked `European` — Europe the
+continent, so `gb` is in it — and nothing past that point sees it. A registry entry would
+have stamped `eu` on every pattern it carried, and the stamp is what picks a country's
+stand-in: a French telephone number would have lost its French one. Expanded on every start
+and never stored, so an environment naming `eu` loads a country a later build adds. The
+stored policy holds countries, not the alias, because the settings page writes countries.
+`neverseen mask --locales` and the settings page do not offer it: both draw
+`AvailableLocales`, which lists countries.
 
 **`NEVERSEEN_LISTEN` is not a default to override lightly** (`env.go:43-49`). The agent
 trusts whoever reaches it — it forwards their credentials and scopes the session mapping by a

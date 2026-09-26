@@ -17,7 +17,8 @@ import (
 // answered in clear in the other. One reader is what makes that impossible.
 const (
 	// EnvLocale selects which country pattern sets load: a code, several codes
-	// separated by commas, or "none" for the locale-independent sets only.
+	// separated by commas, "eu" for every European one, or "none" for the
+	// locale-independent sets only.
 	EnvLocale = "NEVERSEEN_PII_LOCALE"
 	// EnvAllowList lists values never to mask, separated by commas.
 	EnvAllowList = "NEVERSEEN_PII_ALLOWLIST"
@@ -77,7 +78,7 @@ type Config struct {
 func DefaultConfig() Config { return Config{} }
 
 // ParseLocales reads a locale selection: a comma-separated list of codes from
-// the pii registry, or "none".
+// the pii registry, pii.LocaleEurope, or "none".
 //
 // The known codes come from the registry, and so does the error message, rather
 // than from a copy of the list written here — a copy is what goes stale the
@@ -94,10 +95,14 @@ func ParseLocales(spec string) ([]string, error) {
 			// an empty element, from a trailing comma
 		case "none":
 			// the locale-independent sets only: nothing to add
+		case pii.LocaleEurope:
+			// A country named beside it again is not an error: the detector
+			// keeps each code once, in registry order, whatever it is handed.
+			locales = append(locales, pii.EuropeanLocales()...)
 		default:
 			if _, ok := pii.LocaleByCode(code); !ok {
-				return nil, fmt.Errorf("unknown PII locale %q (want %s, none, or a comma-separated list)",
-					strings.TrimSpace(field), strings.Join(pii.LocaleCodes(), ", "))
+				return nil, fmt.Errorf("unknown PII locale %q (want %s, %s, none, or a comma-separated list)",
+					strings.TrimSpace(field), strings.Join(pii.LocaleCodes(), ", "), pii.LocaleEurope)
 			}
 			locales = append(locales, code)
 		}
