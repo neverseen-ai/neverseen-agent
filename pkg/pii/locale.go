@@ -66,8 +66,8 @@ type Locale struct {
 // localeRegistry is the whole set. Order in the slice is not meaningful;
 // Priority is.
 //
-// TODO: Germany, Italy and the Netherlands are the next three, in that order of
-// market size, and Spain and Belgium carry only their plates so far. Each is one entry here
+// TODO: every locale after us carries only its licence plate so far; each
+// country's national identifiers are the next entries in its file. Each is one entry here
 // plus a pattern file, a corpus suite and a regenerated score floor — the
 // registry is what keeps that from touching anything else.
 var localeRegistry = []Locale{
@@ -90,6 +90,20 @@ var localeRegistry = []Locale{
 	{
 		Code: "be", Priority: 50, European: true,
 		Patterns: BelgiumPatterns, Sample: belgiumSample, Fakes: belgiumFakes,
+	},
+	// After France, whose plates Italy writes the same way; the Netherlands before
+	// Portugal, for the same reason — the country with the letter rule decides.
+	{
+		Code: "it", Priority: 60, European: true,
+		Patterns: ItalyPatterns, Sample: italySample, Fakes: italyFakes,
+	},
+	{
+		Code: "nl", Priority: 70, European: true,
+		Patterns: NetherlandsPatterns, Sample: netherlandsSample, Fakes: netherlandsFakes,
+	},
+	{
+		Code: "pt", Priority: 80, European: true,
+		Patterns: PortugalPatterns, Sample: portugalSample, Fakes: portugalFakes,
 	},
 }
 

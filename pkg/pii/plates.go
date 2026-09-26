@@ -80,6 +80,9 @@ func plateFinder(upperOnly bool, signatures ...string) func(string) [][]int {
 				if !set[string(sig)] {
 					continue
 				}
+				if plateGlued(text, chunks, i, k) {
+					continue
+				}
 				if upper, lower := plateCase(text[start:end]); upper || (lower && !upperOnly) {
 					out = append(out, []int{start, end})
 				}
@@ -87,6 +90,21 @@ func plateFinder(upperOnly bool, signatures ...string) func(string) [][]int {
 		}
 		return out
 	}
+}
+
+// plateGlued reports whether chunks[i..k] is joined by a dash to another run of
+// letters and digits on either side, which makes it a fragment of a longer
+// hyphenated token rather than a plate.
+//
+// A MAC address is the case: "BD-12-FD-34-BF-56" carries "BD-12-FD", a Dutch
+// plate's shape in letters the Dutch series issues, and masking it would leave
+// the rest of the address in clear beside a stand-in. A space is not the same:
+// prose follows a spaced plate as a matter of course.
+func plateGlued(text string, chunks []plateChunk, i, k int) bool {
+	start, end := chunks[i].start, chunks[k].end
+	before := i > 0 && chunks[i-1].end == start-1 && text[start-1] == '-'
+	after := k+1 < len(chunks) && chunks[k+1].start == end+1 && text[end] == '-'
+	return before || after
 }
 
 // plateChunk is one maximal run of letters and digits. ok is false for a run a

@@ -259,6 +259,52 @@ func TestSampleShowsEveryNotation(t *testing.T) {
 			),
 		},
 		{
+			locale: "it",
+			want: notations(
+				// As printed, then every way it is typed. The spaced and
+				// hexadecimal lowercase forms need the word in front of them.
+				"FG 482KL", pii.CatLicPlate,
+				"FG 482 KL", pii.CatLicPlate,
+				"FG-482-KL", pii.CatLicPlate,
+				"FG482KL", pii.CatLicPlate,
+				"fg-482-kl", pii.CatLicPlate,
+				"fg 482 kl", pii.CatLicPlate,
+				"bc123de", pii.CatLicPlate,
+			),
+		},
+		{
+			locale: "nl",
+			want: notations(
+				// One row per sidecode: each is its own signature, and a table
+				// missing one lets it be dropped unnoticed.
+				"VBN-24-T", pii.CatLicPlate,
+				"S-782-PL", pii.CatLicPlate,
+				"GH-318-K", pii.CatLicPlate,
+				"1-KBT-56", pii.CatLicPlate,
+				"12-XNK-3", pii.CatLicPlate,
+				"F-12-GHP", pii.CatLicPlate,
+				"3-HT-456", pii.CatLicPlate,
+				"123-TL-4", pii.CatLicPlate,
+				"34-HF-GJ", pii.CatLicPlate,
+				"BF-DT-12", pii.CatLicPlate,
+				"RT-89-PK", pii.CatLicPlate,
+				"34-HN-78", pii.CatLicPlate,
+				"56-78-ZR", pii.CatLicPlate,
+				"PK-12-34", pii.CatLicPlate,
+				"gh-318-k", pii.CatLicPlate,
+			),
+		},
+		{
+			locale: "pt",
+			want: notations(
+				"AT-45-RE", pii.CatLicPlate,
+				"32-HX-18", pii.CatLicPlate,
+				"56-78-ZE", pii.CatLicPlate,
+				"PE-12-34", pii.CatLicPlate,
+				"at-45-re", pii.CatLicPlate,
+			),
+		},
+		{
 			locale: "us",
 			want: notations(
 				"123-45-6789", pii.CatSSN,

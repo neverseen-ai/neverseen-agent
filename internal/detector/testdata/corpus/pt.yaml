@@ -1,0 +1,40 @@
+# Portugal suite. For now the licence plate alone, the four eras, dashed.
+#
+# Every Portuguese shape is also a Dutch sidecode; this suite loads Portugal
+# alone, so a plate with a vowel in it is Portugal's to name.
+locale: pt
+min_precision: 100
+min_recall: 100
+
+cases:
+  - id: pt-plate-2020
+    text: "O carro com a matrícula AT-45-RE está na garagem."
+    expect:
+      - {category: LICENSE_PLATE, value: "AT-45-RE"}
+
+  - id: pt-plate-2005
+    text: "Multa para 32-HX-18 de ontem."
+    expect:
+      - {category: LICENSE_PLATE, value: "32-HX-18"}
+
+  - id: pt-plate-1992
+    text: "viatura;56-78-ZE;gasóleo"
+    expect:
+      - {category: LICENSE_PLATE, value: "56-78-ZE"}
+
+  - id: pt-plate-lowercase
+    text: "a viatura pe-12-34 voltou"
+    expect:
+      - {category: LICENSE_PLATE, value: "pe-12-34"}
+
+  - id: pt-prec-hyphenated-reference
+    text: "A referência AB-12-CD-34 do lote chegou."
+    expect: []
+
+  - id: pt-prec-mixed-case
+    text: "O código Ab-12-cD expira amanhã."
+    expect: []
+
+  - id: pt-prec-stand-in
+    text: "Substituída por AA 00 AB na resposta."
+    expect: []

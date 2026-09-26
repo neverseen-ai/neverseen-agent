@@ -407,6 +407,21 @@ letters a country issues, a province, an age — is the pattern's `Verify`, as f
 pattern, and `TestAFindPatternIsFilteredLikeAnExpression` holds that the allow list, the
 `Verify` and placement all still apply to a span the pass found.
 
+**Italy, the Netherlands and Portugal are the shared shapes.** Italy writes the French
+plate's shape, and only its printed form (`AB 123CD`) is Italy's alone; the Netherlands'
+sidecodes 1–4 are Portugal's four eras letter for letter. Neither pair is a conflict: the
+value is masked once, and `Priority` decides who names it. Italy loads after France, and the
+Netherlands before Portugal, so that the country with the letter rule decides — a Dutch
+plate is consonants only, never C or Q, and one with a vowel in it is Portugal's. Dutch and
+Portuguese plates are read **with their dashes only**: run together they are any booking
+reference, and spaced, `AB 12 34` is the head of a British National Insurance number. The
+`TODO`s in `patterns_nl.go` and `patterns_pt.go` name what they need.
+
+**A plate glued by a dash to another run is a fragment, not a plate** (`plateGlued`). A MAC
+address is the case the Dutch shapes brought in: `BD-12-FD-34-BF-56` carries `BD-12-FD`, in
+letters the Dutch series issues, and masking it would leave the rest of the address beside a
+stand-in. A space is not the same, since prose follows a spaced plate as a matter of course.
+
 The separators still have to agree, and a signature says so by having no entry for the
 mixed form. Case is read whole — upper or lower, never mixed — and `plateFinder` takes an
 `upperOnly` for a notation whose lowercase form is any reference code (the Spanish
@@ -859,12 +874,12 @@ link back as a Maps link. A `TODO` names that ceiling.
 ## Locales
 
 `localeRegistry` (`pkg/pii/locale.go`) holds `fr` (priority 10), `gb` (20), `us` (30), `es`
-(40) and `be` (50). Each entry carries a code, a `Priority`, whether it is `European`, a pattern set,
+(40), `be` (50), `it` (60), `nl` (70) and `pt` (80). Each entry carries a code, a `Priority`, whether it is `European`, a pattern set,
 a sample and a stand-in table.
 
-**A country can arrive with one category.** `es` and `be` carry the licence plate alone,
-because the plate was what was asked for; the DNI, NIE and NIF, and the Belgian national
-register number, join them as patterns in the same files. A locale is a country's set, not a promise that the set is complete, and `.env.example`
+**A country can arrive with one category.** Every locale after `us` carries the licence
+plate alone, because the plate was what was asked for; each country's national identifiers
+join it as patterns in the same file. A locale is a country's set, not a promise that the set is complete, and `.env.example`
 says what each one finds.
 
 **`Priority` is load order, and load order is a decision:** it settles which country claims

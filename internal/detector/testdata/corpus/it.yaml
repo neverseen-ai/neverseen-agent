@@ -1,0 +1,44 @@
+# Italy suite. For now the licence plate alone, the series issued since 1994.
+#
+# France writes the same shape; this suite loads Italy alone, so every plate here
+# is named by Italy. What keeps a reference out is the letters: never I, O, Q, U.
+locale: it
+min_precision: 100
+min_recall: 100
+
+cases:
+  - id: it-plate-as-printed
+    text: "L'auto targata EZ 592NB è in garage."
+    expect:
+      - {category: LICENSE_PLATE, value: "EZ 592NB"}
+
+  - id: it-plate-spaced
+    text: "Multa per la targa GH 318 LM di ieri."
+    expect:
+      - {category: LICENSE_PLATE, value: "GH 318 LM"}
+
+  - id: it-plate-compact-in-a-table
+    text: "furgone;HK731PT;diesel"
+    expect:
+      - {category: LICENSE_PLATE, value: "HK731PT"}
+
+  - id: it-plate-lowercase-named
+    text: "targa: bc 234 df, controllata"
+    expect:
+      - {category: LICENSE_PLATE, value: "bc 234 df"}
+
+  - id: it-prec-letters-never-issued
+    text: "Il lotto IO 123 QU è interno."
+    expect: []
+
+  - id: it-prec-prose-lowercase
+    text: "fa 120 km in un'ora di viaggio"
+    expect: []
+
+  - id: it-prec-short-hash
+    text: "risolto in ab123cd, poi ribasato"
+    expect: []
+
+  - id: it-prec-stand-in
+    text: "Sostituita da OQ 041OQ nella risposta."
+    expect: []

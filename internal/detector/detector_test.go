@@ -25,9 +25,9 @@ func TestParseLocales(t *testing.T) {
 		{name: "none selects the locale-independent sets", spec: "none", want: nil},
 		{name: "none alongside a country is redundant, not wrong", spec: "none,fr", want: []string{"fr"}},
 		// Europe the continent: the United Kingdom is in, the United States out.
-		{name: "eu names every European country", spec: "EU", want: []string{"fr", "gb", "es", "be"}},
-		{name: "eu beside a country it covers is redundant, not wrong", spec: "fr,eu", want: []string{"fr", "fr", "gb", "es", "be"}},
-		{name: "eu mixes with a country outside Europe", spec: "eu,us", want: []string{"fr", "gb", "es", "be", "us"}},
+		{name: "eu names every European country", spec: "EU", want: pii.EuropeanLocales()},
+		{name: "eu beside a country it covers is redundant, not wrong", spec: "fr,eu", want: append([]string{"fr"}, pii.EuropeanLocales()...)},
+		{name: "eu mixes with a country outside Europe", spec: "eu,us", want: append(pii.EuropeanLocales(), "us")},
 		{
 			// The message has to name the codes that exist, and name them from
 			// the registry: a hand-written list in the message goes stale the

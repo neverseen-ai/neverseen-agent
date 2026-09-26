@@ -435,7 +435,9 @@ func TestPlateStandInsAreNotPlates(t *testing.T) {
 				t.Fatalf("no %s stand-in for index %d", l.Code, index)
 			}
 			for _, p := range plates {
-				text := " " + value + " "
+				// Behind a word naming a vehicle, so a pattern that needs one is
+				// asked as well.
+				text := "vehicle " + value + " "
 				for _, span := range p.Find(text) {
 					if text[span[0]:span[1]] != value {
 						continue

@@ -47,7 +47,7 @@
    "fn": 0
   },
   "LICENSE_PLATE": {
-   "tp": 21,
+   "tp": 33,
    "fp": 0,
    "fn": 0
   },
@@ -762,5 +762,5 @@
    "fn": 0
   }
  },
- "negatives": 247
+ "negatives": 259
 }

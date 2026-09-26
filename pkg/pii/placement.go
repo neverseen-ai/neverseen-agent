@@ -84,7 +84,7 @@ func RejectedByPlacement(cat Category, value string, p Placement) bool {
 var vehicleWords = []string{
 	"immat", "plaque", "véhicule", "vehic" + "ule", "voiture", "camion", "fourgon",
 	"matrícula", "matricula", "coche", "vehículo", "vehic" + "ulo",
-	"nummerplaat", "kenteken",
+	"nummerplaat", "kenteken", "targa", "veicolo", "viatura",
 	"plate", "registration", "vehicle", "reg ",
 }
 

@@ -30,7 +30,8 @@ func TestPlateFinderCutsWhereAPlateBeginsAndEnds(t *testing.T) {
 		{"AB-123-CDE", nil, "nor three letters after"},
 		{"AB  123 CD", nil, "two spaces are not a separator"},
 		{"AB-123-CD, EF-456-GH", []string{"AB-123-CD", "EF-456-GH"}, "two plates in a list"},
-		{"AB-123-CD-EF-456-GH", []string{"AB-123-CD", "EF-456-GH"}, "two plates joined by a dash"},
+		{"AB-123-CD-EF-456-GH", nil, "two plates joined by a dash are one hyphenated token, not two plates"},
+		{"MAC BD-12-FD-34-BF-56", nil, "a fragment of a longer hyphenated token is not a plate"},
 		{"SUPERCALIFRAGILISTIC 123 AB", nil, "a chunk longer than a plate's is never part of one"},
 	} {
 		var got []string

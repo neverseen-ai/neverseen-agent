@@ -138,6 +138,24 @@ Plaque saisie à la main : 2 KLM 456, 2KLM456, 1-xyz-789, 1xyz789
 Plaque en minuscules, nommée : nummerplaat 2 prs 345, plaque 1abc123
 `
 
+const italySample = `=== Italia ===
+Targa, come è stampata: FG 482KL
+Targa digitata: FG 482 KL, FG-482-KL, FG482KL, fg-482-kl
+Targa in minuscolo, nominata: targa fg 482 kl, veicolo bc123de
+`
+
+const netherlandsSample = `=== Nederland ===
+Kenteken per sidecode, nieuwste eerst: VBN-24-T, S-782-PL, GH-318-K, 1-KBT-56, 12-XNK-3
+Bestelwagens en trekkers: F-12-GHP, 3-HT-456, 123-TL-4
+Oudere sidecodes: 34-HF-GJ, BF-DT-12, RT-89-PK, 34-HN-78, 56-78-ZR, PK-12-34
+In kleine letters: gh-318-k
+`
+
+const portugalSample = `=== Portugal ===
+Matrícula por época, a mais recente primeiro: AT-45-RE, 32-HX-18, 56-78-ZE, PE-12-34
+Em minúsculas: at-45-re
+`
+
 const secretsSample = `=== Identifiants techniques ===
 OpenAI : sk-proj-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGH, compte de service sk-svcacct-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGH, administration sk-admin-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGH, ancienne forme sk-abcdefghijklmnopqrstuvwxyz0123
 Anthropic : sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789

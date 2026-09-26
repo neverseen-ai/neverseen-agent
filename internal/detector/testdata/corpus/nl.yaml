@@ -1,0 +1,50 @@
+# Netherlands suite. For now the licence plate alone, every sidecode still on
+# the road, with its dashes.
+#
+# No Dutch plate carries a check character. What keeps a code out is the letters —
+# consonants only, never C or Q — and the dashes: run together, a plate is a
+# booking reference.
+locale: nl
+min_precision: 100
+min_recall: 100
+
+cases:
+  - id: nl-plate-current
+    text: "De auto met kenteken VBN-24-T staat op de parking."
+    expect:
+      - {category: LICENSE_PLATE, value: "VBN-24-T"}
+
+  - id: nl-plate-sidecode-9
+    text: "Bekeuring voor GH-318-K van gisteren."
+    expect:
+      - {category: LICENSE_PLATE, value: "GH-318-K"}
+
+  - id: nl-plate-sidecode-4
+    text: "bestelwagen;RT-89-PK;diesel"
+    expect:
+      - {category: LICENSE_PLATE, value: "RT-89-PK"}
+
+  - id: nl-plate-lowercase
+    text: "de wagen s-782-pl is binnen"
+    expect:
+      - {category: LICENSE_PLATE, value: "s-782-pl"}
+
+  - id: nl-prec-serial-standard
+    text: "De poort gebruikt RS-232-C op 9600 baud."
+    expect: []
+
+  - id: nl-prec-vowels
+    text: "Artikel AB-123-E is uitverkocht."
+    expect: []
+
+  - id: nl-prec-mac-address
+    text: "Het MAC-adres BD-12-FD-34-BF-56 hoort bij poort 3."
+    expect: []
+
+  - id: nl-prec-run-together
+    text: "Boekingscode GH318K is bevestigd."
+    expect: []
+
+  - id: nl-prec-stand-in
+    text: "Vervangen door 04-AEU-1 in het antwoord."
+    expect: []
