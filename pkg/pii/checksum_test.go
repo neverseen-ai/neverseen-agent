@@ -837,3 +837,36 @@ func TestNuGetPasswordIsReadInEitherAttributeOrder(t *testing.T) {
 		}
 	}
 }
+
+// A plate has no check character, so these rules are all that separates the shape
+// from a reference number. One pair, neither meaningful alone: narrowing the rules
+// is what forwards a real car in clear.
+func TestPlateCheckRejectsWhatTheSeriesNeverIssues(t *testing.T) {
+	for _, c := range []struct{ value, why string }{
+		{"IO-123-UU", "I, O and U read as 1, 0 and V, and are never issued"},
+		{"AB-123-CI", "an I in the right block"},
+		{"SS-123-AB", "SS is never issued on the left"},
+		{"AB-123-SS", "nor on the right"},
+		{"AB-000-CD", "the number never runs to 000"},
+		{"OU-001-OU", "the fake-mode stand-in, which nobody's car can carry"},
+	} {
+		if PlateCheck(c.value) {
+			t.Errorf("PlateCheck(%q) = true, want false — %s", c.value, c.why)
+		}
+	}
+}
+
+func TestPlateCheckKeepsRealPlates(t *testing.T) {
+	for _, c := range []struct{ value, why string }{
+		{"AB-123-CD", "the sample's own case"},
+		{"AA-001-AA", "the first plate the SIV issued"},
+		{"ab 123 cd", "lowercase and spaced: the rules are about letters, not case"},
+		{"HZ999ZZ", "run together"},
+		{"JA-123-AB", "a series not issued yet — the check reads structure, never the range reached so far"},
+		{"WW-123-AB", "a temporary plate is still somebody's car"},
+	} {
+		if !PlateCheck(c.value) {
+			t.Errorf("PlateCheck(%q) = false, want true — %s", c.value, c.why)
+		}
+	}
+}

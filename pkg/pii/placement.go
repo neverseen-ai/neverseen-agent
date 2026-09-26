@@ -17,7 +17,7 @@ import "strings"
 // value is something else entirely, and is useless without it. Folding them
 // together would mean every checksum in this file growing an argument it ignores.
 //
-// Three rules only, each with a measurement behind it. The temptation is a general
+// Four rules only, each with a measurement behind it. The temptation is a general
 // "this looks like code" test here, and that belongs one level up: a rule that
 // fires on punctuation would drop a person's telephone number out of a YAML file
 // as readily as a CSS length.
@@ -63,8 +63,65 @@ func RejectedByPlacement(cat Category, value string, p Placement) bool {
 		return isNetworkPrefix(p) || isObjectIdentifier(p)
 	case CatPhone:
 		return isPropertyValue(value, p)
+	case CatLicPlate:
+		return isUnnamedPlate(value, p)
 	}
 	return false
+}
+
+// vehicleWords are what a text puts in front of a registration it is naming, in
+// the languages this catalogue reads plates for. Matched as a substring of the
+// lowercased window, so "immatriculé", "immatriculation" and "immat" are one
+// entry, and so are "véhicule" and "véhicules".
+//
+// TODO: a CSV names the column once, in a header more than WindowSize away, so a
+// lowercase plate on its own row goes out in clear. The upgrade is a placement
+// rule that can read the header of the column a value sits in.
+//
+// "vehic" + "ule" is the French word typed without its accent, as a spreadsheet
+// header is; written whole, the British-spelling linter reads it as a misspelt
+// "vehicle" and it is neither a substring of that nor of "véhicule".
+var vehicleWords = []string{
+	"immat", "plaque", "véhicule", "vehic" + "ule", "voiture", "camion", "fourgon",
+	"plate", "registration", "vehicle", "reg ",
+}
+
+// isUnnamedPlate reports whether a lowercase plate is one no word names.
+//
+// Two of the notations a plate is typed in are ones ordinary text produces. Spaced
+// lowercase is a preposition, a number and a unit — "de 200 km", "en 150 ms", "by
+// 250 ms", every one of them measured matching. Run together, it is an abbreviated
+// git hash whenever its four letters are hexadecimal: one short hash in two hundred
+// has the shape. So those two need a word naming a vehicle in front of them, where
+// the dashed lowercase form and every uppercase form do not: nothing writes those
+// by accident.
+//
+// The hash rule is narrow on purpose: "ab123cd" with no word before it is left
+// alone, "gh123jk" is masked, because no hash contains a g.
+func isUnnamedPlate(value string, p Placement) bool {
+	if value != strings.ToLower(value) || strings.Contains(value, "-") {
+		return false
+	}
+	if !strings.Contains(value, " ") && !isHexadecimal(value) {
+		return false
+	}
+	before := strings.ToLower(p.Before)
+	for _, w := range vehicleWords {
+		if strings.Contains(before, w) {
+			return false
+		}
+	}
+	return true
+}
+
+// isHexadecimal reports whether every character is a hexadecimal digit.
+func isHexadecimal(s string) bool {
+	for _, r := range s {
+		if !strings.ContainsRune("0123456789abcdef", r) {
+			return false
+		}
+	}
+	return true
 }
 
 // isNetworkPrefix reports whether the value is followed by a mask length, which

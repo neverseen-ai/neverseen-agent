@@ -135,7 +135,15 @@ func TestSampleShowsEveryNotation(t *testing.T) {
 				"12 r. de la Paix, 75002 Paris", pii.CatAddress,
 				"Route de Lyon, 38000 Grenoble", pii.CatAddress,
 				"13290 Aix Les Milles", pii.CatPostalCode,
+				// Every separator, and lowercase whole. The last two need the word
+				// in front of them: prose writes "de 200 km" and git writes
+				// "ab123cd", and without a vehicle named neither is a plate.
 				"AB-123-CD", pii.CatLicPlate,
+				"AB 123 CD", pii.CatLicPlate,
+				"AB123CD", pii.CatLicPlate,
+				"ab-123-cd", pii.CatLicPlate,
+				"ab 123 cd", pii.CatLicPlate,
+				"ab123cd", pii.CatLicPlate,
 				// The eleven ways the same day-first date is written. Every one
 				// of them is a separate branch or a separate optional group in
 				// the expression, and a table with only the tidy forms in it

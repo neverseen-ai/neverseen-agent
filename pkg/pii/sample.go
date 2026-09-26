@@ -71,7 +71,9 @@ Commune composée : 13100 Aix-en-Provence
 Commune en plusieurs mots : 13290 Aix Les Milles
 Capitale accentuée : 91150 Étampes
 Bornes des départements, 01 et 98 : 01000 Bourg, 98000 Monaco
-Plaque : AB-123-CD
+Plaque, comme elle est imprimée : AB-123-CD
+Plaque saisie à la main : AB 123 CD, AB123CD, ab-123-cd
+Plaque en minuscules, nommée : immatriculée ab 123 cd, immat ab123cd
 
 === Dates de naissance (jour d'abord) ===
 LA MÊME DATE dans ses onze notations : 23 février 2004, 23 Février 2004, 23 fevrier 2004, 23/02/2004, 23/2/2004, 23-02-2004, 23-2-2004, 23.02.2004, 23.2.2004, 23 02 2004, 23 2 2004

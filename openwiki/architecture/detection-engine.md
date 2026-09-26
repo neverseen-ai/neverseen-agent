@@ -309,6 +309,40 @@ neither puts a word after the code, so nothing there reaches the rule.
 and neither is meaningful alone, and `prec-postcode-long-listing` holds the observed line
 in the corpus.
 
+#### `PlateCheck`, and the plate that has no check character
+
+No European plate carries a check character, so the French SIV plate is the case the
+section heading describes: the shape is all there is, and what narrows it is the rules the
+series is numbered by. `PlateCheck` refuses I, O and U (they read as 1, 0 and V and are
+never issued), SS in either block, and a number of `000`.
+
+**Structure, never the range issued so far.** The series reached H in late 2024, and "the
+first letter is A to H" would drop most of what the shape still admits. It would also stop
+working without a word the year the series reaches J: every new car in France would go out
+in clear, and nothing in the agent would say so.
+
+**The pattern reads every notation somebody types, and each is uppercase or lowercase
+whole.** Dashed, spaced and run together, one alternative per separator so they must agree
+(`AB-123 CD` was matched when the separators were a class). Lowercase came in because a
+plate typed into a form is typed in lowercase as often as not; mixed case stayed out,
+because nobody writes a plate that way. The leading class and `Group` replace `\b`, which
+is ASCII and saw no boundary after an underscore: `plaque_AB-123-CD` went out in clear.
+
+**Two lowercase notations need a word naming a vehicle** (`isUnnamedPlate`, a placement
+rule), because ordinary text produces them: spaced, a preposition, a number and a unit
+(`de 200 km`, `en 150 ms`), every one measured matching; run together with four
+hexadecimal letters, an abbreviated git hash — one in two hundred has the shape. The
+dashed lowercase form and every uppercase one need no word. The words are a closed list
+read in the window *before* the value; a CSV header is further away than that, and the
+`TODO` on `vehicleWords` names it.
+
+**The fake-mode stand-in is `OU-nnn-OU`**, which `PlateCheck` refuses. It was `WW-nnn-WW`:
+a real series (the temporary plates), and a value the pattern detected again in its own
+stand-in. `TestStandInsFailTheirOwnChecksum` now carries the plate.
+
+`TestPlateCheckRejectsWhatTheSeriesNeverIssues` and `TestPlateCheckKeepsRealPlates` are
+one pair; the `prec-plate-*` cases hold the measured false positives.
+
 #### `GenericSecretCheck`, and the premise that fails in a repository
 
 `genericSecretQuotedRe` and `genericSecretBareRe` read `NAME=value` and treat the
@@ -556,9 +590,10 @@ cheaper has already had its chance to reject.
 **Placement** (`pkg/pii/placement.go`). `RejectedByPlacement` is handed the value and
 `WindowSize` (32) bytes either side of it — enough for the name it was assigned to and the
 punctuation around it, short enough that the rule cannot quietly become a scan of the
-document. Three rules: `isNetworkPrefix` (`10.0.0.0/8` is a range, not a host),
-`isObjectIdentifier` (a dotted run beside the word "oid") and `isPropertyValue`
-(`z-index:2147483647` is not a phone number). **Credentials are never asked**: a secret is
+document. Four rules: `isNetworkPrefix` (`10.0.0.0/8` is a range, not a host),
+`isObjectIdentifier` (a dotted run beside the word "oid"), `isPropertyValue`
+(`z-index:2147483647` is not a phone number) and `isUnnamedPlate` (`de 200 km` is not a
+plate unless a vehicle is named in front of it). **Credentials are never asked**: a secret is
 recognised *by* its placement — a name and an assignment — so a rule reading the same
 evidence the other way is the one that stops masking keys in configuration files.
 

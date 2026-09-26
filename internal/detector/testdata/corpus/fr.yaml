@@ -48,6 +48,31 @@ cases:
     expect:
       - {category: LICENSE_PLATE, value: "AB-123-CD"}
 
+  - id: fr-plate-spaced
+    text: "Plaque EF 456 GH relevée au péage."
+    expect:
+      - {category: LICENSE_PLATE, value: "EF 456 GH"}
+
+  - id: fr-plate-compact-in-a-table
+    text: "vehicule;FG456HJ;diesel"
+    expect:
+      - {category: LICENSE_PLATE, value: "FG456HJ"}
+
+  - id: fr-plate-lowercase-dashed
+    text: "le fourgon gh-789-kl est rentré"
+    expect:
+      - {category: LICENSE_PLATE, value: "gh-789-kl"}
+
+  - id: fr-plate-lowercase-named
+    text: "immatriculation : bc 234 df, contrôle ok"
+    expect:
+      - {category: LICENSE_PLATE, value: "bc 234 df"}
+
+  - id: fr-plate-glued-to-an-underscore
+    text: "plaque_KL-321-MN dans le nom du fichier"
+    expect:
+      - {category: LICENSE_PLATE, value: "KL-321-MN"}
+
   - id: fr-email-in-sentence
     text: "Merci d'écrire à claire.dubois@example.fr pour la relance."
     expect:

@@ -1172,3 +1172,27 @@ var ibanLengths = map[string]int{
 	"XK": 20,
 	"YE": 30,
 }
+
+// PlateCheck rejects a French SIV plate the series could never have issued.
+//
+// A plate carries no check character, so the rules the SIV numbers by are the
+// only thing standing between the shape and every two-letters-three-digits-two-
+// letters reference in a payload: I, O and U are never issued, because they read
+// as 1, 0 and V; SS is never issued in either block; and 000 is never issued.
+//
+// Structure only, never the range issued so far. The series is in H in 2026 and
+// "the first letter is A to H" would drop a great deal of noise — until the year
+// the series reaches J, when every new car in France would go out in clear with
+// nothing to say so.
+func PlateCheck(value string) bool {
+	v := strings.ToUpper(value)
+	v = strings.NewReplacer("-", "", " ", "").Replace(v)
+	if len(v) != 7 {
+		return false
+	}
+	left, digits, right := v[:2], v[2:5], v[5:]
+	if digits == "000" || left == "SS" || right == "SS" {
+		return false
+	}
+	return !strings.ContainsAny(left+right, "IOU")
+}

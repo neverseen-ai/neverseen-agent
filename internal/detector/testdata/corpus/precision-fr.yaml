@@ -122,3 +122,29 @@ cases:
   - id: prec-postcode-long-listing
     text: "-rw-r--r--  1 alice  staff  13469 Mar  3 10:22 proxy.go"
     expect: []
+
+  # Plates. None of these carries a check character, so the shape and the SIV's
+  # letter rules are all that stands between a plate and each of them.
+  - id: prec-plate-measure-in-prose
+    text: "Le trajet fait plus de 200 km et la latence reste en 150 ms."
+    expect: []
+
+  - id: prec-plate-short-hash
+    text: "Corrigé dans ab123cd, puis rebasé."
+    expect: []
+
+  - id: prec-plate-letters-never-issued
+    text: "Lot IO-123-UV et série AB-000-CD en stock."
+    expect: []
+
+  - id: prec-plate-separators-disagree
+    text: "Référence AB-123 CD sur le bon."
+    expect: []
+
+  - id: prec-plate-mixed-case
+    text: "Le code Kb-123-dF expire demain."
+    expect: []
+
+  - id: prec-plate-stand-in
+    text: "Remplacé par OU-041-OU dans la réponse."
+    expect: []

@@ -368,7 +368,8 @@ var categoryRegistry = map[Category]CategoryInfo{
 	// followed by a constant satisfies it.
 	CatPostalCode: {Prefix: "POSTCODE", Score: 80, Verify: PostcodeCheck, Group: GroupPersonal,
 		Label: "Postcode", NoisyInCode: true}, // anchored on a commune, a state or an outward code
-	CatLicPlate: {Prefix: "PLATE", Score: 80, Group: GroupPersonal, Label: "Vehicle registration"},
+	CatLicPlate: {Prefix: "PLATE", Score: 80, Verify: PlateCheck, Group: GroupPersonal,
+		Label: "Vehicle registration"},
 
 	// Declared by the deployment rather than guessed, so it outscores every
 	// pattern. Which span it actually takes is arbitrated separately — see the

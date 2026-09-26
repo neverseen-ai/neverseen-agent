@@ -24,6 +24,7 @@ func TestStandInsFailTheirOwnChecksum(t *testing.T) {
 		{CatNIR, "fr", NIRCheck},
 		{CatSIREN, "fr", SIRENCheck},
 		{CatSIRET, "fr", SIRETCheck},
+		{CatLicPlate, "fr", PlateCheck},
 		{CatNHSNumber, "gb", NHSNumberCheck},
 		{CatNINO, "gb", NINOCheck},
 		{CatSSN, "us", SSNCheck},
