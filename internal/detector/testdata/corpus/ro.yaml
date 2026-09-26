@@ -1,0 +1,22 @@
+# Romania suite. For now the licence plate alone, read on its own.
+#
+# No plate here carries a check character; the shape, the country's letters and
+# the zero number no series issues are what the pattern has.
+locale: ro
+min_precision: 100
+min_recall: 100
+
+cases:
+  - id: ro-plate-1
+    text: "înmatriculare CJ 12 ABC — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "CJ 12 ABC"}
+
+  - id: ro-plate-2
+    text: "înmatriculare B 123 XYZ — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "B 123 XYZ"}
+
+  - id: ro-prec-1
+    text: "Codul XY 12 ABC nu e valid."
+    expect: []

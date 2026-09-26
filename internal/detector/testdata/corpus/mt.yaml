@@ -1,0 +1,23 @@
+# Malta suite. For now the licence plate alone, read only behind a word naming a
+# vehicle, so the same plate with no word in front must come out untouched.
+#
+# No plate here carries a check character; the shape, the country's letters and
+# the zero number no series issues are what the pattern has.
+locale: mt
+min_precision: 100
+min_recall: 100
+
+cases:
+  - id: mt-plate-1
+    text: "registration ABC 123 — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "ABC 123"}
+
+  - id: mt-plate-2
+    text: "registration XYZ456 — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "XYZ456"}
+
+  - id: mt-prec-no-word
+    text: "Reference ABC 123 — noted."
+    expect: []

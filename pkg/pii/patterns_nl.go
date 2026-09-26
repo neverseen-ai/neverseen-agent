@@ -29,7 +29,7 @@ var nlPlateFind = plateFinder(false,
 // are the prefixes of motorcycles, dealers, boats and tractors, and a rule that
 // refused them would forward those in clear.
 func DutchPlateCheck(value string) bool {
-	return !strings.ContainsAny(strings.ToUpper(value), "AEIOUCQ")
+	return !strings.ContainsAny(strings.ToUpper(value), "AEIOUCQ") && plateNoZeroNumber(value)
 }
 
 // netherlandsFakes are the Dutch stand-ins. A vowel is never issued, and no other

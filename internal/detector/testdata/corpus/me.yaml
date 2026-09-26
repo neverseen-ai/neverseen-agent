@@ -1,0 +1,23 @@
+# Montenegro suite. For now the licence plate alone, read only behind a word naming
+# a vehicle, so the same plate with no word in front must come out untouched.
+#
+# No plate here carries a check character; the shape, the country's letters and
+# the zero number no series issues are what the pattern has.
+locale: me
+min_precision: 100
+min_recall: 100
+
+cases:
+  - id: me-plate-1
+    text: "registarsk PG AB 123 — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "PG AB 123"}
+
+  - id: me-plate-2
+    text: "registarsk BD CD-456 — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "BD CD-456"}
+
+  - id: me-prec-no-word
+    text: "Reference PG AB 123 — noted."
+    expect: []

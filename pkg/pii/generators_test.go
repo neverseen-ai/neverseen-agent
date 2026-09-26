@@ -429,7 +429,11 @@ func TestPlateStandInsAreNotPlates(t *testing.T) {
 		if _, ok := l.Fakes[CatLicPlate]; !ok {
 			continue
 		}
-		for _, index := range []int64{1, 42, 1000} {
+		// The first, an early one, and the last this generator mints: a shape with
+		// two letter positions has 676 stand-ins, and past that the bracket token
+		// takes over, which is the capacity rule every generator already follows.
+		capacity := l.Fakes[CatLicPlate].Capacity
+		for _, index := range []int64{1, 42, capacity} {
 			value, ok := FakeValue(CatLicPlate, l.Code, index)
 			if !ok {
 				t.Fatalf("no %s stand-in for index %d", l.Code, index)

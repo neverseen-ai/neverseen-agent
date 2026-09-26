@@ -1,0 +1,27 @@
+# Poland suite. For now the licence plate alone, read only behind a word naming a
+# vehicle, so the same plate with no word in front must come out untouched.
+#
+# No plate here carries a check character; the shape, the country's letters and
+# the zero number no series issues are what the pattern has.
+locale: pl
+min_precision: 100
+min_recall: 100
+
+cases:
+  - id: pl-plate-1
+    text: "rejestracyjna WA 12345 — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "WA 12345"}
+
+  - id: pl-plate-2
+    text: "rejestracyjna KRA 12AB — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "KRA 12AB"}
+
+  - id: pl-prec-no-word
+    text: "Reference WA 12345 — noted."
+    expect: []
+
+  - id: pl-prec-1
+    text: "Kod PL 00950 w adresie."
+    expect: []

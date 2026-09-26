@@ -59,6 +59,9 @@ var esProvinces = func() map[string]bool {
 // series is issued from: twenty, no vowel, no Ñ, no Q. It is the plate's strongest
 // rule — what keeps "1500 EUR" and "2024 AOC" out.
 func SpanishPlateCheck(value string) bool {
+	if !plateNoZeroNumber(value) {
+		return false
+	}
 	for i := 0; i < len(value); i++ {
 		c := value[i] | 0x20 // ASCII lowercase
 		if c >= 'a' && c <= 'z' && !strings.ContainsRune("bcdfghjklmnprstvwxyz", rune(c)) {
@@ -68,10 +71,11 @@ func SpanishPlateCheck(value string) bool {
 	return true
 }
 
-// ProvincialPlateCheck reports whether a provincial plate opens on a province.
+// ProvincialPlateCheck reports whether a provincial plate opens on a province and
+// carries a number, never 0000.
 func ProvincialPlateCheck(value string) bool {
 	code, _, _ := strings.Cut(strings.Replace(value, " ", "-", 1), "-")
-	return esProvinces[code]
+	return esProvinces[code] && plateNoZeroNumber(value)
 }
 
 // esAmountSuffixes are the series that are also what follows a number in prose:

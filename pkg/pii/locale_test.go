@@ -60,7 +60,7 @@ func TestLocalesAreSortedByPriority(t *testing.T) {
 	// and a US routing number under the ABA weights. Spain and Belgium load last:
 	// their plate shapes are read by no earlier country, so after them they
 	// decide nothing.
-	if got, want := LocaleCodes(), []string{"fr", "gb", "us", "es", "be", "it", "nl", "pt"}; !reflect.DeepEqual(got, want) {
+	if got, want := LocaleCodes(), []string{"fr", "gb", "us", "es", "be", "it", "nl", "pt", "de", "pl", "at", "ch", "cz", "sk", "hu", "ro", "ie", "dk", "se", "no", "fi", "gr", "bg", "hr", "si", "lt", "lv", "ee", "lu", "mt", "cy", "is", "li", "al", "mk", "ba", "me", "xk", "ua", "md", "tr"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("LocaleCodes() = %v, want %v", got, want)
 	}
 }
@@ -139,12 +139,13 @@ func TestAllPatternsCoversEveryLocale(t *testing.T) {
 	}
 }
 
-// "eu" is Europe the continent, in load order. Written out rather than derived
+// "eu" is Europe the continent, in load order — the Council of Europe's reach,
+// so Turkey and Cyprus are in it as the United Kingdom is. Written out rather than derived
 // from the European field: deriving it would agree with whatever the field says,
 // and the property worth pinning is that the United Kingdom is in and the United
 // States is out.
 func TestEuropeanLocalesAreTheEuropeanCountries(t *testing.T) {
-	if got, want := EuropeanLocales(), []string{"fr", "gb", "es", "be", "it", "nl", "pt"}; !reflect.DeepEqual(got, want) {
+	if got, want := EuropeanLocales(), []string{"fr", "gb", "es", "be", "it", "nl", "pt", "de", "pl", "at", "ch", "cz", "sk", "hu", "ro", "ie", "dk", "se", "no", "fi", "gr", "bg", "hr", "si", "lt", "lv", "ee", "lu", "mt", "cy", "is", "li", "al", "mk", "ba", "me", "xk", "ua", "md", "tr"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("EuropeanLocales() = %v, want %v", got, want)
 	}
 }

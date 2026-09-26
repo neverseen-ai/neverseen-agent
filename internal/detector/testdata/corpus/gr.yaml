@@ -1,0 +1,27 @@
+# Greece suite. For now the licence plate alone, read only behind a word naming a
+# vehicle, so the same plate with no word in front must come out untouched.
+#
+# No plate here carries a check character; the shape, the country's letters and
+# the zero number no series issues are what the pattern has.
+locale: gr
+min_precision: 100
+min_recall: 100
+
+cases:
+  - id: gr-plate-1
+    text: "πινακίδα IKN-1234 — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "IKN-1234"}
+
+  - id: gr-plate-2
+    text: "πινακίδα ZHK 5678 — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "ZHK 5678"}
+
+  - id: gr-prec-no-word
+    text: "Reference IKN-1234 — noted."
+    expect: []
+
+  - id: gr-prec-1
+    text: "Πρότυπο ISO 9001 και CVE 2024."
+    expect: []

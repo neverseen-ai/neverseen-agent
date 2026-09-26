@@ -1,6 +1,10 @@
 package pii
 
-import "strings"
+import (
+	"strings"
+	"unicode"
+	"unicode/utf8"
+)
 
 // Where a value sits, for the rules that cannot be settled by the value alone.
 //
@@ -78,6 +82,10 @@ func RejectedByPlacement(cat Category, value string, p Placement) bool {
 // lowercase plate on its own row goes out in clear. The upgrade is a placement
 // rule that can read the header of the column a value sits in.
 //
+// One word each, never a phrase: a plate that needs a word is vouched for by the
+// word right in front of it (namedPlateFinder), so "valstybinis numeris" is
+// "numeris".
+//
 // "vehic" + "ule" is the French word typed without its accent, as a spreadsheet
 // header is; written whole, the British-spelling linter reads it as a misspelt
 // "vehicle" and it is neither a substring of that nor of "véhicule".
@@ -85,6 +93,13 @@ var vehicleWords = []string{
 	"immat", "plaque", "véhicule", "vehic" + "ule", "voiture", "camion", "fourgon",
 	"matrícula", "matricula", "coche", "vehículo", "vehic" + "ulo",
 	"nummerplaat", "kenteken", "targa", "veicolo", "viatura",
+	"kennzeichen", "nummernschild", "kontrollschild", "fahrzeug", "kfz", "pkw", "lkw",
+	"rejestracyjn", "tablic", "pojazd", "samoch",
+	"spz", "špz", "ečv", "vozidl", "registrační", "evidenčn",
+	"rendszám", "înmatriculare", "inmatriculare", "registarsk", "registrsk",
+	"nummerplade", "registreringsnummer", "kjennemerke", "bilnummer", "regnr", "regnummer",
+	"rekisteri", "numbrimärk", "registreerimis", "numurzīm", "reģistr", "numeris",
+	"bílnúmer", "skráningarnúmer", "nummerplack", "plaka", "πινακίδα", "номер",
 	"plate", "registration", "vehicle", "reg ",
 }
 
@@ -107,13 +122,30 @@ func isUnnamedPlate(value string, p Placement) bool {
 	if !readsAsSomethingElse(value) {
 		return false
 	}
-	before := strings.ToLower(p.Before)
+	return !namesAVehicle(p.Before)
+}
+
+// namesAVehicle reports whether a stretch of text carries a word naming a
+// vehicle, which is what vouches for a plate in a shape ordinary text also takes.
+//
+// Each word must open a word of the text: "plate" is inside "template" and
+// "targa" inside "stargazers", and either would otherwise vouch for whatever
+// followed.
+func namesAVehicle(before string) bool {
+	before = strings.ToLower(before)
 	for _, w := range vehicleWords {
-		if strings.Contains(before, w) {
-			return false
+		for rest := before; ; {
+			i := strings.Index(rest, w)
+			if i < 0 {
+				break
+			}
+			if r, _ := utf8.DecodeLastRuneInString(rest[:i]); i == 0 || !unicode.IsLetter(r) {
+				return true
+			}
+			rest = rest[i+len(w):]
 		}
 	}
-	return true
+	return false
 }
 
 // readsAsSomethingElse reports whether a plate's notation is one ordinary text

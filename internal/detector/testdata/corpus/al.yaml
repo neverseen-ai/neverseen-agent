@@ -1,0 +1,18 @@
+# Albania suite. For now the licence plate alone, read on its own.
+#
+# No plate here carries a check character; the shape, the country's letters and
+# the zero number no series issues are what the pattern has.
+locale: al
+min_precision: 100
+min_recall: 100
+
+cases:
+  - id: al-plate-1
+    text: "targa AB 123 CD — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "AB 123 CD"}
+
+  - id: al-plate-2
+    text: "targa EF-456-GH — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "EF-456-GH"}

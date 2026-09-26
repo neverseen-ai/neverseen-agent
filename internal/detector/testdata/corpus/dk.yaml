@@ -1,0 +1,23 @@
+# Denmark suite. For now the licence plate alone, read only behind a word naming a
+# vehicle, so the same plate with no word in front must come out untouched.
+#
+# No plate here carries a check character; the shape, the country's letters and
+# the zero number no series issues are what the pattern has.
+locale: dk
+min_precision: 100
+min_recall: 100
+
+cases:
+  - id: dk-plate-1
+    text: "nummerplade AB 12 345 — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "AB 12 345"}
+
+  - id: dk-plate-2
+    text: "nummerplade CD67890 — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "CD67890"}
+
+  - id: dk-prec-no-word
+    text: "Reference AB 12 345 — noted."
+    expect: []

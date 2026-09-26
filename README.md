@@ -200,7 +200,7 @@ directions, so the file cannot go stale.
 
 | Variable | What it does | Default |
 |---|---|---|
-| `NEVERSEEN_PII_LOCALE` | Which country's identifiers to look for: `fr`, `gb`, `us`, `es`, `be`, `it`, `nl`, `pt`, `eu` (every European one, the UK included), `none`, or a comma-separated mix | none |
+| `NEVERSEEN_PII_LOCALE` | Which country's identifiers to look for: `fr`, `gb`, `us`, and a code per European country (`es`, `de`, `it`, … — `.env.example` lists all forty), `eu` (every European one, the UK included), `none`, or a comma-separated mix | none |
 | `NEVERSEEN_PII_SUBSTITUTION` | `token` → `[EMAIL_1]`, restored in the answer · `fake` → a stand-in that reads as prose | `token` |
 | `NEVERSEEN_PII_ALLOWLIST` | Values never to mask — the escape hatch for your own office address or fleet ids | — |
 | `NEVERSEEN_SECRET_LEVEL` | How far down the strength scale a *named* secret is masked: `weak`, `medium`, `strong`. Prefixed keys are masked at every level | `weak` |

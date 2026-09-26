@@ -1,0 +1,23 @@
+# Cyprus suite. For now the licence plate alone, read only behind a word naming a
+# vehicle, so the same plate with no word in front must come out untouched.
+#
+# No plate here carries a check character; the shape, the country's letters and
+# the zero number no series issues are what the pattern has.
+locale: cy
+min_precision: 100
+min_recall: 100
+
+cases:
+  - id: cy-plate-1
+    text: "registration KAB 123 — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "KAB 123"}
+
+  - id: cy-plate-2
+    text: "registration MNP456 — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "MNP456"}
+
+  - id: cy-prec-no-word
+    text: "Reference KAB 123 — noted."
+    expect: []

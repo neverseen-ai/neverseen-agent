@@ -1,0 +1,23 @@
+# Norway suite. For now the licence plate alone, read only behind a word naming a
+# vehicle, so the same plate with no word in front must come out untouched.
+#
+# No plate here carries a check character; the shape, the country's letters and
+# the zero number no series issues are what the pattern has.
+locale: no
+min_precision: 100
+min_recall: 100
+
+cases:
+  - id: no-plate-1
+    text: "kjennemerke EL 12345 — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "EL 12345"}
+
+  - id: no-plate-2
+    text: "kjennemerke AB98765 — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "AB98765"}
+
+  - id: no-prec-no-word
+    text: "Reference EL 12345 — noted."
+    expect: []

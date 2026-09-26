@@ -1,0 +1,23 @@
+# Iceland suite. For now the licence plate alone, read only behind a word naming a
+# vehicle, so the same plate with no word in front must come out untouched.
+#
+# No plate here carries a check character; the shape, the country's letters and
+# the zero number no series issues are what the pattern has.
+locale: is
+min_precision: 100
+min_recall: 100
+
+cases:
+  - id: is-plate-1
+    text: "bílnúmer AB 123 — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "AB 123"}
+
+  - id: is-plate-2
+    text: "bílnúmer CD E45 — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "CD E45"}
+
+  - id: is-prec-no-word
+    text: "Reference AB 123 — noted."
+    expect: []

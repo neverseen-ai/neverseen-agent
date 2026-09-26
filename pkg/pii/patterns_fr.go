@@ -164,11 +164,14 @@ var franceFakes = map[Category]Generator{
 		return fmt.Sprintf("%d rue de l'Exemple, 99000 Villeneuve", i)
 	}},
 
-	// O and U are letters the SIV never issues, so PlateCheck refuses this and
-	// nobody's car can carry it. It used to be WW, which is a real series — the
-	// temporary plates — and which the pattern then detected in its own stand-in.
-	CatLicPlate: {Capacity: 1000, Make: func(i int64) string {
-		return fmt.Sprintf("OU-%03d-OU", i-1)
+	// O and U are letters the SIV never issues, and 000 is a number no series in
+	// Europe issues, so no country that writes this shape can read it back. The
+	// letters carry the index. It used to be WW, which is a real series — the
+	// temporary plates — and then OU-nnn-OU, which Albania, reading the same shape
+	// with only Q refused, took for one of its own.
+	CatLicPlate: {Capacity: 26 * 26 * 26, Make: func(i int64) string {
+		i--
+		return fmt.Sprintf("O%c-000-%c%c", 'A'+byte(i/676%26), 'A'+byte(i/26%26), 'A'+byte(i%26))
 	}},
 }
 

@@ -1,0 +1,23 @@
+# Kosovo suite. For now the licence plate alone, read only behind a word naming a
+# vehicle, so the same plate with no word in front must come out untouched.
+#
+# No plate here carries a check character; the shape, the country's letters and
+# the zero number no series issues are what the pattern has.
+locale: xk
+min_precision: 100
+min_recall: 100
+
+cases:
+  - id: xk-plate-1
+    text: "targa 01-123-AB — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "01-123-AB"}
+
+  - id: xk-plate-2
+    text: "targa 05 456 CD — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "05 456 CD"}
+
+  - id: xk-prec-no-word
+    text: "Reference 01-123-AB — noted."
+    expect: []

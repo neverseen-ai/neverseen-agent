@@ -1,0 +1,18 @@
+# Ukraine suite. For now the licence plate alone, read on its own.
+#
+# No plate here carries a check character; the shape, the country's letters and
+# the zero number no series issues are what the pattern has.
+locale: ua
+min_precision: 100
+min_recall: 100
+
+cases:
+  - id: ua-plate-1
+    text: "номер AA 1234 BC — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "AA 1234 BC"}
+
+  - id: ua-plate-2
+    text: "номер KA5678HE — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "KA5678HE"}

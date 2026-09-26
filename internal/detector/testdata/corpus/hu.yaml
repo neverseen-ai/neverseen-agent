@@ -1,0 +1,18 @@
+# Hungary suite. For now the licence plate alone, read on its own.
+#
+# No plate here carries a check character; the shape, the country's letters and
+# the zero number no series issues are what the pattern has.
+locale: hu
+min_precision: 100
+min_recall: 100
+
+cases:
+  - id: hu-plate-1
+    text: "rendszám AA AB-123 — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "AA AB-123"}
+
+  - id: hu-plate-2
+    text: "rendszám AEAB456 — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "AEAB456"}

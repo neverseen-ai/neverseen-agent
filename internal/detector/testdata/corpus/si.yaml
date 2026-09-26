@@ -1,0 +1,23 @@
+# Slovenia suite. For now the licence plate alone, read only behind a word naming a
+# vehicle, so the same plate with no word in front must come out untouched.
+#
+# No plate here carries a check character; the shape, the country's letters and
+# the zero number no series issues are what the pattern has.
+locale: si
+min_precision: 100
+min_recall: 100
+
+cases:
+  - id: si-plate-1
+    text: "registrsk LJ AB-123 — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "LJ AB-123"}
+
+  - id: si-plate-2
+    text: "registrsk MB 12-ABC — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "MB 12-ABC"}
+
+  - id: si-prec-no-word
+    text: "Reference LJ AB-123 — noted."
+    expect: []

@@ -1,0 +1,18 @@
+# Croatia suite. For now the licence plate alone, read on its own.
+#
+# No plate here carries a check character; the shape, the country's letters and
+# the zero number no series issues are what the pattern has.
+locale: hr
+min_precision: 100
+min_recall: 100
+
+cases:
+  - id: hr-plate-1
+    text: "registarsk ZG 1234-AB — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "ZG 1234-AB"}
+
+  - id: hr-plate-2
+    text: "registarsk ST 567-C — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "ST 567-C"}

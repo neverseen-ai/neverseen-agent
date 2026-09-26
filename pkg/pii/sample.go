@@ -156,6 +156,138 @@ Matrícula por época, a mais recente primeiro: AT-45-RE, 32-HX-18, 56-78-ZE, PE
 Em minúsculas: at-45-re
 `
 
+const germanySample = `=== Germany ===
+Behind a word naming a vehicle: Kennzeichen M-AB 1234, Kennzeichen HH XY 99E, Kennzeichen MAB1234
+`
+
+const samplePL = `=== Poland ===
+Behind a word naming a vehicle: rejestracyjna WA 12345, rejestracyjna KRA 12AB
+`
+
+const sampleAT = `=== Austria ===
+Behind a word naming a vehicle: Kennzeichen W 12345 B, Kennzeichen BN 123 AB
+`
+
+const sampleCH = `=== Switzerland ===
+Behind a word naming a vehicle: Kontrollschild ZH 123456, Kontrollschild VD 4321
+`
+
+const sampleCZ = `=== Czechia ===
+As printed and as typed: 1A2 3456, 4AB5678
+`
+
+const sampleSK = `=== Slovakia ===
+As printed and as typed: BA-123AB, KE 456CD
+`
+
+const sampleHU = `=== Hungary ===
+As printed and as typed: AA AB-123, AEAB456
+`
+
+const sampleRO = `=== Romania ===
+As printed and as typed: CJ 12 ABC, B 123 XYZ
+`
+
+const sampleIE = `=== Ireland ===
+As printed and as typed: 231-D-12345, 12-KY-678
+`
+
+const sampleDK = `=== Denmark ===
+Behind a word naming a vehicle: nummerplade AB 12 345, nummerplade CD67890
+`
+
+const sampleSE = `=== Sweden ===
+Behind a word naming a vehicle: registreringsnummer ABC 123, registreringsnummer DEF 45G
+`
+
+const sampleNO = `=== Norway ===
+Behind a word naming a vehicle: kjennemerke EL 12345, kjennemerke AB98765
+`
+
+const sampleFI = `=== Finland ===
+Behind a word naming a vehicle: rekisteri ABC-123, rekisteri XY-45
+`
+
+const sampleGR = `=== Greece ===
+Behind a word naming a vehicle: πινακίδα IKN-1234, πινακίδα ZHK 5678
+`
+
+const sampleBG = `=== Bulgaria ===
+As printed and as typed: CA 1234 AB, PB5678HK
+`
+
+const sampleHR = `=== Croatia ===
+As printed and as typed: ZG 1234-AB, ST 567-C
+`
+
+const sampleSI = `=== Slovenia ===
+Behind a word naming a vehicle: registrsk LJ AB-123, registrsk MB 12-ABC
+`
+
+const sampleLT = `=== Lithuania ===
+Behind a word naming a vehicle: numeris ABC 123, numeris KLM456
+`
+
+const sampleLV = `=== Latvia ===
+Behind a word naming a vehicle: numurzīm AB-1234, numurzīm CD-56
+`
+
+const sampleEE = `=== Estonia ===
+Behind a word naming a vehicle: numbrimärk 123 ABC, numbrimärk 456DEF
+`
+
+const sampleLU = `=== Luxembourg ===
+Behind a word naming a vehicle: plaque AB 1234, plaque CD 567
+`
+
+const sampleMT = `=== Malta ===
+Behind a word naming a vehicle: registration ABC 123, registration XYZ456
+`
+
+const sampleCY = `=== Cyprus ===
+Behind a word naming a vehicle: registration KAB 123, registration MNP456
+`
+
+const sampleIS = `=== Iceland ===
+Behind a word naming a vehicle: bílnúmer AB 123, bílnúmer CD E45
+`
+
+const sampleLI = `=== Liechtenstein ===
+Behind a word naming a vehicle: Kontrollschild FL 12345, Kontrollschild FL 678
+`
+
+const sampleAL = `=== Albania ===
+As printed and as typed: AB 123 CD, EF-456-GH
+`
+
+const sampleMK = `=== North Macedonia ===
+Behind a word naming a vehicle: номер SK 1234 AB, номер BT 567 CD
+`
+
+const sampleBA = `=== Bosnia and Herzegovina ===
+As printed and as typed: A12-K-345, E67-J-890
+`
+
+const sampleME = `=== Montenegro ===
+Behind a word naming a vehicle: registarsk PG AB 123, registarsk BD CD-456
+`
+
+const sampleXK = `=== Kosovo ===
+Behind a word naming a vehicle: targa 01-123-AB, targa 05 456 CD
+`
+
+const sampleUA = `=== Ukraine ===
+As printed and as typed: AA 1234 BC, KA5678HE
+`
+
+const sampleMD = `=== Moldova ===
+Behind a word naming a vehicle: înmatriculare ABC 123, înmatriculare KLM456
+`
+
+const sampleTR = `=== Turkey ===
+Behind a word naming a vehicle: plaka 34 ABC 123, plaka 06 A 1234
+`
+
 const secretsSample = `=== Identifiants techniques ===
 OpenAI : sk-proj-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGH, compte de service sk-svcacct-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGH, administration sk-admin-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGH, ancienne forme sk-abcdefghijklmnopqrstuvwxyz0123
 Anthropic : sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789

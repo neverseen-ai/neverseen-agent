@@ -1,0 +1,18 @@
+# Slovakia suite. For now the licence plate alone, read on its own.
+#
+# No plate here carries a check character; the shape, the country's letters and
+# the zero number no series issues are what the pattern has.
+locale: sk
+min_precision: 100
+min_recall: 100
+
+cases:
+  - id: sk-plate-1
+    text: "EČV BA-123AB — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "BA-123AB"}
+
+  - id: sk-plate-2
+    text: "EČV KE 456CD — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "KE 456CD"}

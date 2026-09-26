@@ -1,0 +1,22 @@
+# Czechia suite. For now the licence plate alone, read on its own.
+#
+# No plate here carries a check character; the shape, the country's letters and
+# the zero number no series issues are what the pattern has.
+locale: cz
+min_precision: 100
+min_recall: 100
+
+cases:
+  - id: cz-plate-1
+    text: "SPZ 1A2 3456 — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "1A2 3456"}
+
+  - id: cz-plate-2
+    text: "SPZ 4AB5678 — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "4AB5678"}
+
+  - id: cz-prec-1
+    text: "Verze 1A2 build."
+    expect: []

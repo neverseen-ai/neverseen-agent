@@ -1,0 +1,22 @@
+# Ireland suite. For now the licence plate alone, read on its own.
+#
+# No plate here carries a check character; the shape, the country's letters and
+# the zero number no series issues are what the pattern has.
+locale: ie
+min_precision: 100
+min_recall: 100
+
+cases:
+  - id: ie-plate-1
+    text: "registration 231-D-12345 — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "231-D-12345"}
+
+  - id: ie-plate-2
+    text: "registration 12-KY-678 — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "12-KY-678"}
+
+  - id: ie-prec-1
+    text: "Ref 231-QQ-12345 is internal."
+    expect: []

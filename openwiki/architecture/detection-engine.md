@@ -417,6 +417,43 @@ Portuguese plates are read **with their dashes only**: run together they are any
 reference, and spaced, `AB 12 34` is the head of a British National Insurance number. The
 `TODO`s in `patterns_nl.go` and `patterns_pt.go` name what they need.
 
+**The rest of Europe is one file and a table** (`patterns_eu.go`, `euroPlates`). Each of those
+countries carries its plate alone, and each plate is a set of signatures, a rule and a
+stand-in, so thirty-three countries are thirty-three entries rather than thirty-three files; a
+country that gains a national identifier moves to a file of its own, as `de` already has.
+
+**Two kinds of country, and the word decides the second.** A shape nothing else writes is read
+on its own — Ireland's `231-D-12345`, Czechia's `1A2 3456`, Romania's county and letters. A
+shape ordinary text also takes is read only when the word *right in front of it* names a
+vehicle (`namedPlateFinder`, `vehicleWords`): `DIN EN 1090` is a German plate from Dinslaken,
+`ISO 9001` a Greek one, `BE 2024` a Swiss one, `10 AB 12` (a version and two numbers) a Turkish
+one. Germany, Poland, Austria, Switzerland, the Nordic and Baltic countries, Greece, Slovenia,
+Turkey and the rest of that list are in the second kind, and every such country's corpus holds
+the same plate with no word in front and asserts it is left alone. Right in front, not anywhere
+in the window: with `Fahrzeug HH XY 99E` the word vouches for the plate and not for `XY 99E`
+inside it. And a word must open a word of the text — `plate` is inside `template`.
+
+**Germany's district is a closed list** (`deDistricts`, the Kraftfahrt-Bundesamt's 730 codes),
+and a run-together plate is tried at every split: `MAB1234` is M-AB or MA-B. A district with an
+umlaut is not read yet; a `TODO` says so.
+
+**Every stand-in's number is all zeros, and every rule refuses that number**
+(`plateNoZeroNumber`). No series issues it, and it is what stops one country's stand-in being
+another's plate — the test that runs every stand-in past every pattern found the French
+`OU-nnn-OU` read as Albanian, the Irish as Dutch and the Bulgarian as Spanish provincial before
+the rule was in every one of them.
+
+**Letters in a signature are always L.** `expandSignatures` panics on anything else, because a
+literal `E` in a notation expands to a signature no text has; the German `E` suffix is an `L`
+that `GermanPlateCheck` narrows. The guard caught the first draft of Liechtenstein, written as
+`FL(…)`.
+
+**Measured.** With `eu` — forty plate countries — a scan of 88KB costs ~300ms against ~263ms
+for `fr,gb,us`: about 1ms per country, the ceiling the `TODO` on `plateFinder` names. Over a
+paragraph of versions, standards, flight numbers, invoice references and hardware model numbers,
+`eu` flags nothing. `/healthz` with every locale is 23KB against a 32KB test line. Plates written
+in Cyrillic or Greek letters are not read; a `TODO` in `patterns_eu.go` says so.
+
 **A plate glued by a dash to another run is a fragment, not a plate** (`plateGlued`). A MAC
 address is the case the Dutch shapes brought in: `BD-12-FD-34-BF-56` carries `BD-12-FD`, in
 letters the Dutch series issues, and masking it would leave the rest of the address beside a
@@ -874,7 +911,8 @@ link back as a Maps link. A `TODO` names that ceiling.
 ## Locales
 
 `localeRegistry` (`pkg/pii/locale.go`) holds `fr` (priority 10), `gb` (20), `us` (30), `es`
-(40), `be` (50), `it` (60), `nl` (70) and `pt` (80). Each entry carries a code, a `Priority`, whether it is `European`, a pattern set,
+(40), `be` (50), `it` (60), `nl` (70), `pt` (80), `de` (90), and then the rest of Europe from
+`pl` (100) to `tr` (410), largest market first — forty-one locales, forty of them in `eu`. Each entry carries a code, a `Priority`, whether it is `European`, a pattern set,
 a sample and a stand-in table.
 
 **A country can arrive with one category.** Every locale after `us` carries the licence

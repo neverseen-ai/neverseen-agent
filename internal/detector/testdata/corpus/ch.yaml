@@ -1,0 +1,27 @@
+# Switzerland suite. For now the licence plate alone, read only behind a word naming
+# a vehicle, so the same plate with no word in front must come out untouched.
+#
+# No plate here carries a check character; the shape, the country's letters and
+# the zero number no series issues are what the pattern has.
+locale: ch
+min_precision: 100
+min_recall: 100
+
+cases:
+  - id: ch-plate-1
+    text: "Kontrollschild ZH 123456 — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "ZH 123456"}
+
+  - id: ch-plate-2
+    text: "Kontrollschild VD 4321 — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "VD 4321"}
+
+  - id: ch-prec-no-word
+    text: "Reference ZH 123456 — noted."
+    expect: []
+
+  - id: ch-prec-1
+    text: "Das Jahr BE 2024 war gut."
+    expect: []

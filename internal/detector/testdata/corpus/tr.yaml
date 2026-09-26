@@ -1,0 +1,31 @@
+# Turkey suite. For now the licence plate alone, read only behind a word naming a
+# vehicle, so the same plate with no word in front must come out untouched.
+#
+# No plate here carries a check character; the shape, the country's letters and
+# the zero number no series issues are what the pattern has.
+locale: tr
+min_precision: 100
+min_recall: 100
+
+cases:
+  - id: tr-plate-1
+    text: "plaka 34 ABC 123 — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "34 ABC 123"}
+
+  - id: tr-plate-2
+    text: "plaka 06 A 1234 — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "06 A 1234"}
+
+  - id: tr-prec-no-word
+    text: "Reference 34 ABC 123 — noted."
+    expect: []
+
+  - id: tr-prec-version-and-numbers
+    text: "We shipped v2.10 AB 12 CD fix."
+    expect: []
+
+  - id: tr-prec-1
+    text: "Kod 99 ABC 123 geçersiz."
+    expect: []

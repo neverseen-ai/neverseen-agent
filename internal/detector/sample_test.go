@@ -305,6 +305,238 @@ func TestSampleShowsEveryNotation(t *testing.T) {
 			),
 		},
 		{
+			locale: "de",
+			want: notations(
+				"M-AB 1234", pii.CatLicPlate,
+				"HH XY 99E", pii.CatLicPlate,
+				"MAB1234", pii.CatLicPlate,
+			),
+		},
+		{
+			locale: "pl",
+			want: notations(
+				"WA 12345", pii.CatLicPlate,
+				"KRA 12AB", pii.CatLicPlate,
+			),
+		},
+		{
+			locale: "at",
+			want: notations(
+				"W 12345 B", pii.CatLicPlate,
+				"BN 123 AB", pii.CatLicPlate,
+			),
+		},
+		{
+			locale: "ch",
+			want: notations(
+				"ZH 123456", pii.CatLicPlate,
+				"VD 4321", pii.CatLicPlate,
+			),
+		},
+		{
+			locale: "cz",
+			want: notations(
+				"1A2 3456", pii.CatLicPlate,
+				"4AB5678", pii.CatLicPlate,
+			),
+		},
+		{
+			locale: "sk",
+			want: notations(
+				"BA-123AB", pii.CatLicPlate,
+				"KE 456CD", pii.CatLicPlate,
+			),
+		},
+		{
+			locale: "hu",
+			want: notations(
+				"AA AB-123", pii.CatLicPlate,
+				"AEAB456", pii.CatLicPlate,
+			),
+		},
+		{
+			locale: "ro",
+			want: notations(
+				"CJ 12 ABC", pii.CatLicPlate,
+				"B 123 XYZ", pii.CatLicPlate,
+			),
+		},
+		{
+			locale: "ie",
+			want: notations(
+				"231-D-12345", pii.CatLicPlate,
+				"12-KY-678", pii.CatLicPlate,
+			),
+		},
+		{
+			locale: "dk",
+			want: notations(
+				"AB 12 345", pii.CatLicPlate,
+				"CD67890", pii.CatLicPlate,
+			),
+		},
+		{
+			locale: "se",
+			want: notations(
+				"ABC 123", pii.CatLicPlate,
+				"DEF 45G", pii.CatLicPlate,
+			),
+		},
+		{
+			locale: "no",
+			want: notations(
+				"EL 12345", pii.CatLicPlate,
+				"AB98765", pii.CatLicPlate,
+			),
+		},
+		{
+			locale: "fi",
+			want: notations(
+				"ABC-123", pii.CatLicPlate,
+				"XY-45", pii.CatLicPlate,
+			),
+		},
+		{
+			locale: "gr",
+			want: notations(
+				"IKN-1234", pii.CatLicPlate,
+				"ZHK 5678", pii.CatLicPlate,
+			),
+		},
+		{
+			locale: "bg",
+			want: notations(
+				"CA 1234 AB", pii.CatLicPlate,
+				"PB5678HK", pii.CatLicPlate,
+			),
+		},
+		{
+			locale: "hr",
+			want: notations(
+				"ZG 1234-AB", pii.CatLicPlate,
+				"ST 567-C", pii.CatLicPlate,
+			),
+		},
+		{
+			locale: "si",
+			want: notations(
+				"LJ AB-123", pii.CatLicPlate,
+				"MB 12-ABC", pii.CatLicPlate,
+			),
+		},
+		{
+			locale: "lt",
+			want: notations(
+				"ABC 123", pii.CatLicPlate,
+				"KLM456", pii.CatLicPlate,
+			),
+		},
+		{
+			locale: "lv",
+			want: notations(
+				"AB-1234", pii.CatLicPlate,
+				"CD-56", pii.CatLicPlate,
+			),
+		},
+		{
+			locale: "ee",
+			want: notations(
+				"123 ABC", pii.CatLicPlate,
+				"456DEF", pii.CatLicPlate,
+			),
+		},
+		{
+			locale: "lu",
+			want: notations(
+				"AB 1234", pii.CatLicPlate,
+				"CD 567", pii.CatLicPlate,
+			),
+		},
+		{
+			locale: "mt",
+			want: notations(
+				"ABC 123", pii.CatLicPlate,
+				"XYZ456", pii.CatLicPlate,
+			),
+		},
+		{
+			locale: "cy",
+			want: notations(
+				"KAB 123", pii.CatLicPlate,
+				"MNP456", pii.CatLicPlate,
+			),
+		},
+		{
+			locale: "is",
+			want: notations(
+				"AB 123", pii.CatLicPlate,
+				"CD E45", pii.CatLicPlate,
+			),
+		},
+		{
+			locale: "li",
+			want: notations(
+				"FL 12345", pii.CatLicPlate,
+				"FL 678", pii.CatLicPlate,
+			),
+		},
+		{
+			locale: "al",
+			want: notations(
+				"AB 123 CD", pii.CatLicPlate,
+				"EF-456-GH", pii.CatLicPlate,
+			),
+		},
+		{
+			locale: "mk",
+			want: notations(
+				"SK 1234 AB", pii.CatLicPlate,
+				"BT 567 CD", pii.CatLicPlate,
+			),
+		},
+		{
+			locale: "ba",
+			want: notations(
+				"A12-K-345", pii.CatLicPlate,
+				"E67-J-890", pii.CatLicPlate,
+			),
+		},
+		{
+			locale: "me",
+			want: notations(
+				"PG AB 123", pii.CatLicPlate,
+				"BD CD-456", pii.CatLicPlate,
+			),
+		},
+		{
+			locale: "xk",
+			want: notations(
+				"01-123-AB", pii.CatLicPlate,
+				"05 456 CD", pii.CatLicPlate,
+			),
+		},
+		{
+			locale: "ua",
+			want: notations(
+				"AA 1234 BC", pii.CatLicPlate,
+				"KA5678HE", pii.CatLicPlate,
+			),
+		},
+		{
+			locale: "md",
+			want: notations(
+				"ABC 123", pii.CatLicPlate,
+				"KLM456", pii.CatLicPlate,
+			),
+		},
+		{
+			locale: "tr",
+			want: notations(
+				"34 ABC 123", pii.CatLicPlate,
+				"06 A 1234", pii.CatLicPlate,
+			),
+		},
+		{
 			locale: "us",
 			want: notations(
 				"123-45-6789", pii.CatSSN,
