@@ -130,6 +130,12 @@ Una cifra con su moneda, nombrada: matrícula 1500 GBP
 Matrícula provincial: M-1234-AB, PO-9385-BH, B 5678 CD
 `
 
+const belgiumSample = `=== Belgique / België ===
+Plaque, comme elle est imprimée : 1-ABC-123
+Plaque saisie à la main : 2 KLM 456, 2KLM456, 1-xyz-789, 1xyz789
+Plaque en minuscules, nommée : nummerplaat 2 prs 345, plaque 1abc123
+`
+
 const secretsSample = `=== Identifiants techniques ===
 OpenAI : sk-proj-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGH, compte de service sk-svcacct-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGH, administration sk-admin-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGH, ancienne forme sk-abcdefghijklmnopqrstuvwxyz0123
 Anthropic : sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789

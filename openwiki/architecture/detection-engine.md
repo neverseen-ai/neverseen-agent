@@ -367,6 +367,21 @@ which runs every stand-in past every country's plate pattern and its `Verify`): 
 no checksum to fail, so this is what stands in for one. The Spanish stand-in is
 `nnnn AEU` — vowels are never issued.
 
+**Belgium: the 2010 series only.** A digit from 1 to 9, three letters, three digits
+(`1-ABC-123`), every separator and each case whole, like the French plate. Every letter is
+allowed, because I and O were issued before and a letter rule written from this year's
+practice forwards next year's cars in clear. The stand-in opens on `0`, which is never
+issued. The older `ABC-123` and `123-ABC` are still on the road and are left out: they are
+shapes technical text is full of (`SHA-256`, `AES-128`), and the `TODO` in `patterns_be.go`
+names what they need.
+
+**Each country's plate costs about 10ms per 88KB scanned** — measured for `es` and again for
+`be`, over `docs/testCorpus.txt`. A plate pattern has no leading literal for RE2 to scan
+for: it opens on a digit or a letter class, so every position is a candidate. That is
+affordable for a handful of countries and is not for thirty; a country whose shape needs a
+vehicle word anyway (Germany, Switzerland, Austria) is where a literal keyword in front of
+the plate would pay for itself.
+
 #### `GenericSecretCheck`, and the premise that fails in a repository
 
 `genericSecretQuotedRe` and `genericSecretBareRe` read `NAME=value` and treat the
@@ -810,13 +825,13 @@ link back as a Maps link. A `TODO` names that ceiling.
 
 ## Locales
 
-`localeRegistry` (`pkg/pii/locale.go`) holds `fr` (priority 10), `gb` (20), `us` (30) and
-`es` (40). Each entry carries a code, a `Priority`, whether it is `European`, a pattern set,
+`localeRegistry` (`pkg/pii/locale.go`) holds `fr` (priority 10), `gb` (20), `us` (30), `es`
+(40) and `be` (50). Each entry carries a code, a `Priority`, whether it is `European`, a pattern set,
 a sample and a stand-in table.
 
-**A country can arrive with one category.** `es` carries the licence plate alone, because
-the plate was what was asked for; the DNI, NIE and NIF join it as patterns in the same
-file. A locale is a country's set, not a promise that the set is complete, and `.env.example`
+**A country can arrive with one category.** `es` and `be` carry the licence plate alone,
+because the plate was what was asked for; the DNI, NIE and NIF, and the Belgian national
+register number, join them as patterns in the same files. A locale is a country's set, not a promise that the set is complete, and `.env.example`
 says what each one finds.
 
 **`Priority` is load order, and load order is a decision:** it settles which country claims

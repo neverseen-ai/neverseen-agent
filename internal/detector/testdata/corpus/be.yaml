@@ -1,0 +1,52 @@
+# Belgium suite. For now the licence plate alone, the series issued since 2010.
+#
+# No Belgian plate carries a check character. The shape — a digit from 1 to 9,
+# three letters, three digits — is distinctive printed with its dashes; the
+# spaced and hexadecimal lowercase forms are shapes other text takes, so they
+# need a word naming a vehicle.
+locale: be
+min_precision: 100
+min_recall: 100
+
+cases:
+  - id: be-plate
+    text: "La voiture 1-DKT-482 est garée devant la gare."
+    expect:
+      - {category: LICENSE_PLATE, value: "1-DKT-482"}
+
+  - id: be-plate-spaced-dutch
+    text: "De wagen met nummerplaat 2 GHV 917 staat op de parking."
+    expect:
+      - {category: LICENSE_PLATE, value: "2 GHV 917"}
+
+  - id: be-plate-compact-in-a-table
+    text: "bestelwagen;2RWN305;diesel"
+    expect:
+      - {category: LICENSE_PLATE, value: "2RWN305"}
+
+  - id: be-plate-lowercase-dashed
+    text: "le camion 1-spz-640 est rentré"
+    expect:
+      - {category: LICENSE_PLATE, value: "1-spz-640"}
+
+  - id: be-plate-lowercase-named
+    text: "kenteken: 2 kmv 228, gecontroleerd"
+    expect:
+      - {category: LICENSE_PLATE, value: "2 kmv 228"}
+
+  # What must come out untouched.
+  - id: be-prec-leading-zero
+    text: "Remplacée par 0-AAA-041 dans la réponse."
+    expect: []
+
+  - id: be-prec-prose-lowercase
+    text: "il faut 2 kgs 500 de farine et 3 cuillères"
+    expect: []
+
+  - id: be-prec-short-hash
+    text: "corrigé dans 1abc234, puis rebasé"
+    expect: []
+
+  - id: be-prec-four-letters
+    text: "La référence 1-ABCD-123 est une commande."
+    expect: []

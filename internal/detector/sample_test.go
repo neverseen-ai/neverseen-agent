@@ -237,6 +237,20 @@ func TestSampleShowsEveryNotation(t *testing.T) {
 			),
 		},
 		{
+			locale: "be",
+			want: notations(
+				// Every separator, each case whole. The spaced and hexadecimal
+				// lowercase forms need the word in front of them.
+				"1-ABC-123", pii.CatLicPlate,
+				"2 KLM 456", pii.CatLicPlate,
+				"2KLM456", pii.CatLicPlate,
+				"1-xyz-789", pii.CatLicPlate,
+				"1xyz789", pii.CatLicPlate,
+				"2 prs 345", pii.CatLicPlate,
+				"1abc123", pii.CatLicPlate,
+			),
+		},
+		{
 			locale: "us",
 			want: notations(
 				"123-45-6789", pii.CatSSN,

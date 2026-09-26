@@ -67,7 +67,7 @@ type Locale struct {
 // Priority is.
 //
 // TODO: Germany, Italy and the Netherlands are the next three, in that order of
-// market size, and Spain carries only its plate so far. Each is one entry here
+// market size, and Spain and Belgium carry only their plates so far. Each is one entry here
 // plus a pattern file, a corpus suite and a regenerated score floor — the
 // registry is what keeps that from touching anything else.
 var localeRegistry = []Locale{
@@ -86,6 +86,10 @@ var localeRegistry = []Locale{
 	{
 		Code: "es", Priority: 40, European: true,
 		Patterns: SpainPatterns, Sample: spainSample, Fakes: spainFakes,
+	},
+	{
+		Code: "be", Priority: 50, European: true,
+		Patterns: BelgiumPatterns, Sample: belgiumSample, Fakes: belgiumFakes,
 	},
 }
 
