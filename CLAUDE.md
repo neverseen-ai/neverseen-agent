@@ -318,7 +318,10 @@ and it is deliberately not repeated here.
 - **The OpenAI cached-token breakdown is deliberately not read.**
 - **rtk is read from its daily rows, never its summary, and never its history**
   (`rtkTally`): the summary falls when rtk purges past ninety days, and the history
-  is command lines. Spawned in `collectAt` only, wired in `reporterFromEnv` only.
+  is command lines. Spawned from `collect` before the window is dated — never on the
+  snapshot or the way out — with a stripped environment, and wired in
+  `reporterFromEnv` only. **`State.RTK` is a `*bool`: nil is "not checked", never
+  "absent"**, and `true` means rtk *answered*, not that a file called rtk exists.
 - **A map keyed on something the agent observes is keyed on a closed vocabulary, and
   the rest is `Other`** (`pkg/telemetry/vocabulary.go`). The recorder re-checks every
   key (`inVocabulary`). Widening a list is a contract change.

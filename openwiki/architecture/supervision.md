@@ -140,26 +140,46 @@ Anthropic's shape only, the gap `jsonFragment` already records.
 
 ### What rtk saved
 
-`Counters.RTK` (commands, input and output tokens) and `State.RTK` (the binary was
-found) come from the one place in this agent that spawns a process: `Gain`
+`Counters.RTK` (commands, input and output tokens) and `State.RTK` come from the one place in this agent that spawns a process: `Gain`
 (`internal/telemetry/rtk.go`) runs `rtk gain --daily --format json` from
-`collectAt`, on the reporter's goroutine, under a five-second bound — never on the
-snapshot and never on the request path. Wired in `reporterFromEnv` alone, so a
+`collect`, on the reporter's goroutine — never on the snapshot, never on the request
+path, and not on the way out, where its seconds would come out of the last heartbeat's.
+It is read **before** the window is dated, or the requests proxied while rtk answered
+landed in a window that had already closed. The bound is a timeout **and** a
+`WaitDelay` (a wrapper script's child otherwise holds stdout past the kill), and a cap
+on what rtk may print. rtk gets none of the agent's environment but what locates its
+history, and `RTK_TELEMETRY_DISABLED=1`: an agent reading it every five minutes would
+otherwise report the workstation active to rtk every day. Wired in `reporterFromEnv` alone, so a
 reporter built by a test reads nothing and no rtk on the machine running it can reach
 an assertion.
 
 **The daily rows, never the summary.** rtk deletes its history past ninety days each
 time it records a command, so its totals fall; a day's row (UTC) only grows until the
 date is over. `rtkTally` subtracts each day's last reading, treats a shrinking day as a
-new baseline (`rtk gain --reset`, or the purge trimming the oldest day) and ignores a
-past date appearing — `TestRTKTallyCountsWhatTheDaysGained` walks each case. The
+new baseline (`rtk gain --reset`, or the purge trimming the oldest day) and treats a
+day that shrank in **any** of its three figures as a new baseline (after a reset, the
+command count can come back to where it was while the tokens do not), ignores a row for
+a day over before the last reading — judged by **when** that reading was taken, so a row
+dated in the future by a wrong clock does not hide every later day — and refuses a
+reading with no `daily` rows, which as an empty baseline had the next reading counted
+whole. `TestRTKTallyCountsWhatTheDaysGained` walks each case.
+
+**`State.RTK` is a `*bool`, and nil is "not checked"** — an agent older than the field,
+or one that has not read rtk yet (the enrolment) — never "absent". **`true` means rtk
+answered with a reading**, not that a file called `rtk` exists: the Rust Type Kit shares
+the name, and a workstation running it was reported as running this one. A failure is
+logged when it starts and when it ends, not every interval. rtk disappearing resets the
+tally. **A wake re-baselines**: what rtk recorded since the last bucket spans the gap and
+cannot be split, so it is dropped rather than filed into a window that ended before it
+(`TestRTKAcrossASleepIsInNoWindow`). The
 saving is `Input − Output` and is not sent, so the two sides cannot disagree about it.
 
 **Found, not configured**, and looked up at every bucket so an install is noticed
-without a restart. `rtkPath` tries `PATH`, then the Homebrew, cargo and `~/.local`
-locations, because under launchd the service's `PATH` has none of them. Two `TODO`s
-name the ceilings: a fixed list of locations, and a first reading per process that is
-a baseline, so what rtk did while the agent was down is lost.
+without a restart. `rtkPath` tries `PATH`, then the Homebrew (macOS and Linux), cargo and
+`~/.local` locations, because under launchd the service's `PATH` has none of them. Three `TODO`s
+name the ceilings: a fixed list of locations; a first reading per process that is a
+baseline, so what rtk did while the agent was down is lost; and a wake that drops what
+rtk recorded between the last bucket and the sleep.
 
 ### The agent's own exposure, and the health of the control
 

@@ -188,7 +188,7 @@ func TestHeartbeatWireFormat(t *testing.T) {
 			Exposed:     true,
 			Rerouted:    []string{"anthropic"},
 			Allowlisted: 12,
-			RTK:         true,
+			RTK:         new(true),
 		},
 		// Two buckets, not one. A batch of one would be a golden in which the
 		// plural case — the whole reason the message is a batch — never appears,

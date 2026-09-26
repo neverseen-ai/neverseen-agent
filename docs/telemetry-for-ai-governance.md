@@ -95,14 +95,17 @@ agent runs before the model reads it. Where the agent finds the binary, it reads
 
 | Field | What it holds |
 |---|---|
-| `state.rtk` | The rtk binary was found — a workstation without it and one where it sat idle are different answers |
+| `state.rtk` | rtk answered with a reading (`true`), or did not (`false`) — a workstation without it and one where it sat idle are different answers. Absent means *not checked*: an agent older than the field, or one that has not read rtk yet; never *not installed* |
 | `rtk.commands` | Commands rtk ran in the window |
 | `rtk.input`, `rtk.output` | Tokens of command output before and after rtk shortened it; the saving is the difference |
 
 These are **rtk's estimates for the whole workstation**, not a provider's count and
 not limited to traffic through this agent. Only the daily totals are read — never
 `--history`, whose rows are command lines — and the first reading after a start is a
-baseline, so what rtk did while the agent was stopped is not reported.
+baseline, so what rtk did while the agent was stopped is not reported. rtk runs with
+its own telemetry switched off and none of the agent's environment but what locates
+its history; an `RTK_DB_PATH` exported by a shell profile never reaches the service, so
+a history kept elsewhere is named in rtk's `config.toml` (`tracking.database_path`).
 
 ### The control's own health
 

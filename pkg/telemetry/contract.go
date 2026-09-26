@@ -290,11 +290,17 @@ type State struct {
 	// a fleet view needs to know.
 	Allowlisted int `json:"allowlisted,omitempty"`
 
-	// RTK reports that the rtk binary was found on this workstation at the last
-	// bucket closed. Said apart from Counters.RTK so a fleet view can tell a
-	// machine without the tool from one that has it and did not use it — the
-	// adoption question, which a count of zero cannot answer.
-	RTK bool `json:"rtk,omitempty"`
+	// RTK reports whether rtk answered with a reading at the last bucket closed.
+	// Said apart from Counters.RTK so a fleet view can tell a machine without the
+	// tool from one that has it and did not use it — the adoption question, which
+	// a count of zero cannot answer.
+	//
+	// A pointer, because there are three answers and not two. Nil is "not
+	// checked": an agent older than the field, or one that has not read rtk yet —
+	// and never "absent". As a bool with omitempty, an agent without rtk sent
+	// nothing, exactly as an agent predating rtk does, and a backend storing false
+	// for both showed the whole older fleet as not running it.
+	RTK *bool `json:"rtk,omitempty"`
 }
 
 // Counters are the tallies for one window.

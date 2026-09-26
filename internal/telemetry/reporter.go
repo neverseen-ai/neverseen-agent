@@ -100,11 +100,15 @@ type Reporter struct {
 	// the moment a window is cut at when the machine turns out to have slept.
 	awake time.Time
 
-	// gain reads rtk; nil reads nothing. rtk is what it last made of it, and
-	// rtkFound whether the binary was there — both touched only by Run's goroutine.
-	gain     func(context.Context) ([]byte, bool, error)
-	rtk      rtkTally
-	rtkFound bool
+	// gain reads rtk; nil reads nothing. rtk is what it last made of it;
+	// rtkRead whether it has been tried at all, rtkFound whether the last try was
+	// a reading, and rtkBroken whether rtk is installed and failing — so that is
+	// said once rather than every interval. All touched only by Run's goroutine.
+	gain      func(context.Context) ([]byte, bool, error)
+	rtk       rtkTally
+	rtkRead   bool
+	rtkFound  bool
+	rtkBroken bool
 }
 
 // Config is what a Reporter needs.
@@ -249,8 +253,13 @@ func (r *Reporter) Run(ctx context.Context) {
 			// The bucket in progress is closed and one delivery is attempted, so a
 			// clean shutdown neither loses the period it was in the middle of nor
 			// leaves a queue on disk it could have emptied.
+			//
+			// Without reading rtk: its five seconds would come out of the time the
+			// service manager allows a stop, which the last heartbeat needs. What rtk
+			// recorded since the last bucket is lost with the process, as it is on a
+			// start anyway (rtkTally's TODO).
 			out := context.WithoutCancel(ctx)
-			r.collect()
+			r.collectAt(r.now())
 			r.drain(out)
 			return
 
@@ -322,6 +331,15 @@ func (r *Reporter) wake() bool {
 	r.log.Info("the machine was not running this agent, closing the window where it stopped",
 		"for", slept.Round(time.Second), "measured_to", last)
 	r.collectAt(last)
+	// A fresh baseline, and what rtk recorded since the last bucket is dropped:
+	// it spans the gap, and one figure cannot be split between the window just
+	// closed and a period nobody measured. Counted into either it would put rtk
+	// activity in a window that ended before it happened.
+	//
+	// TODO: this drops what rtk recorded between the last bucket and the sleep
+	// too — at most an interval. Reading rtk on the snapshot would bound it at
+	// thirty seconds, for a process spawned twice a minute.
+	r.readRTK()
 	r.recorder.Reopen(now)
 	return true
 }
@@ -331,7 +349,14 @@ func (r *Reporter) wake() bool {
 // Queued rather than sent from here, because the two are independent: this runs on
 // the interval whether or not the backend exists, and it is what keeps a bucket
 // per five minutes through an outage.
-func (r *Reporter) collect() { r.collectAt(r.now()) }
+//
+// rtk is read first and the window dated after it. The other way round, the
+// seconds spent waiting on rtk fell after the instant the window closed at, and
+// the requests proxied in them were filed in a window that had already ended.
+func (r *Reporter) collect() {
+	r.recorder.RTK(r.readRTK())
+	r.collectAt(r.now())
+}
 
 // collectAt closes the current bucket at a given instant, which is now for every
 // caller but the one that has just found out the machine was asleep: that one
@@ -347,7 +372,6 @@ func (r *Reporter) collectAt(at time.Time) {
 		r.recorder.Drop(dropped)
 		r.log.Error("abandoned buckets the backend never accepted", "count", dropped)
 	}
-	r.readRTK()
 
 	counters, window := r.recorder.Take(at)
 	r.queue.add(bucket{Window: window, Counters: counters}, at)
@@ -361,38 +385,54 @@ func (r *Reporter) collectAt(at time.Time) {
 	r.persist()
 }
 
-// readRTK counts what rtk recorded since the last bucket into the one closing.
+// readRTK returns what rtk recorded since the last reading.
 //
-// Here, on the interval, and not on the snapshot: a process to spawn every
-// thirty seconds is more than the figure is worth. Looked up every time rather
-// than once, so an rtk installed or removed while the agent runs is noticed at
-// the next bucket instead of at the next restart. A failure is logged and costs
-// the window's figure, never the bucket.
-func (r *Reporter) readRTK() {
+// On the interval, and not on the snapshot: a process to spawn every thirty
+// seconds is more than the figure is worth. Looked up every time rather than
+// once, so an rtk installed or removed while the agent runs is noticed at the next
+// bucket instead of at the next restart. A failure costs the window's figure,
+// never the bucket.
+//
+// rtk counts as present only once it has answered with a reading. Any executable
+// called rtk is otherwise enough — the Rust Type Kit shares the name — and a
+// workstation running that one was reported to the fleet as running this one.
+func (r *Reporter) readRTK() telemetry.RTK {
 	if r.gain == nil {
-		return
+		return telemetry.RTK{}
 	}
 	out, found, err := r.gain(context.Background())
-	r.rtkFound = found
+	r.rtkRead = true
 	if !found {
-		return
+		// Gone, so the next rtk to appear is read from scratch rather than
+		// against a history that may have been another installation's.
+		r.rtk, r.rtkFound, r.rtkBroken = rtkTally{}, false, false
+		return telemetry.RTK{}
 	}
-	if err != nil {
-		r.log.Warn("rtk is installed but its gain could not be read", "error", err)
-		return
+	var delta telemetry.RTK
+	if err == nil {
+		delta, err = r.rtk.add(out, r.now())
 	}
-	delta, err := r.rtk.add(out)
-	if err != nil {
-		r.log.Warn("rtk printed a gain this agent cannot read", "error", err)
-		return
+	r.rtkFound = err == nil
+	switch {
+	case err != nil && !r.rtkBroken:
+		r.log.Warn("a binary called rtk is installed but gave no reading, and will not be counted as rtk until it does",
+			"error", err)
+	case err == nil && r.rtkBroken:
+		r.log.Info("rtk gives a reading again")
 	}
-	r.recorder.RTK(delta)
+	r.rtkBroken = err != nil
+	return delta
 }
 
 // currentState is the agent's state with what only the reporter knows added.
 func (r *Reporter) currentState() telemetry.State {
 	state := r.state()
-	state.RTK = r.rtkFound
+	// Nil until rtk has been tried, and for a reporter that never tries it: an
+	// enrolment sent before the first reading would otherwise declare it absent.
+	if r.rtkRead {
+		found := r.rtkFound
+		state.RTK = &found
+	}
 	return state
 }
 
