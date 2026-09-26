@@ -446,7 +446,7 @@ the list is the answer.
 **Names, never a count.** The lists overlap — a postcode, a telephone number and a
 postal address are national in shape and one category each in the catalogue, so several
 countries name them all — and a few categories are found with no country loaded at all.
-`fr`, `gb` and `us` name 8, 6 and 7 against **16** in play. A count is a number a reader
+`fr`, `gb` and `us` name 8, 7 and 7 against **16** in play. A count is a number a reader
 adds up and is wrong, which is why the page shows the names and a note saying that a
 shared category survives its country going
 (`TestEachCountryIsServedWithWhatItFinds` pins both halves, and fails if the sum ever

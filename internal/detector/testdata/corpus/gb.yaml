@@ -270,3 +270,37 @@ cases:
   - id: gb-prec-month-out-of-range
     text: "Batch 14/13/1987 failed validation."
     expect: []
+
+  # The registration mark since 2001. Ages in the corpus are ones already issued
+  # or far out, so the suite does not change its answer as the calendar moves.
+  - id: gb-plate
+    text: "The van, reg DK19 FHT, was clamped outside the depot."
+    expect:
+      - {category: LICENSE_PLATE, value: "DK19 FHT"}
+
+  - id: gb-plate-compact-in-a-table
+    text: "van;WR67KXP;diesel"
+    expect:
+      - {category: LICENSE_PLATE, value: "WR67KXP"}
+
+  - id: gb-plate-lowercase-named
+    text: "registration: yp14 mzt, checked"
+    expect:
+      - {category: LICENSE_PLATE, value: "yp14 mzt"}
+
+  - id: gb-prec-plate-age-never-issued
+    text: "Batch LM00 KTR and batch LM01 KTR and LM50 KTR are internal."
+    expect: []
+
+  - id: gb-prec-plate-age-far-out
+    text: "Codes HX95 PRT and HX45 PRT are reserved for testing."
+    expect: []
+
+  - id: gb-prec-plate-letters-never-used
+    text: "Refs ZA12 CDE, AI12 CDE and AB12 CQE are not marks."
+    expect: []
+
+  - id: gb-prec-plate-stand-in
+    text: "Replaced by ZZ00 ABC in the answer."
+    expect: []
+

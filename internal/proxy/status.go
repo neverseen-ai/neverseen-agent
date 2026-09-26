@@ -86,7 +86,7 @@ type Health struct {
 	// national in shape and one category each in the catalogue, so two countries name
 	// them both, and a few categories are found with no country at all. Their lengths
 	// therefore do not add up to what a selection has in play — fr, gb and us name 8,
-	// 6 and 7 against 16 — which is why a surface shows the names and never a count.
+	// 7 and 7 against 16 — which is why a surface shows the names and never a count.
 	LocaleCategories map[string][]string `json:"locale_categories,omitempty"`
 
 	// Groups is the catalogue as a list somebody can be shown: every group in

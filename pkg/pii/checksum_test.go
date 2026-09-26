@@ -870,3 +870,31 @@ func TestPlateCheckKeepsRealPlates(t *testing.T) {
 		}
 	}
 }
+
+// The age identifier moves twice a year, so the day is pinned: against time.Now
+// the boundary rows would age out one by one and the test would go on passing.
+func TestGBPlateCheckReadsTheAgeAgainstTheCalendar(t *testing.T) {
+	now := time.Date(2026, time.September, 26, 12, 0, 0, 0, time.UTC)
+	for _, c := range []struct {
+		value string
+		want  bool
+		why   string
+	}{
+		{"AB02 CDE", true, "March 2002, the first March age"},
+		{"AB51 CDE", true, "September 2001, the first mark of the scheme"},
+		{"AB26 CDE", true, "March 2026"},
+		{"AB76 CDE", true, "September 2026, issued this month"},
+		{"AB27 CDE", true, "March 2027: one step of tolerance, towards masking"},
+		{"AB77 CDE", true, "September 2027, within the same tolerance"},
+		{"ab12cde", true, "lowercase and run together: the age is read the same"},
+		{"AB28 CDE", false, "March 2028 is not issued yet"},
+		{"AB78 CDE", false, "nor September 2028"},
+		{"AB00 CDE", false, "00 is never issued before 2050"},
+		{"AB01 CDE", false, "01 was never issued: the scheme opened on 51"},
+		{"AB50 CDE", false, "50 is March 2050"},
+	} {
+		if got := gbPlateCheckAt(c.value, now); got != c.want {
+			t.Errorf("gbPlateCheckAt(%q) = %v, want %v — %s", c.value, got, c.want, c.why)
+		}
+	}
+}

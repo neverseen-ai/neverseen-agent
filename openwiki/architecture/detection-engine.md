@@ -375,6 +375,20 @@ issued. The older `ABC-123` and `123-ABC` are still on the road and are left out
 shapes technical text is full of (`SHA-256`, `AES-128`), and the `TODO` in `patterns_be.go`
 names what they need.
 
+**The United Kingdom: the 2001 mark, and an age read against the calendar**
+(`gbPlateRe`, `GBPlateCheck`). Two region letters, a two-digit age, three random letters
+(`AB12 CDE`), spaced as printed or run together as the DVLA's forms take it, each case
+whole. The letters the DVLA never uses are in the classes — I, Q and Z in the region, I
+and Q in the last three. The age is the rule that does the work, and it is a range that
+moves: the year for a March issue, the year plus fifty for a September one, so 00, 01 and
+50 are never issued and neither is an age the calendar has not reached. It is read against
+the clock — the one place this chapter's "structure, never the range issued so far" gives
+way, because here the range is arithmetic on today's date rather than a letter somebody
+has to remember to move — through `gbPlateCheckAt`, so the suite pins the day, and with one
+step of tolerance past today in the direction that masks. The stand-in is `ZZ00 nnn`: Z is
+never a region letter and 00 is never an age. The scheme runs out in 2050, and a `TODO`
+says so; Northern Ireland and the pre-2001 marks are not read yet.
+
 **Each country's plate costs about 10ms per 88KB scanned** — measured for `es` and again for
 `be`, over `docs/testCorpus.txt`. A plate pattern has no leading literal for RE2 to scan
 for: it opens on a digit or a letter class, so every position is a candidate. That is

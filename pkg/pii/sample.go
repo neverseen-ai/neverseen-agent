@@ -94,6 +94,8 @@ Address with no town: 42 Wellington Crescent
 Abbreviated street type: 8 High St, Manchester M1 2AB
 Street types, written in full: 1 Example Street, 2 Example Road, 3 Example Avenue, 4 Example Lane, 5 Example Close, 6 Example Drive, 7 Example Place, 8 Example Court, 9 Example Crescent, 10 Example Gardens
 And the rest: 11 Example Terrace, 12 Example Square, 13 Example Mews, 14 Example Grove, 15 Example Parade, 16 Example Way, 17 Example St, 18 Example Rd, 19 Example Ave
+Registration, as printed: AB12 CDE, typed as DVLA forms take it: KL62MNR, lowercase: gh62xyz
+Registration in lowercase, named: vehicle ab12 cde, registration ab12cde
 
 === Dates of birth (day first) ===
 THE SAME DATE in its four notations: 14/03/1987, 14-03-1987, 14.03.1987, 14 March 1987

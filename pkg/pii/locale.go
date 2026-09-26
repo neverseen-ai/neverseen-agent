@@ -186,7 +186,7 @@ func LocalePatterns(codes []string) []Pattern {
 // category two countries carry survives while either is loaded, and a few (a date of
 // birth, an email address) are found with no country loaded at all. The lists
 // therefore overlap, and their lengths do not add up to what a selection has in play:
-// fr, gb and us name 8, 6 and 7 against 16 in play. That is why a surface shows the
+// fr, gb and us name 8, 7 and 7 against 16 in play. That is why a surface shows the
 // names from this and never a count — a count is a number a reader adds up and is
 // wrong.
 func CategoriesInLocale(code string) []Category {

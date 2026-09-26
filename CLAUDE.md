@@ -122,7 +122,7 @@ and it is deliberately not repeated here.
 - **Each country is served with what it can find** (`Health.LocaleCategories`, from
   `pii.CategoriesInLocale`) — **labels for a reader, never codes to send back**, and
   **names rather than a count**: the lists overlap and a few categories need no country,
-  so `fr`, `gb` and `us` name 8, 6 and 7 against 16 in play, and a count is a number a
+  so `fr`, `gb` and `us` name 8, 7 and 7 against 16 in play, and a count is a number a
   reader adds up and is wrong. `TestEachCountryIsServedWithWhatItFinds` fails if the sum
   ever equals what is in play.
 - **Every closed set a surface draws is served, never spelled out by the surface** —

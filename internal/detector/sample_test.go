@@ -208,6 +208,14 @@ func TestSampleShowsEveryNotation(t *testing.T) {
 				"4/3/1987", pii.CatDOB,
 				"04/03/1987", pii.CatDOB,
 				"4 March 1987", pii.CatDOB,
+				// The registration mark, as printed and run together, each case
+				// whole. The spaced and hexadecimal lowercase forms need a vehicle
+				// named in front of them, as a plate does in every locale.
+				"AB12 CDE", pii.CatLicPlate,
+				"KL62MNR", pii.CatLicPlate,
+				"gh62xyz", pii.CatLicPlate,
+				"ab12 cde", pii.CatLicPlate,
+				"ab12cde", pii.CatLicPlate,
 				// The expression is case-folded, so a month somebody typed in
 				// lower case is still a month.
 				"3 september 1970", pii.CatDOB,

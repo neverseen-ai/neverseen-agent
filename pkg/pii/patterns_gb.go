@@ -3,7 +3,9 @@ package pii
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // The United Kingdom set.
@@ -166,6 +168,61 @@ var (
 			`|\b0[1-9]\d{8,9}\b`) // run together: ten or eleven digits in all
 )
 
+// The registration mark since September 2001: two region letters, a two-digit
+// age identifier, three random letters — "AB12 CDE". Printed with one space, and
+// typed without it because the DVLA and every insurer's form take it that way.
+// One alternative per notation, each case whole.
+//
+// The letters the DVLA never uses are written into the classes: I, Q and Z in
+// the region, I and Q in the last three. The age is GBPlateCheck's, because it
+// moves twice a year.
+//
+// TODO: no Northern Ireland mark ("ABZ 1234"), no pre-2001 prefix or suffix
+// mark, no cherished or dateless mark. The first two are closed lists and
+// shapes worth doing; the last is free-form and has no shape to read.
+const (
+	gbPlateRegionUpper = `[A-HJ-PR-Y]{2}`
+	gbPlateRandomUpper = `[A-HJ-PR-Z]{3}`
+	gbPlateRegionLower = `[a-hj-pr-y]{2}`
+	gbPlateRandomLower = `[a-hj-pr-z]{3}`
+)
+
+var gbPlateRe = regexp.MustCompile(`(?:^|[^\p{L}\p{N}])(` +
+	gbPlateRegionUpper + `\d{2} ` + gbPlateRandomUpper + `|` + gbPlateRegionUpper + `\d{2}` + gbPlateRandomUpper + `|` +
+	gbPlateRegionLower + `\d{2} ` + gbPlateRandomLower + `|` + gbPlateRegionLower + `\d{2}` + gbPlateRandomLower +
+	`)(?:$|[^\p{L}\p{N}])`)
+
+// GBPlateCheck rejects a British mark whose age identifier has not been issued.
+func GBPlateCheck(value string) bool { return gbPlateCheckAt(value, time.Now()) }
+
+// gbPlateCheckAt is GBPlateCheck against a given day, so a test can pin one: read
+// against time.Now, the boundary cases would age out and the suite would go on
+// passing over a rule it no longer exercised.
+//
+// The age is the year for a March issue (02 for March 2002) and the year plus 50
+// for a September one (51 for September 2001). So 00, 01 and 50 are never
+// issued, and neither is an age later than the calendar allows. One step of
+// tolerance past today, in the direction that masks: a mark issued the week the
+// age turns over, read by an agent whose clock is behind, must not go out in
+// clear.
+//
+// TODO: the scheme runs out in 2050 — March 2050 is 50 and September 2050 is 00
+// again — and what the DVLA issues after that is not announced.
+func gbPlateCheckAt(value string, now time.Time) bool {
+	v := strings.ReplaceAll(value, " ", "")
+	if len(v) != 7 {
+		return false
+	}
+	age, err := strconv.Atoi(v[2:4])
+	if err != nil {
+		return false
+	}
+	year := now.Year() % 100
+	march := age >= 2 && age <= min(year+1, 50)
+	september := age >= 51 && age <= min(year+51, 99)
+	return march || september
+}
+
 // unitedKingdomFakes are the UK stand-ins. Each one lives somewhere its issuer
 // never allocates, so it cannot be anybody's real value: an unissued National
 // Insurance prefix, the pseudo-postcode the ONS uses for "not known", the
@@ -203,6 +260,13 @@ var unitedKingdomFakes = map[Category]Generator{
 	// it reaches a subscriber.
 	CatPhone: {Capacity: 1000, Make: func(i int64) string {
 		return fmt.Sprintf("07700 900%03d", i-1)
+	}},
+
+	// An age of 00 is never issued, and Z is never a region letter, so the
+	// pattern cannot read this back and no car carries it.
+	CatLicPlate: {Capacity: 26 * 26 * 26, Make: func(i int64) string {
+		i--
+		return fmt.Sprintf("ZZ00 %c%c%c", 'A'+byte(i/676%26), 'A'+byte(i/26%26), 'A'+byte(i%26))
 	}},
 
 	// The pseudo-postcode again, so the stand-in address cannot be a place
@@ -244,5 +308,6 @@ func UnitedKingdomPatterns() []Pattern {
 		{Regex: gbPhoneRe, Category: CatPhone, Label: "UK telephone number"},
 		{Regex: gbNINORe, Category: CatNINO, Label: "National Insurance number"},
 		{Regex: gbDateRe, Category: CatDOB, Label: "Date (day first)"},
+		{Regex: gbPlateRe, Group: 1, Verify: GBPlateCheck, Category: CatLicPlate, Label: "Registration mark (2001)"},
 	}
 }
