@@ -322,3 +322,35 @@ func TestPatternSpansFindEveryQuotedSecretOnce(t *testing.T) {
 		t.Fatalf("found %d ClickHouse keys in %q, want 2: %v", len(got), keys, got)
 	}
 }
+
+// A plate is found by a pass rather than an expression, and everything after the
+// span must still apply to it: the allow list, the value rule, placement. A path
+// that returned spans straight into the matches would have skipped all three
+// without a single corpus case noticing, since the corpus only ever asks for the
+// plates it expects.
+func TestAFindPatternIsFilteredLikeAnExpression(t *testing.T) {
+	plate := "AB" + "-123-" + "CD"
+	scan := func(d *Detector, text string) []string {
+		var out []string
+		for _, m := range d.Scan(text) {
+			if m.Category == pii.CatLicPlate {
+				out = append(out, m.Value)
+			}
+		}
+		return out
+	}
+
+	if got := scan(New(Config{Locales: []string{"fr"}}), "véhicule "+plate); len(got) != 1 {
+		t.Fatalf("the plate itself is not found (%v), so the rest of this test proves nothing", got)
+	}
+	allowed := New(Config{Locales: []string{"fr"}, AllowList: map[string]bool{normalizeListValue(plate): true}})
+	if got := scan(allowed, "véhicule "+plate); len(got) != 0 {
+		t.Errorf("an allow-listed plate was masked: %v", got)
+	}
+	if got := scan(New(Config{Locales: []string{"fr"}}), "véhicule "+"IO"+"-123-"+"UV"); len(got) != 0 {
+		t.Errorf("a plate its Verify refuses was masked: %v", got)
+	}
+	if got := scan(New(Config{Locales: []string{"fr"}}), "à plus de 200 km"); len(got) != 0 {
+		t.Errorf("a plate placement refuses was masked: %v", got)
+	}
+}

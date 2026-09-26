@@ -57,6 +57,15 @@ type Pattern struct {
 	// refined end — scanning them all at once resumes after the greedy end
 	// instead, so a second IBAN immediately after the first was never seen.
 	Refine func(text string, start, end int) int
+
+	// Find returns the spans this pattern claims, in place of Regex, for a shape
+	// no expression can scan for cheaply. Only the licence plates use it: a plate
+	// opens on a letter or a digit class, so an expression tries every position in
+	// the text, and thirty countries of them cost what one pass costs thirty times
+	// over (plates.go). Everything after the spans — Verify, the score, the allow
+	// list, placement — is applied exactly as it is to a regular expression's
+	// match. Group and Refine do not apply to it.
+	Find func(text string) [][]int
 }
 
 // AllPatterns returns every pattern in the catalogue: every locale in the

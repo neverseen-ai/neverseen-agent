@@ -231,6 +231,9 @@ func (d *Detector) allowed(value string) bool {
 // patternSpans returns the offsets a pattern claims: its whole match, or the
 // submatch it points at when the expression had to consume more than it means.
 func patternSpans(p pii.Pattern, text string) [][]int {
+	if p.Find != nil {
+		return p.Find(text)
+	}
 	if p.Refine != nil {
 		return refinedSpans(p, text)
 	}

@@ -418,6 +418,9 @@ func TestPlateStandInsAreNotPlates(t *testing.T) {
 	var plates []Pattern
 	for _, p := range LocalePatterns(LocaleCodes()) {
 		if p.Category == CatLicPlate {
+			if p.Find == nil {
+				t.Fatalf("plate pattern %q (%s) has no Find: every plate is read by signature", p.Label, p.Locale)
+			}
 			plates = append(plates, p)
 		}
 	}
@@ -432,12 +435,14 @@ func TestPlateStandInsAreNotPlates(t *testing.T) {
 				t.Fatalf("no %s stand-in for index %d", l.Code, index)
 			}
 			for _, p := range plates {
-				m := p.Regex.FindStringSubmatch(" " + value + " ")
-				if m == nil || m[p.Group] != value {
-					continue
-				}
-				if p.Verify == nil || p.Verify(value) {
-					t.Errorf("the %s stand-in %q is read as a plate by %q (%s)", l.Code, value, p.Label, p.Locale)
+				text := " " + value + " "
+				for _, span := range p.Find(text) {
+					if text[span[0]:span[1]] != value {
+						continue
+					}
+					if p.Verify == nil || p.Verify(value) {
+						t.Errorf("the %s stand-in %q is read as a plate by %q (%s)", l.Code, value, p.Label, p.Locale)
+					}
 				}
 			}
 		}

@@ -61,24 +61,6 @@ var (
 	// printed with. A Corsican birth department is written 2A or 2B.
 	frNIRRe = regexp.MustCompile(`\b[12][ .]?\d{2}[ .]?(?:0[1-9]|1[0-2])[ .]?(?:\d{2}|2[AB])[ .]?\d{3}[ .]?\d{3}[ .]?\d{2}\b`)
 
-	// SIV plate, since 2009: AB-123-CD, as it is printed and as it is typed —
-	// spaced, run together, or in lowercase in a form somebody filled in quickly.
-	//
-	// One alternative per separator, because the separators have to agree and RE2
-	// has no backreference to say so: "AB-123 CD" is two fragments of something
-	// else. Each alternative is uppercase or lowercase as a whole, never mixed —
-	// "Ab-123-cD" is not how anybody writes a plate. PlateCheck rejects the letters
-	// the series never issues; RejectedByPlacement asks the two lowercase forms
-	// prose satisfies to have a word naming a vehicle in front of them.
-	//
-	// The leading class and Group, not \b: Go's \b is ASCII and sees no boundary
-	// between "é" and "A", nor after an underscore, so "plaque_AB-123-CD" went out
-	// in clear.
-	frPlateRe = regexp.MustCompile(`(?:^|[^\p{L}\p{N}])(` +
-		`[A-Z]{2}-\d{3}-[A-Z]{2}|[A-Z]{2} \d{3} [A-Z]{2}|[A-Z]{2}\d{3}[A-Z]{2}|` +
-		`[a-z]{2}-\d{3}-[a-z]{2}|[a-z]{2} \d{3} [a-z]{2}|[a-z]{2}\d{3}[a-z]{2}` +
-		`)(?:$|[^\p{L}\p{N}])`)
-
 	// 0X or +33/0033, separated by space, dot or dash, and tolerating the trunk
 	// zero in parentheses that international notation carries: "+33 (0)1 …".
 	frPhoneRe = regexp.MustCompile(`(?:\+33|0033)[ .-]?(?:\(0\)[ .-]?)?[1-9](?:[ .-]?\d{2}){4}\b|\b0[1-9](?:[ .-]?\d{2}){4}\b`)
@@ -199,13 +181,23 @@ func nirKey(body string) int {
 	return 97 - m
 }
 
+// frPlateFind reads the SIV plate, since 2009: two letters, three digits, two
+// letters, as it is printed and as it is typed — dashed, spaced, run together, or
+// in lowercase in a form somebody filled in quickly.
+//
+// The separators have to agree: "AB-123 CD" is two fragments of something else,
+// and a signature says so by having no entry for it. PlateCheck rejects the
+// letters the series never issues; RejectedByPlacement asks the two lowercase
+// notations prose satisfies to have a word naming a vehicle in front of them.
+var frPlateFind = plateFinder(false, "LL-DDD-LL", "LL DDD LL", "LLDDDLL")
+
 // FrancePatterns returns the French set, longest identifier first so the NIR's
 // fifteen digits are never split by a shorter numeric shape when two candidates
 // score the same.
 func FrancePatterns() []Pattern {
 	return []Pattern{
 		{Regex: frNIRRe, Category: CatNIR, Label: "Numéro de sécurité sociale (NIR)"},
-		{Regex: frPlateRe, Group: 1, Verify: PlateCheck, Category: CatLicPlate, Label: "Plaque d'immatriculation (SIV)"},
+		{Find: frPlateFind, Verify: PlateCheck, Category: CatLicPlate, Label: "Plaque d'immatriculation (SIV)"},
 		{Regex: frPhoneRe, Category: CatPhone, Label: "Numéro de téléphone français"},
 		{Regex: frDateRe, Category: CatDOB, Label: "Date (jour d'abord)"},
 		{Regex: frSIRETRe, Category: CatSIRET, Label: "SIRET"},

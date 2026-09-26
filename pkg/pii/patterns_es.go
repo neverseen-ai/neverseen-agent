@@ -2,7 +2,6 @@ package pii
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 )
 
@@ -10,37 +9,18 @@ import (
 // still on the road; the national identifiers (DNI, NIE, NIF) are the next
 // entries here, and each carries a check letter.
 
-const (
-	// The twenty letters the national series is issued from since 2000: no vowel,
-	// no Ñ, no Q. The class is the plate's strongest rule — it is what keeps
-	// "1500 EUR" and "2024 AOC" out — so it is written once and used by both
-	// cases.
-	esSeriesUpper = `[BCDFGHJKLMNPRSTVWXYZ]`
-	esSeriesLower = `[bcdfghjklmnprstvwxyz]`
-)
-
 var (
 	// The national plate since 2000: four digits and three letters, printed with
-	// a space and typed with a dash, with nothing, or in lowercase. One
-	// alternative per separator, so they have to agree, and each case whole.
-	//
-	// The leading class and Group, not \b, for the reason the French plate gives.
-	esPlateRe = regexp.MustCompile(`(?:^|[^\p{L}\p{N}])(` +
-		`\d{4} ` + esSeriesUpper + `{3}|\d{4}-` + esSeriesUpper + `{3}|\d{4}` + esSeriesUpper + `{3}|` +
-		`\d{4} ` + esSeriesLower + `{3}|\d{4}-` + esSeriesLower + `{3}|\d{4}` + esSeriesLower + `{3}` +
-		`)(?:$|[^\p{L}\p{N}])`)
+	// a space and typed with a dash, with nothing, or in lowercase.
+	esPlateFind = plateFinder(false, "DDDD LLL", "DDDD-LLL", "DDDDLLL")
 
 	// The provincial plate, 1971–2000: a province, four digits, one or two
 	// letters — "M-1234-AB". Still common, because Spain's fleet is old. Dashed or
 	// spaced only, and uppercase only: run together or in lowercase it is any
 	// reference code, and the province list is the only evidence the shape has.
-	//
-	// Any one or two letters here, and the province checked by
-	// ProvincialPlateCheck: the fifty-odd codes as an alternation cost 11.6ms
-	// over 88KB of text, against 4ms for this shape.
-	esProvincialPlateRe = regexp.MustCompile(`(?:^|[^\p{L}\p{N}])(` +
-		`[A-Z]{1,2}(?:-\d{4}-| \d{4} )[A-Z]{1,2}` +
-		`)(?:$|[^\p{L}\p{N}])`)
+	esProvincialPlateFind = plateFinder(true,
+		"L-DDDD-L", "L-DDDD-LL", "LL-DDDD-L", "LL-DDDD-LL",
+		"L DDDD L", "L DDDD LL", "LL DDDD L", "LL DDDD LL")
 )
 
 // spainFakes are the Spanish stand-ins. A vowel is never issued, so the national
@@ -55,8 +35,8 @@ var spainFakes = map[Category]Generator{
 // provincial one: the national shape is the one issued today.
 func SpainPatterns() []Pattern {
 	return []Pattern{
-		{Regex: esPlateRe, Group: 1, Category: CatLicPlate, Label: "Matrícula (nacional)"},
-		{Regex: esProvincialPlateRe, Group: 1, Verify: ProvincialPlateCheck, Category: CatLicPlate,
+		{Find: esPlateFind, Verify: SpanishPlateCheck, Category: CatLicPlate, Label: "Matrícula (nacional)"},
+		{Find: esProvincialPlateFind, Verify: ProvincialPlateCheck, Category: CatLicPlate,
 			Label: "Matrícula (provincial)"},
 	}
 }
@@ -74,6 +54,19 @@ var esProvinces = func() map[string]bool {
 	}
 	return out
 }()
+
+// SpanishPlateCheck reports whether a national plate's letters are ones the
+// series is issued from: twenty, no vowel, no Ñ, no Q. It is the plate's strongest
+// rule — what keeps "1500 EUR" and "2024 AOC" out.
+func SpanishPlateCheck(value string) bool {
+	for i := 0; i < len(value); i++ {
+		c := value[i] | 0x20 // ASCII lowercase
+		if c >= 'a' && c <= 'z' && !strings.ContainsRune("bcdfghjklmnprstvwxyz", rune(c)) {
+			return false
+		}
+	}
+	return true
+}
 
 // ProvincialPlateCheck reports whether a provincial plate opens on a province.
 func ProvincialPlateCheck(value string) bool {

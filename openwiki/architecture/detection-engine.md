@@ -325,8 +325,9 @@ in clear, and nothing in the agent would say so.
 whole.** Dashed, spaced and run together, one alternative per separator so they must agree
 (`AB-123 CD` was matched when the separators were a class). Lowercase came in because a
 plate typed into a form is typed in lowercase as often as not; mixed case stayed out,
-because nobody writes a plate that way. The leading class and `Group` replace `\b`, which
-is ASCII and saw no boundary after an underscore: `plaque_AB-123-CD` went out in clear.
+because nobody writes a plate that way. A plate ends where a run of letters and digits
+does, in Unicode terms — `\b` is ASCII and saw no boundary after an underscore, so
+`plaque_AB-123-CD` went out in clear.
 
 **Two lowercase notations need a word naming a vehicle** (`isUnnamedPlate`, a placement
 rule), because ordinary text produces them: spaced, a preposition, a number and a unit
@@ -359,8 +360,8 @@ lowercase French notations, so they need a word naming a vehicle (`esAmountSuffi
 
 The provincial plate (1971–2000, `M-1234-AB`) is dashed or spaced and uppercase only: run
 together it is any reference code. The province list is the only evidence it has, and it
-is checked in `ProvincialPlateCheck` rather than written into the expression — fifty-odd
-codes as an alternation cost 11.6ms over 88KB of text, the loose shape and a map lookup 4ms.
+is checked in `ProvincialPlateCheck`, where a map lookup costs nothing — written into the
+regular expression the plate used to be, the fifty-odd codes cost 11.6ms over 88KB of text.
 
 **Every plate stand-in must not be a plate to any country** (`TestPlateStandInsAreNotPlates`,
 which runs every stand-in past every country's plate pattern and its `Verify`): a plate has
@@ -376,10 +377,10 @@ shapes technical text is full of (`SHA-256`, `AES-128`), and the `TODO` in `patt
 names what they need.
 
 **The United Kingdom: the 2001 mark, and an age read against the calendar**
-(`gbPlateRe`, `GBPlateCheck`). Two region letters, a two-digit age, three random letters
+(`gbPlateFind`, `GBPlateCheck`). Two region letters, a two-digit age, three random letters
 (`AB12 CDE`), spaced as printed or run together as the DVLA's forms take it, each case
-whole. The letters the DVLA never uses are in the classes — I, Q and Z in the region, I
-and Q in the last three. The age is the rule that does the work, and it is a range that
+whole. The letters the DVLA never uses are refused by the check — I, Q and Z in the
+region, I and Q in the last three. The age is the rule that does the work, and it is a range that
 moves: the year for a March issue, the year plus fifty for a September one, so 00, 01 and
 50 are never issued and neither is an age the calendar has not reached. It is read against
 the clock — the one place this chapter's "structure, never the range issued so far" gives
@@ -389,12 +390,29 @@ step of tolerance past today in the direction that masks. The stand-in is `ZZ00 
 never a region letter and 00 is never an age. The scheme runs out in 2050, and a `TODO`
 says so; Northern Ireland and the pre-2001 marks are not read yet.
 
-**Each country's plate costs about 10ms per 88KB scanned** — measured for `es` and again for
-`be`, over `docs/testCorpus.txt`. A plate pattern has no leading literal for RE2 to scan
-for: it opens on a digit or a letter class, so every position is a candidate. That is
-affordable for a handful of countries and is not for thirty; a country whose shape needs a
-vehicle word anyway (Germany, Switzerland, Austria) is where a literal keyword in front of
-the plate would pay for itself.
+**A plate is found by signature, not by a regular expression** (`plates.go`, `Pattern.Find`).
+A plate has no leading literal for RE2 to scan for — it opens on a digit or a letter class,
+so every position is a candidate — and each country's expression cost 5–10ms per 88KB of
+`docs/testCorpus.txt`. Measured over that text with the 48 shapes Europe issues: 179ms as
+one expression per shape, 10.7ms as a single alternation, 1.0ms as one pass that splits the
+text into runs of letters and digits, joins up to four across a single space or dash, and
+looks the result's *signature* up in a set — `LL-DDD-LL` for the French plate dashed,
+`LLDDDLL` run together. The pass costs the same whatever the number of signatures. The five
+plate patterns of `fr`, `gb`, `es` and `be` went from 20ms to 6ms.
+
+**Two countries that write a plate the same way share a signature, and that is not a
+conflict.** Each one's pattern claims the span, the value is masked once, and overlap
+arbitration hands it to the country loaded first. What a signature cannot say — which
+letters a country issues, a province, an age — is the pattern's `Verify`, as for any other
+pattern, and `TestAFindPatternIsFilteredLikeAnExpression` holds that the allow list, the
+`Verify` and placement all still apply to a span the pass found.
+
+The separators still have to agree, and a signature says so by having no entry for the
+mixed form. Case is read whole — upper or lower, never mixed — and `plateFinder` takes an
+`upperOnly` for a notation whose lowercase form is any reference code (the Spanish
+provincial plate). The `TODO` on `plateFinder` names the ceiling: one pass per pattern, so
+about 1ms per 88KB for every plate notation a deployment loads, and one pass shared by
+every loaded country is the upgrade.
 
 #### `GenericSecretCheck`, and the premise that fails in a repository
 
@@ -663,8 +681,9 @@ ever is.
 ## The catalogue: patterns
 
 `pii.Pattern` (`pkg/pii/pattern.go:12`) is one recognisable shape plus its category,
-`Label`, `Locale`, `Group`, `Refine` and a per-pattern `Verify` (nil for almost every
-pattern — see the checksum section for the two that carry one). Pattern files: `patterns_fr.go`,
+`Label`, `Locale`, `Group`, `Refine`, a per-pattern `Verify` (nil for almost every
+pattern — see the checksum section), and `Find`, which replaces the regular expression
+for the licence plates alone (see `PlateCheck` above). Pattern files: `patterns_fr.go`,
 `patterns_gb.go`, `patterns_us.go`, `patterns_intl.go`, `patterns_secret.go`.
 
 **Order within a set is correctness, not taste.** The first pattern to claim a literal
