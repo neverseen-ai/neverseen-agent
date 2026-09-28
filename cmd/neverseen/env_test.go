@@ -8,6 +8,7 @@ import (
 
 	"github.com/neverseen-ai/neverseen-agent/internal/detector"
 	"github.com/neverseen-ai/neverseen-agent/internal/proxy"
+	"github.com/neverseen-ai/neverseen-agent/pkg/pii"
 )
 
 // The documented configuration and the code have to agree, in both directions.
@@ -86,5 +87,28 @@ func TestUsageNamesEverySetting(t *testing.T) {
 		if !strings.Contains(usage, want) {
 			t.Errorf("the usage does not show %q", want)
 		}
+	}
+}
+
+// The locale codes are wrapped rather than printed on one line, and wrapping must
+// not lose one, run a line past the width, or leave a space at the end of one.
+func TestTheLocaleCodesAreWrappedWhole(t *testing.T) {
+	codes := pii.LocaleCodes()
+	got := wrapList(codes, usageColumn, usageWidth)
+
+	for i, line := range strings.Split(got, "\n") {
+		width := len(line)
+		if i == 0 {
+			width += usageColumn
+		}
+		if width > usageWidth {
+			t.Errorf("line %d runs to column %d, past %d: %q", i, width, usageWidth, line)
+		}
+		if strings.HasSuffix(line, " ") {
+			t.Errorf("line %d ends on a space: %q", i, line)
+		}
+	}
+	if joined := strings.Join(strings.Fields(strings.ReplaceAll(got, ",", " ")), ","); joined != strings.Join(codes, ",") {
+		t.Errorf("the wrapped list reads %q, want every code in order", joined)
 	}
 }

@@ -74,9 +74,10 @@ While it runs, %s/test shows what would be masked — your own
 text, both representations side by side, in this agent's configuration.
 
 Configuration:
-  %-28s which country pattern sets to load: %s,
-                               %s (every European one), none, or a
+  %-28s which country pattern sets to load: a country
+                               code, %s (every European one), none, or a
                                comma-separated list. Unset means none.
+                               Codes: %s.
   %-28s values never to mask, separated by commas.
   %-28s what a masked value looks like: token or fake.
   %-28s weakest named secret to mask: weak, medium or strong.
@@ -208,12 +209,44 @@ func runStatus(stdout io.Writer) error {
 // printUsage names the settings from the constants the code actually reads, and
 // the locales from the registry. Anything written out by hand here goes stale the
 // first time one of them is renamed, and a wrong instruction is worse than none.
+// usageColumn is where the usage text's descriptions start, and usageWidth the
+// line it keeps to.
+const (
+	usageColumn = 31
+	usageWidth  = 80
+)
+
+// wrapList joins items with ", ", breaking the line before it passes width and
+// indenting each continuation to column indent. The locale codes are why: there
+// are forty-two, and on one line the usage ran to two hundred columns.
+func wrapList(items []string, indent, width int) string {
+	var b strings.Builder
+	col := indent
+	for i, item := range items {
+		sep := ", "
+		if i == len(items)-1 {
+			sep = ""
+		}
+		if i > 0 && col+len(item)+len(sep) > width {
+			// The separator's space stays on no line: trailing whitespace in
+			// --help is what an editor strips and a diff then shows.
+			line := strings.TrimRight(b.String(), " ")
+			b.Reset()
+			b.WriteString(line + "\n" + strings.Repeat(" ", indent))
+			col = indent
+		}
+		b.WriteString(item + sep)
+		col += len(item) + len(sep)
+	}
+	return strings.TrimRight(b.String(), " ")
+}
+
 func printUsage(w io.Writer) {
 	listen := "http://" + proxy.DefaultListen
 	fmt.Fprintf(w, usage,
 		defaultTraceDir,
 		listen, listen, listen,
-		detector.EnvLocale, strings.Join(pii.LocaleCodes(), ", "), pii.LocaleEurope,
+		detector.EnvLocale, pii.LocaleEurope, wrapList(pii.LocaleCodes(), usageColumn+len("Codes: "), usageWidth),
 		detector.EnvAllowList,
 		detector.EnvSubstitution,
 		detector.EnvSecretLevel,
@@ -330,7 +363,8 @@ func printRevealBanner(w io.Writer, agent *proxy.Agent, reveal bool) {
 	fmt.Fprintf(w, "  substitution: %s\n", state.Substitution)
 	if len(state.Locales) == 0 {
 		fmt.Fprintf(w, "\n  Nothing will be masked: no country pattern set is loaded. Set %s\n", detector.EnvLocale)
-		fmt.Fprintf(w, "  to one of %s before trusting an empty console.\n", strings.Join(pii.LocaleCodes(), ", "))
+		fmt.Fprintf(w, "  to a country code or %s before trusting an empty console — one of\n  %s.\n",
+			pii.LocaleEurope, wrapList(pii.LocaleCodes(), 2, usageWidth))
 	}
 
 	fmt.Fprint(w, "\nIn another terminal, run your tool through it:\n\n")

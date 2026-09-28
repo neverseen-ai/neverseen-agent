@@ -350,10 +350,11 @@ write_config() {
     cat > "$CONFIG_FILE" <<'EOF'
 # Neverseen agent configuration. See .env.example for every variable.
 
-# Which country's identifiers to look for: fr, gb, us, none, or a comma-separated
-# mix. There is no sensible default — scanning one country's data with another
-# country's patterns is worse than scanning none of it — so set this before you
-# rely on the agent for anything.
+# Which country's identifiers to look for: a country code (fr, gb, us, de, es,
+# it, … — `neverseen -h` lists them all), eu for every European country, none,
+# or a comma-separated mix such as eu,us. There is no sensible default — scanning
+# one country's data with another country's patterns is worse than scanning none
+# of it — so set this before you rely on the agent for anything.
 NEVERSEEN_PII_LOCALE=
 
 # Loopback only. Do not widen this: the agent forwards whatever credential its

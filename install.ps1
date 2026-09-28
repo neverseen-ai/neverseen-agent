@@ -96,8 +96,10 @@ function Write-Config {
     @'
 # Neverseen agent configuration. Every variable is documented in .env.example.
 
-# Which country pattern sets to load: fr, gb, us, none, or a comma-separated list.
-# Unset means none, which is an agent that answers and recognises almost nothing.
+# Which country pattern sets to load: a country code (fr, gb, us, de, es, it, ...
+# - `neverseen -h` lists them all), eu for every European country, none, or a
+# comma-separated list such as eu,us. Unset means none, which is an agent that
+# answers and recognises almost nothing.
 NEVERSEEN_PII_LOCALE=
 
 NEVERSEEN_LISTEN=127.0.0.1:9787
