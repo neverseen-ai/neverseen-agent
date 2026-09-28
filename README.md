@@ -14,21 +14,68 @@ The model never sees the data. You never see a placeholder.
 [![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)](#install)
 [![Licence](https://img.shields.io/badge/licence-FSL--1.1--ALv2-blue)](LICENSE.md)
 
+![One exchange seen from both sides: on the workstation the request carries a real
+email, phone, social security number, company registration and IBAN, and an
+Anthropic key; what the provider receives carries stand-ins for each and a bracket
+token for the key. The model's reply comes back with the original values put back
+in.](docs/images/round-trip.png)
+
+*The same exchange, twice — what you wrote, and what left the machine. The personal
+data travels as stand-ins (`fake` mode, which reads to the model as prose); the
+credential takes a bracket token, because a stand-in that looks like a working key
+is a thing somebody will try to use. The answer arrives with your own values in it.*
+
+In the blocks below, red is your own values and green is everything the provider
+ever saw.
+
 ```diff
   # what you typed
 - The worker at 10.42.7.19 can't reach
 - redis://cache:s3cr3t-pa55w0rd@10.42.7.30:6379/0, and ops-oncall@acme-corp.io
 - is getting paged. STRIPE_SECRET_KEY=sk_live_51H8xQ2eZvKYlo2C9mVqTnBw3fLp
 
-  # what actually left the machine
+  # what left the machine — token mode, the default
 + The worker at [IP_1] can't reach redis://[CONN_STR_1], and [EMAIL_1] is
 + getting paged. STRIPE_SECRET_KEY=[STRIPE_KEY_1]
+
+  # what left the machine — fake mode, which reaches the model as prose
++ The worker at 192.0.2.0 can't reach redis://[CONN_STR_1], and
++ contact1@example.org is getting paged. STRIPE_SECRET_KEY=[STRIPE_KEY_1]
 ```
 
-*Not a mock-up: that is the real output of `neverseen scan` and `POST /mask` on
-that exact input — four categories, one pass. Step 1 below reproduces it on your
-own text. The answer comes back with your values put back in, so what you read in
-your terminal is what you wrote.*
+The credential keeps its bracket token in **both** modes. That is not a gap in the
+stand-in generator: a credential never gets one, because a stand-in that looks like
+a working key is a thing somebody will try to use.
+
+Then the model answers, and the two modes converge:
+
+```diff
+  # what the model wrote back — token mode
++ [IP_1] cannot open a socket to [CONN_STR_1], so the page to [EMAIL_1] is a
++ symptom rather than the fault. Rotate [STRIPE_KEY_1] once the link is back.
+
+  # what the model wrote back — fake mode
++ 192.0.2.0 cannot open a socket to [CONN_STR_1], so the page to
++ contact1@example.org is a symptom rather than the fault. Rotate
++ [STRIPE_KEY_1] once the link is back.
+
+  # what you read in your terminal — byte for byte the same in both modes
+- 10.42.7.19 cannot open a socket to cache:s3cr3t-pa55w0rd@10.42.7.30:6379/0,
+- so the page to ops-oncall@acme-corp.io is a symptom rather than the fault.
+- Rotate sk_live_51H8xQ2eZvKYlo2C9mVqTnBw3fLp once the link is back.
+```
+
+**The mode changes what the provider sees, never what you read.** Stand-ins are
+expanded on the way back exactly as tokens are, so `fake` is not a one-way trade of
+legibility against restoration — it buys prose the model reads as prose, and costs
+nothing at the other end.
+
+*Not a mock-up: every masked and every restored line above is the real output of
+`POST /mask` and `POST /unmask` on that exact input — four categories, one pass,
+`NEVERSEEN_PII_LOCALE=fr,gb,us`. Only the model's two sentences are written here
+rather than generated, since quoting a real one would pin this page to one
+provider's wording on one day. Step 1 below reproduces the masking half on your own
+text.*
 
 Nothing to rewrite in your prompts. Nothing to remember. One environment
 variable and the tool you already run.
@@ -201,7 +248,7 @@ directions, so the file cannot go stale.
 | Variable | What it does | Default |
 |---|---|---|
 | `NEVERSEEN_PII_LOCALE` | Which country's identifiers to look for: `fr`, `gb`, `us`, and a code per European country (`es`, `de`, `it`, … — `.env.example` lists all forty-one), `eu` (every European one, the UK included), `none`, or a comma-separated mix | none |
-| `NEVERSEEN_PII_SUBSTITUTION` | `token` → `[EMAIL_1]`, restored in the answer · `fake` → a stand-in that reads as prose | `token` |
+| `NEVERSEEN_PII_SUBSTITUTION` | `token` → `[EMAIL_1]` · `fake` → a stand-in that reads as prose. Both are restored in the answer; the mode decides what an *un*restored value would look like | `token` |
 | `NEVERSEEN_PII_ALLOWLIST` | Values never to mask — the escape hatch for your own office address or fleet ids | — |
 | `NEVERSEEN_SECRET_LEVEL` | How far down the strength scale a *named* secret is masked: `weak`, `medium`, `strong`. Prefixed keys are masked at every level | `weak` |
 | `NEVERSEEN_LISTEN` | Address to listen on | `127.0.0.1:9787` |
