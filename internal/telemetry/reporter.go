@@ -390,8 +390,8 @@ func (r *Reporter) collectAt(at time.Time) {
 // On the interval, and not on the snapshot: a process to spawn every thirty
 // seconds is more than the figure is worth. Looked up every time rather than
 // once, so an rtk installed or removed while the agent runs is noticed at the next
-// bucket instead of at the next restart. A failure costs the window's figure,
-// never the bucket.
+// bucket instead of at the next restart. A failure costs the figure for as long
+// as it lasts, and the first window after it, never the bucket.
 //
 // rtk counts as present only once it has answered with a reading. Any executable
 // called rtk is otherwise enough — the Rust Type Kit shares the name — and a
@@ -411,6 +411,12 @@ func (r *Reporter) readRTK() telemetry.RTK {
 	var delta telemetry.RTK
 	if err == nil {
 		delta, err = r.rtk.add(out, r.now())
+	}
+	if err != nil {
+		// A fresh baseline, for the reason a wake takes one: the failure has no
+		// reading to cut the period at, so the next reading would difference two
+		// hours of rtk against the last good one and file them as one window.
+		r.rtk = rtkTally{}
 	}
 	r.rtkFound = err == nil
 	switch {

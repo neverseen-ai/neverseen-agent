@@ -452,3 +452,48 @@ func TestGainBoundsWhatRTKPrints(t *testing.T) {
 		t.Errorf("error %v, want the output refused", err)
 	}
 }
+
+// A reading after rtk failed is a baseline, like one after a sleep. The failure
+// has no reading of its own to cut the period at, so what rtk recorded while it
+// failed cannot be told from what it recorded since — and differenced against
+// the reading before the failure, two hours of rtk were filed as one window.
+func TestRTKAfterAFailureIsInNoWindow(t *testing.T) {
+	b := newBackend(t)
+	now := epoch
+	r := NewRecorder(now)
+	rep, _ := reporterInHome(t, b, r, t.TempDir(), func() time.Time { return now })
+
+	type reading struct {
+		out []byte
+		err error
+	}
+	readings := []reading{
+		{out: gainOf("2026-09-25:10:1000:100")},
+		{err: errors.New("database is locked")},
+		{out: gainOf("2026-09-25:40:9000:900")}, // two hours of use later
+		{out: gainOf("2026-09-25:41:9100:910")},
+	}
+	rep.gain = func(context.Context) ([]byte, bool, error) {
+		next := readings[0]
+		readings = readings[1:]
+		return next.out, true, next.err
+	}
+
+	for range 4 {
+		rep.collect()
+		now = now.Add(5 * time.Minute)
+	}
+
+	buckets := rep.queue.buckets
+	if len(buckets) != 4 {
+		t.Fatalf("queued %d buckets, want four", len(buckets))
+	}
+	if buckets[2].Counters.RTK != (telemetry.RTK{}) {
+		t.Errorf("the first window after the failure carries %+v: what rtk recorded while it "+
+			"failed, filed as five minutes", buckets[2].Counters.RTK)
+	}
+	if want := (telemetry.RTK{Commands: 1, Input: 100, Output: 10}); buckets[3].Counters.RTK != want {
+		t.Errorf("the window after that carries %+v, want only what followed it, %+v",
+			buckets[3].Counters.RTK, want)
+	}
+}

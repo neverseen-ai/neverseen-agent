@@ -181,6 +181,13 @@ var errNoDailyRows = errors.New("rtk printed no daily rows")
 // some days. A day's row, grouped by rtk on the UTC date, only grows until that
 // date is over, and the purge only ever reaches days long finished.
 //
+// The UTC date is measured, not assumed: against rtk 0.43.0's own history, the
+// commands run between midnight and 2am in Paris are in the row for the UTC day
+// before, on every day that had some. readOn is a UTC date for that reason. An
+// rtk that grouped by the local date would have a user west of UTC lose the
+// first commands of each evening to the branch below that reads an unknown past
+// day as a clock gone back.
+//
 // TODO: the first reading of a process is a baseline and counts nothing, so what
 // rtk did while the agent was stopped — or since the last bucket, after a hard
 // kill — is never reported. Keeping the last reading beside the queue on disk

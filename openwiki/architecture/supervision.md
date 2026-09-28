@@ -154,8 +154,11 @@ reporter built by a test reads nothing and no rtk on the machine running it can 
 an assertion.
 
 **The daily rows, never the summary.** rtk deletes its history past ninety days each
-time it records a command, so its totals fall; a day's row (UTC) only grows until the
-date is over. `rtkTally` subtracts each day's last reading, treats a shrinking day as a
+time it records a command, so its totals fall; a day's row only grows until the date is
+over. The date is **UTC, measured**: against rtk 0.43.0's own history, the commands run
+between midnight and 2am in Paris are in the previous UTC day's row. An rtk that grouped by
+local date would break the rule below for anyone west of UTC, which is why the comment on
+`rtkTally` names it. `rtkTally` subtracts each day's last reading, treats a shrinking day as a
 new baseline (`rtk gain --reset`, or the purge trimming the oldest day) and treats a
 day that shrank in **any** of its three figures as a new baseline (after a reset, the
 command count can come back to where it was while the tokens do not), ignores a row for
@@ -171,7 +174,9 @@ the name, and a workstation running it was reported as running this one. A failu
 logged when it starts and when it ends, not every interval. rtk disappearing resets the
 tally. **A wake re-baselines**: what rtk recorded since the last bucket spans the gap and
 cannot be split, so it is dropped rather than filed into a window that ended before it
-(`TestRTKAcrossASleepIsInNoWindow`). The
+(`TestRTKAcrossASleepIsInNoWindow`). **So does a failure**, for the same reason: it has no
+reading to cut the period at, and the next good one, differenced against the last, filed two
+hours of rtk as five minutes (`TestRTKAfterAFailureIsInNoWindow`). The
 saving is `Input − Output` and is not sent, so the two sides cannot disagree about it.
 
 **Found, not configured**, and looked up at every bucket so an install is noticed
