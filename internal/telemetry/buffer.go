@@ -261,6 +261,14 @@ func (b *buffer) takeDropped() int {
 // TODO: what a hard kill costs is bounded by snapshotInterval rather than zero —
 // counters recorded after the last snapshot are gone. Driving it to zero means
 // writing on every request, which is a cost the request path should not pay.
+//
+// The queue is written before the live file is removed, and the order is the trade.
+// A hard kill between the two leaves the closed bucket in the queue and its last
+// snapshot still live, and the next start files both: their windows end at
+// different instants, so the backend's (agent, window) key cannot see the
+// duplicate. Reversed, the same kill loses a whole bucket. One bucket counted twice,
+// two syscalls wide, is kept over one lost, because over-reporting shows on a
+// dashboard and a gap reads as a quiet five minutes.
 func (b *buffer) save() error {
 	// Nothing queued and no loss to declare: the file goes, so an agent whose
 	// backend is answering leaves nothing behind for the next start to re-file.
