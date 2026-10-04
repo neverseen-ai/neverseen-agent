@@ -102,8 +102,10 @@ var (
 // unitedStatesFakes are the US stand-ins. Each lives in a range its issuer
 // never allocates — a social security area of 000, a Federal Reserve district
 // that does not exist, an unassigned ZIP, and the 555-01xx block the FCC
-// reserves for fiction — so none of them can be anybody's real value, and this
-// catalogue's own checks reject them rather than masking them twice.
+// reserves for fiction — so none of them can be anybody's real value. The
+// checksummed ones also fail their own check; the others keep a shape the
+// detector still reads, and which of them it finds again, and why that is
+// acceptable, is recorded in detector.TestStandInsADetectorFindsAgain.
 var unitedStatesFakes = map[Category]Generator{
 	// Month first, which is this locale's reading of a date and nobody else's. Its
 	// own generator for exactly that reason: the shared one rendered day-first, so
