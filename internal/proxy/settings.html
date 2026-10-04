@@ -283,8 +283,8 @@ async function send(change) {
       // carried, and a page that put its own request back on screen would show a
       // state the agent is not in.
       fail(await reply.text());
-      return wireTabs();
-load();
+      await load();
+      return;
     }
     banner("");
     draw(await reply.json());
