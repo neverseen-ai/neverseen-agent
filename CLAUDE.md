@@ -82,6 +82,12 @@ and it is deliberately not repeated here.
   request; dropped by `Forget` with the mapping.
   `TestATokenTheModelRemembersSurvivesAnExpiredMapping`,
   `TestConcurrentClaimsGiveOneValueOneName`.
+- **A name the body already carries as text is never minted** (`Pass.Carried`, set by
+  `Server.newPass` for both routes; skipped in `vault.Name` and on the detector's own
+  counter). The model writes placeholders in the shape it sees, ahead of the
+  numbering, and the history sends them back: minted, one string stands for two
+  things and the placeholder is restored as the value.
+  `TestAMintedNameIsNeverOneTheBodyAlreadyCarries`.
 - **A restart never hands a remembered name to another value, and gives the remembered
   ones back.** Each session numbers on its own (`vault.next`), and its book — numbering
   and names keyed by fingerprint, never a value — is resumed from `~/.neverseen/names.json`,

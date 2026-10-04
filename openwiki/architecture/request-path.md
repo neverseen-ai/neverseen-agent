@@ -243,6 +243,20 @@ known requirement (Redis, for a mapping surviving a restart) rather than a specu
   mode change would hand a value back the shape just switched away from. A restart loses
   them, as it loses the mapping; the `TODO` on `Memory` says what a shared store would
   have to carry.
+- **A name the body already carries as text is never handed to a value**
+  (`detector.Pass.Carried`, set by `Server.newPass` for the request path and `/mask`
+  alike). The model writes placeholders in the shape it sees: on 14 September, with a
+  session's numbering at `[MONGOID_2]`, it wrote a test fixture holding `[MONGOID_3]` to
+  `[MONGOID_6]`, the tool kept them as text, and the next request minted `[MONGOID_3]`
+  for a real identifier. From then on one string stood for two things in what the model
+  read, and an answer naming the placeholder would have come back restored as the real
+  value — none did that day, and the test shows that one would. So the index whose rendering
+  the body already holds is skipped, in `vault.Name` and on the detector's own counter
+  alike, and for good: the numbering only moves forward. Searched in the raw body,
+  where a token cannot be escaped; a `TODO` names the ceiling — a stand-in a client
+  wrote escaped is not found (`TestAMintedNameIsNeverOneTheBodyAlreadyCarries`,
+  `TestMaskNeverMintsANameTheTextsCarry`). Found by replaying traces
+  (`.claude/skills/trace-replay`).
 - **A restart never hands a remembered name to another value** (`vault.next`, behind
   `vault.Name`). The counters were process-wide and started again at 1
   with every process: a conversation running through a restart remembered `[PLATE_1]` as

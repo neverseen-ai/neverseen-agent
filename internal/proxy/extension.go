@@ -6,6 +6,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"slices"
+	"strings"
 
 	"github.com/neverseen-ai/neverseen-agent/internal/detector"
 )
@@ -79,7 +81,9 @@ func (s *Server) handleMask(w http.ResponseWriter, r *http.Request) {
 	// to be: /mask and /unmask for one conversation must name the same session, or
 	// the expansion finds nothing.
 	session := sessionOf(r)
-	pass := s.newPass(session)
+	pass := s.newPass(session, func(name string) bool {
+		return slices.ContainsFunc(req.Texts, func(text string) bool { return strings.Contains(text, name) })
+	})
 
 	out := make([]string, len(req.Texts))
 	count := 0

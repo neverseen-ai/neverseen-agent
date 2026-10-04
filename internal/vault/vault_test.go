@@ -339,8 +339,8 @@ func TestForgetDropsEveryMapping(t *testing.T) {
 }
 
 // token renders an index as the bracket token the detector would, for a prefix.
-func token(prefix string) func(int64) string {
-	return func(index int64) string { return fmt.Sprintf("[%s_%d]", prefix, index) }
+func token(prefix string) func(int64) (string, bool) {
+	return func(index int64) (string, bool) { return fmt.Sprintf("[%s_%d]", prefix, index), true }
 }
 
 // A value keeps its name after its session's mapping has expired.

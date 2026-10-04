@@ -367,6 +367,41 @@ func TestATokenTheModelRemembersSurvivesAnExpiredMapping(t *testing.T) {
 	}
 }
 
+// A name is never handed to a value when the body already carries it as text.
+//
+// The model writes placeholders in the shape it sees: on 14 September, with the
+// session's numbering at [MONGOID_2], it wrote a test fixture holding [MONGOID_3] to
+// [MONGOID_6]. The tool kept them as text, sent them back in the history, and the next
+// request minted [MONGOID_3] for a real identifier — one string standing for two
+// things in what the model read, and the model's own placeholder restored as the real
+// value in any answer that named it.
+func TestAMintedNameIsNeverOneTheBodyAlreadyCarries(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"text": "Le fixture garde [PLATE_1]."})
+	})
+	agent := newAgentOver(t, up, []string{"fr"}, vault.NewMemory())
+
+	const body = `{"messages":[` +
+		`{"role":"assistant","content":"const plate = '[PLATE_1]';"},` +
+		`{"role":"user","content":"Le véhicule AB-123-CD n'envoie pas de cap."}]}`
+	got := post(t, agent, "/anthropic/v1/messages", "s1", body)
+
+	bodies, _ := up.received()
+	if len(bodies) != 1 {
+		t.Fatalf("want one request upstream, got %d", len(bodies))
+	}
+	if strings.Contains(bodies[0], "AB-123-CD") {
+		t.Fatalf("the plate went out in clear; the test proves nothing: %s", bodies[0])
+	}
+	if n := strings.Count(bodies[0], "[PLATE_1]"); n != 1 {
+		t.Errorf("[PLATE_1] stands for %d things in what the model read, want only the placeholder: %s", n, bodies[0])
+	}
+	if strings.Contains(got.body, "AB-123-CD") {
+		t.Errorf("the model's placeholder was restored as the real plate: %s", got.body)
+	}
+}
+
 // startFromEnv assembles the agent as the command does — FromEnv — in front of up,
 // keeping its session book in names and nothing else of the operator's. Called twice
 // on one names, it is a restart: a second assembly reading what the first one wrote.

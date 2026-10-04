@@ -129,6 +129,22 @@ func TestMaskReusesASessionsExistingTokens(t *testing.T) {
 	}
 }
 
+// A pass with no caller naming its values skips a name the text already carries on
+// the detector's own counter, as vault.Name does on the session's — the guard is the
+// pass's, not the vault's.
+func TestAPassNeverMintsANameTheTextCarries(t *testing.T) {
+	d := New(Config{})
+	text := "écrire à paul@example.fr, gabarit [EMAIL_1]"
+
+	pass := d.NewPass(nil)
+	pass.Carried = func(name string) bool { return strings.Contains(text, name) }
+	got, _ := d.Mask(text, pass)
+
+	if strings.Count(got, "[EMAIL_1]") != 1 || !strings.Contains(got, "[EMAIL_2]") {
+		t.Errorf("masked %q, want paul@example.fr past the [EMAIL_1] the text carries", got)
+	}
+}
+
 // A pass given a naming function names every value its mapping does not hold
 // through it, once per value, and hands every name back to be stored — a recalled
 // name too, because the mapping that expired has to learn it again. The detector's
@@ -140,7 +156,7 @@ func TestAPassNamesThroughItsCaller(t *testing.T) {
 
 	pass := d.NewPass(nil)
 	asked := map[string]int{}
-	pass.Name = func(original, prefix string, render func(int64) string) string {
+	pass.Name = func(original, prefix string, render func(int64) (string, bool)) string {
 		asked[original]++
 		if prefix != "EMAIL" {
 			t.Errorf("asked for prefix %q, want EMAIL", prefix)
@@ -148,7 +164,8 @@ func TestAPassNamesThroughItsCaller(t *testing.T) {
 		if original == "claire@example.fr" {
 			return "[EMAIL_381]" // named before the mapping expired
 		}
-		return render(12)
+		masked, _ := render(12)
+		return masked
 	}
 	got, _ := d.Mask("écrire à claire@example.fr et à paul@example.fr, copie claire@example.fr", pass)
 

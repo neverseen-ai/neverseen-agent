@@ -267,8 +267,10 @@ func (v *Vault) Save(session string, entries map[string]string) error {
 // a pause, which a renumbering broke from the first value it renamed.
 //
 // render runs under the lock; it is the substitution mode applied to an index, and
-// takes no lock of its own.
-func (v *Vault) Name(session, original, prefix string, render func(index int64) string) string {
+// takes no lock of its own. It reports false for a name the text being masked already
+// carries (detector.Pass.Carried), and that index is skipped for good: the numbering
+// only moves forward, so the session never comes back to it.
+func (v *Vault) Name(session, original, prefix string, render func(index int64) (string, bool)) string {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	fingerprint := v.fingerprint(session, original)
@@ -283,7 +285,10 @@ func (v *Vault) Name(session, original, prefix string, render func(index int64) 
 	if _, ok := v.active[session]; !ok {
 		v.active[session] = time.Now()
 	}
-	masked := render(v.next(session, prefix))
+	var masked string
+	for ok := false; !ok; {
+		masked, ok = render(v.next(session, prefix))
+	}
 	v.names[fingerprint] = name{masked: masked, session: session}
 	return masked
 }

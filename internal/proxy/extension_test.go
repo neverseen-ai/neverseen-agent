@@ -183,6 +183,21 @@ func TestMaskGivesOneValueOneIdentityAcrossFields(t *testing.T) {
 	}
 }
 
+// The extension's half of TestAMintedNameIsNeverOneTheBodyAlreadyCarries: a name one
+// of the texts already carries is not handed out, whichever text carries it.
+func TestMaskNeverMintsANameTheTextsCarry(t *testing.T) {
+	up := newUpstream(t, echoJSON)
+	agent, det := newControlledAgent(t, up, []string{"fr"})
+	det.SetSubstitution(detector.SubstitutionToken)
+
+	out := decodeReply[maskReply](t, postAs(t, agent, "/mask", testControlKey, "carried",
+		`{"texts":["mail claire@example.fr","the template says [EMAIL_1]"]}`))
+
+	if got := tokenIn(t, out.Texts[0]); got == "[EMAIL_1]" {
+		t.Fatalf("claire@example.fr was named %s, which the second text already carries", got)
+	}
+}
+
 // TestUnmaskRestoresATokenSplitAcrossTwoCalls is the protocol's whole reason to
 // carry a tail.
 //

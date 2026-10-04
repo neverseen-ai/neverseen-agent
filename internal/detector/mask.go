@@ -52,7 +52,18 @@ type Pass struct {
 	// into minted either way, because the mapping has to learn it. Left nil by the
 	// passes that store nothing — the test page, scan, replay — which keep the
 	// detector's process-wide counters.
-	Name func(original, prefix string, render func(index int64) string) string
+	//
+	// render reports false for a name that may not be handed out — one Carried
+	// says the text already holds — and the caller moves on to the next index.
+	Name func(original, prefix string, render func(index int64) (string, bool)) string
+
+	// Carried, when set, reports whether the text being masked already holds a
+	// replacement as text, so no value is given that name. The model writes
+	// placeholders in the shape it sees — [MONGOID_3] in a test fixture, with the
+	// session's numbering at 2 — and the tool sends them back in the history: minted
+	// for a real value, that string stood for two things in what the model read,
+	// and an answer naming the placeholder would come back restored as the value.
+	Carried func(replacement string) bool
 
 	// counts is how many values were replaced per category, repeats included.
 	//
@@ -90,13 +101,18 @@ func (p *Pass) mask(cat pii.Category, locale, original string) string {
 		return masked
 	}
 
+	render := func(index int64) (string, bool) {
+		masked := p.d.render(cat, locale, index)
+		return masked, p.Carried == nil || !p.Carried(masked)
+	}
 	var masked string
 	if p.Name != nil {
-		masked = p.Name(original, pii.Prefix(cat), func(index int64) string {
-			return p.d.render(cat, locale, index)
-		})
+		masked = p.Name(original, pii.Prefix(cat), render)
 	} else {
-		masked = p.d.render(cat, locale, p.d.nextIndex(cat))
+		// Ends: a text carries finitely many names.
+		for ok := false; !ok; {
+			masked, ok = render(p.d.nextIndex(cat))
+		}
 	}
 
 	p.byValue[original] = masked

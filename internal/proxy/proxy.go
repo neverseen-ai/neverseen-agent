@@ -9,6 +9,7 @@
 package proxy
 
 import (
+	"bytes"
 	"compress/gzip"
 	"context"
 	"encoding/json"
@@ -455,9 +456,13 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request) {
 // does not reset — claimed in one step, so two requests in flight cannot give one
 // value two names (vault.Name). One constructor for every route that stores what it
 // masks, so the extension and the request path cannot disagree about a value's name.
-func (s *Server) newPass(session string) *detector.Pass {
+//
+// carried reports whether the text about to be masked already holds a name as text,
+// so none is handed to a value (detector.Pass.Carried).
+func (s *Server) newPass(session string, carried func(string) bool) *detector.Pass {
 	pass := s.det.NewPass(s.vault.Load(session))
-	pass.Name = func(original, prefix string, render func(int64) string) string {
+	pass.Carried = carried
+	pass.Name = func(original, prefix string, render func(int64) (string, bool)) string {
 		return s.vault.Name(session, original, prefix, render)
 	}
 	return pass
@@ -483,7 +488,13 @@ func (s *Server) maskRequest(session, provider string, r *http.Request) (*traceR
 		return nil, session, err
 	}
 
-	pass := s.newPass(session)
+	// Searched in the raw body, where a token is written as it reads: none of its
+	// characters is one JSON escapes. Once per name minted, under the vault's lock
+	// (render runs there), so each first sighting costs one scan of the body.
+	// TODO: a stand-in a client wrote escaped (`\u00e9`) is not found, so fake mode can
+	// still hand out a name the body carries. The upgrade is to search the decoded
+	// strings, once a fake-mode collision is seen.
+	pass := s.newPass(session, func(name string) bool { return bytes.Contains(body, []byte(name)) })
 
 	// Decoded once, here, because two things read the document: the exemption
 	// below, from one member of it, and the masking, over every string in it.
