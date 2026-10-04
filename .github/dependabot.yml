@@ -1,0 +1,12 @@
+# The actions in .github/workflows are pinned to commits, so nothing moves under a
+# job by itself; this is what keeps the pins from going stale instead. Weekly, one
+# pull request per action, each reviewed like any other change to what CI runs.
+#
+# The golangci-lint and goreleaser versions inside the workflows are inputs, not
+# dependencies, and nothing here raises them: they are bumped by hand.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
