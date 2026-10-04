@@ -28,8 +28,8 @@ cases:
     expect:
       - {category: LICENSE_PLATE, value: "GH-34-567"}
 
-  - id: dk-prec-postcode
-    text: "Ship to DK 28000 by Friday."
+  - id: dk-prec-reference
+    text: "Order PO 48213 was approved."
     expect: []
 
   - id: dk-prec-no-word
