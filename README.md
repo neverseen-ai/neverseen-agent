@@ -1,6 +1,9 @@
 # Neverseen
 
-**Your prompts reach the model. Your data does not.**
+**AI never sees your data. It still does the work.**
+
+Your teams already use AI. Your data does not have to go with it.
+— [neverseen.info](https://neverseen.info/)
 
 Neverseen is a local agent that sits between the AI tools you already use —
 Claude Code, Cursor, Codex, a script — and the model provider. On the way out it
