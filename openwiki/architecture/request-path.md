@@ -53,14 +53,14 @@ address, took the `n` out of the `\n`, and left a lone backslash before a bracke
 request failed with "invalid escaped character". The same applies in reverse: an original
 carrying a quote or a newline cannot be spliced into raw JSON.
 
-`mapJSONStrings` (`jsonbody.go:38`) decodes, maps every string value, and re-encodes;
+`mapJSONStrings` (`jsonbody.go:39`) decodes, maps every string value, and re-encodes;
 `mapStrings` (`:54`) walks the tree. A body that is not JSON is masked as flat text
 (`proxy.go:402-411`). Either way it is **one pass over the whole body**, so a value
 repeated in two fields keeps one identity. A body carrying more than one JSON document is
-an error, not a guess (`errTrailingJSON`, `jsonbody.go:259`).
+an error, not a guess (`errTrailingJSON`, `jsonbody.go:305`).
 
 **Key order is preserved, and that took an ordered representation.** An object is
-decoded into `jsonObject` (`jsonbody.go:165`) — a slice of `jsonMember`, read a
+decoded into `jsonObject` (`jsonbody.go:211`) — a slice of `jsonMember`, read a
 token at a time by `decodeValue` (`:111`) — rather than into `map[string]any`, because a Go map
 has no order and the body forwarded to the provider came out in Go's sorted marshal
 order instead of the caller's. Semantically the same document, and nothing depended
@@ -320,7 +320,7 @@ that could be the start of a masked value and prepends it to the next piece, so 
 emits is always a whole event — occasionally a few characters shorter, with those
 characters moving to the event after it.
 
-The held-back length comes from `detector.TailLen` (`mask.go:305`), **not**
+The held-back length comes from `detector.TailLen` (`mask.go:367`), **not**
 `pii.TokenTailLen` alone: a stand-in the model echoed is split across two events exactly as
 a token is, and answering only for tokens left `fake` mode restoring nothing in a streamed
 answer while a buffered one round-tripped (`TestTailLenCoversBothShapes`).
@@ -391,7 +391,7 @@ It carries what the agent is *applying* and nothing about who is using it: no co
 addresses, no backend URL. The route is unauthenticated on the loopback interface, and
 anything richer would be a local oracle for what a person has been doing.
 
-`proxy.Query` (`status.go:207`) is the only place that asks whether the agent is there. It
+`proxy.Query` (`status.go:286`) is the only place that asks whether the agent is there. It
 returns **no error**, because "nothing is listening" is an answer to the question and not a
 failure to answer it. `Status.Masking()` is deliberately not `Answering`: an agent with no
 locale selected is up, healthy, and recognises almost nothing — the state a green light
