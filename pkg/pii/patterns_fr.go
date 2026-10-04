@@ -169,10 +169,7 @@ var franceFakes = map[Category]Generator{
 	// letters carry the index. It used to be WW, which is a real series — the
 	// temporary plates — and then OU-nnn-OU, which Albania, reading the same shape
 	// with only Q refused, took for one of its own.
-	CatLicPlate: {Capacity: 26 * 26 * 26, Make: func(i int64) string {
-		i--
-		return fmt.Sprintf("O%c-000-%c%c", 'A'+byte(i/676%26), 'A'+byte(i/26%26), 'A'+byte(i%26))
-	}},
+	CatLicPlate: euroFake("O@-000-@@"),
 }
 
 // nirKey returns the two check digits a thirteen-digit mainland body produces.

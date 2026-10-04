@@ -254,10 +254,7 @@ var unitedKingdomFakes = map[Category]Generator{
 
 	// An age of 00 is never issued, and Z is never a region letter, so the
 	// pattern cannot read this back and no car carries it.
-	CatLicPlate: {Capacity: 26 * 26 * 26, Make: func(i int64) string {
-		i--
-		return fmt.Sprintf("ZZ00 %c%c%c", 'A'+byte(i/676%26), 'A'+byte(i/26%26), 'A'+byte(i%26))
-	}},
+	CatLicPlate: euroFake("ZZ00 @@@"),
 
 	// The pseudo-postcode again, so the stand-in address cannot be a place
 	// either.

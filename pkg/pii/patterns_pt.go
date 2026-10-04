@@ -1,7 +1,5 @@
 package pii
 
-import "fmt"
-
 // The Portuguese set. For now it is the licence plate alone; the NIF, which
 // carries a check digit, is the next entry here.
 //
@@ -19,10 +17,7 @@ var ptPlateFind = plateFinder(false, "LL-DD-LL", "DD-LL-DD", "DD-DD-LL", "LL-DD-
 // portugalFakes are the Portuguese stand-ins: the pair 00 is never issued, and
 // spaced, no country's pattern reads the shape at all.
 var portugalFakes = map[Category]Generator{
-	CatLicPlate: {Capacity: 26 * 26 * 26, Make: func(i int64) string {
-		i--
-		return fmt.Sprintf("A%c 00 %c%c", 'A'+byte(i/676%26), 'A'+byte(i/26%26), 'A'+byte(i%26))
-	}},
+	CatLicPlate: euroFake("A@ 00 @@"),
 }
 
 // PortugalPatterns returns the Portuguese set. No letter rule: since 2020 every

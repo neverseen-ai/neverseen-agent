@@ -1,9 +1,6 @@
 package pii
 
-import (
-	"fmt"
-	"strings"
-)
+import "strings"
 
 // The German set. For now it is the licence plate alone.
 //
@@ -109,10 +106,7 @@ func GermanPlateCheck(value string) bool {
 // germanyFakes are the German stand-ins. The number 0 is never issued, so the
 // pattern cannot read this back and nobody's car carries it.
 var germanyFakes = map[Category]Generator{
-	CatLicPlate: {Capacity: 26 * 26 * 26, Make: func(i int64) string {
-		i--
-		return fmt.Sprintf("M-%c%c 0%c", 'A'+byte(i/676%26), 'A'+byte(i/26%26), 'A'+byte(i%26))
-	}},
+	CatLicPlate: euroFake("M-@@ 0@"),
 }
 
 // GermanyPatterns returns the German set.
