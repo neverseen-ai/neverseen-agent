@@ -44,16 +44,10 @@ func SpainPatterns() []Pattern {
 // esProvinces are the codes the 1971–2000 plates open on, with the renamings
 // both ways round — GE and GI for Girona, OR and OU for Ourense, PM and IB for
 // the Balearics — because a car keeps the plate it was issued.
-var esProvinces = func() map[string]bool {
-	out := make(map[string]bool)
-	for _, code := range strings.Fields(`
+var esProvinces = plateCodes(`
 		A AB AL AV B BA BI BU C CA CC CE CO CR CS CU GC GE GI GR GU H HU IB J L
 		LE LO LU M MA ML MU NA O OR OU P PM PO S SA SE SG SO SS T TE TF TO V VA
-		VI Z ZA`) {
-		out[code] = true
-	}
-	return out
-}()
+		VI Z ZA`)
 
 // SpanishPlateCheck reports whether a national plate's letters are ones the
 // series is issued from: twenty, no vowel, no Ñ, no Q. It is the plate's strongest
@@ -77,17 +71,11 @@ func ProvincialPlateCheck(value string) bool {
 // Asked by the placement rule, never used to drop a value outright: GBP is a
 // series Spain has issued, and a plate on it named as one ("matrícula 1500 GBP")
 // is still somebody's car.
-var esAmountSuffixes = func() map[string]bool {
-	out := make(map[string]bool)
-	for _, code := range strings.Fields(`
+var esAmountSuffixes = plateCodes(`
 		BBD BDT BGN BHD BMD BND BSD BTN BWP BYN BZD CDF CHF CHW CLP CNY CZK DKK
 		FJD FKP GBP GHS GMD GNF GYD HKD HNL HTG JMD JPY KGS KHR KMF KPW KRW KYD
 		KZT LBP LKR LRD LSL LYD MDL MKD MMK MNT MWK MXN MXV MZN NGN NPR NZD PGK
 		PHP PKR PLN PYG RSD RWF SBD SDG SGD SHP SLL SRD SSP STN SVC SYP SZL THB
 		TJS TMT TTD TWD TZS VND WST XCD XDR XPD XPF XTS ZMW ZWG ZWL
 		KHZ MHZ GHZ THZ KWH MWH GWH RPM BPM MPH KPH KMH PPM FPS
-		GMT MST PST CST BST CDT MDT PDT HST JST KST MSK SGT WST`) {
-		out[code] = true
-	}
-	return out
-}()
+		GMT MST PST CST BST CDT MDT PDT HST JST KST MSK SGT`)
