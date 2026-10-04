@@ -112,6 +112,15 @@ that were malformed — paths are XML-escaped now, which the heredocs never did,
 home directory carrying an ampersand no longer produces a plist launchd silently
 refuses.
 
+**One change since, on purpose: no definition names `~/.neverseen/.env`.** The plist
+sourced it in a shell (`set -a; . file`) and the unit named it in `EnvironmentFile`, and
+both fail outright when the file is absent — `neverseen service install` run without
+`install.sh` — which `KeepAlive` and `Restart=always` turned into a respawn loop writing
+to `agent.log`. The agent and the icon read the file themselves (`proxy.LoadConfigFile`),
+as the Windows task always relied on, so the plists now run the binary directly and the
+unit carries no `EnvironmentFile`. Labels and paths are unchanged, so an installed job is
+replaced rather than duplicated (`TestNoDefinitionNeedsTheConfigFile`).
+
 **The agent is restarted and the icon is not**, on every platform that registers one:
 `KeepAlive` on launchd, `Restart=always` on systemd, `RestartOnFailure` on Task Scheduler,
 and none of the three for the icon.

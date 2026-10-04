@@ -19,13 +19,14 @@ import "fmt"
 //
 // # Where the configuration comes from
 //
-// Nowhere in this file, and that is what forced a change elsewhere. launchd sources
-// ~/.neverseen/.env in a shell and systemd reads it through EnvironmentFile; Task
+// Nowhere in this file, nor in the plist or the unit. launchd sourced
+// ~/.neverseen/.env in a shell and systemd read it through EnvironmentFile; Task
 // Scheduler has neither, and cmd cannot read a .env without an incantation that breaks
 // on the first value carrying a space. So the agent reads that file itself, on every
-// platform (proxy.LoadConfigFile) — which also closed a gap that was already open on
-// the other two, where `neverseen proxy` run by hand and the same binary under the
-// service read different configurations.
+// platform (proxy.LoadConfigFile) — which also closed a gap that was open on the other
+// two, where `neverseen proxy` run by hand and the same binary under the service read
+// different configurations — and the other two stopped handing it over, because both
+// refused to start when the file was absent.
 //
 // TODO: nothing collects this agent's output on Windows. The plist and the unit both
 // redirect it to ~/.neverseen/agent.log, and Task Scheduler cannot redirect. Wrapping

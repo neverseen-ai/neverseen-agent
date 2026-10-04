@@ -27,21 +27,22 @@ func renderSystemd(l Layout) []Definition {
 		// it replaces. systemd splits ExecStart on whitespace, so a --prefix or a home
 		// directory containing a space produced a unit systemd refuses to start — and
 		// the launchd side already went through quoteForShell for exactly this class.
-		// EnvironmentFile takes the path as written to the end of the line and needs
-		// no quoting; quoting it would make the quotes part of the filename.
+		// No EnvironmentFile: the agent reads ~/.neverseen/.env itself
+		// (proxy.LoadConfigFile), and systemd refuses to start a unit whose
+		// EnvironmentFile is absent — under Restart=always, a respawn loop for anybody
+		// who ran `neverseen service install` without install.sh.
 		Content: fmt.Sprintf(`[Unit]
 Description=Neverseen agent
 After=network-online.target
 
 [Service]
-EnvironmentFile=%s
 ExecStart="%s" proxy
 Restart=always
 RestartSec=5
 
 [Install]
 WantedBy=default.target
-`, escapeSystemd(l.ConfigFile), escapeSystemd(l.Binary(JobAgent))),
+`, escapeSystemd(l.Binary(JobAgent))),
 	}}
 }
 

@@ -372,7 +372,10 @@ and it is deliberately not repeated here.
   `--logs` stay in the script, because they observe and author nothing. **`Render`
   takes the platform as a field, not `runtime.GOOS`**, so every definition is
   asserted on every platform; only `Apply`, `Uninstall` and `Restart` are
-  build-tagged. The existing definitions are reproduced **byte for byte**.
+  build-tagged. The existing definitions are reproduced **byte for byte**, but for one deliberate
+  change: **no definition names `~/.neverseen/.env`** — the agent reads it itself, and a
+  sourced or `EnvironmentFile` path that is absent is a respawn loop
+  (`TestNoDefinitionNeedsTheConfigFile`).
 - **The agent is restarted and the icon is not, on every platform.**
   `TestOnlyTheAgentIsRestarted` holds both halves rather than leaving them to the
   golden files, which record what the code does where the test records what it must.

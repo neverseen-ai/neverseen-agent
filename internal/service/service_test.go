@@ -152,6 +152,29 @@ func TestOnlyTheAgentIsRestarted(t *testing.T) {
 	}
 }
 
+// TestNoDefinitionNeedsTheConfigFile holds that a missing ~/.neverseen/.env cannot
+// stop a job from starting.
+//
+// launchd sourced it with `.` and systemd named it in EnvironmentFile, and both fail
+// outright on a file that is absent — `neverseen service install` run without
+// install.sh — which KeepAlive and Restart=always turned into a respawn loop. The
+// agent reads the file itself, so no definition may name it.
+func TestNoDefinitionNeedsTheConfigFile(t *testing.T) {
+	for _, platform := range []string{"darwin", "linux", "windows"} {
+		l := sample(platform)
+		defs, err := Render(l)
+		if err != nil {
+			t.Fatalf("Render(%s): %v", platform, err)
+		}
+		for _, d := range defs {
+			if strings.Contains(d.Content, ".env") {
+				t.Errorf("%s %s names the config file, so it cannot start without one:\n%s",
+					platform, d.Label, d.Content)
+			}
+		}
+	}
+}
+
 // TestLinuxRegistersTheIconSomewhereTheDesktopReads.
 //
 // The two jobs go to two registries on this platform and the icon must not drift into
@@ -211,13 +234,17 @@ func TestTheIconWritesWhereSomebodyCanReadIt(t *testing.T) {
 // TestAHomeDirectoryWithAnApostropheSurvives is the case that a naive single-quoted
 // shell string breaks. It is not hypothetical: the surname is common enough that
 // somebody would have hit it, and the symptom is an agent that silently never starts.
+//
+// Asked of the Linux desktop entry, the one definition left that hands a path to a
+// shell: the plists pass the binary to launchd as an argument, where an apostrophe is
+// an ordinary character.
 func TestAHomeDirectoryWithAnApostropheSurvives(t *testing.T) {
-	defs, err := Render(sample("darwin"))
+	defs, err := Render(sample("linux"))
 	if err != nil {
-		t.Fatalf("Render(darwin): %v", err)
+		t.Fatalf("Render(linux): %v", err)
 	}
 	for _, d := range defs {
-		if strings.Contains(d.Content, `'`+"brien") && !strings.Contains(d.Content, `"/Users/o'brien`) {
+		if strings.Contains(d.Content, `'`+"brien") && !strings.Contains(d.Content, `"/home/o'brien`) {
 			t.Errorf("%s quotes the path in a way that ends on the apostrophe:\n%s", d.Label, d.Content)
 		}
 	}

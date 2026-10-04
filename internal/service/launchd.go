@@ -1,13 +1,21 @@
 package service
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
-// renderLaunchd produces the two launchd agents, unchanged from what install.sh
-// wrote before this package existed.
+// renderLaunchd produces the two launchd agents.
 //
-// Byte-for-byte unchanged, deliberately: somebody has these loaded right now, and a
-// definition that differs in anything but whitespace is a second definition of the
-// same job rather than the same one moved.
+// The label and the path are unchanged from what install.sh wrote before this
+// package existed, deliberately: somebody has these loaded right now, and a
+// definition under another label is a second job rather than the same one moved.
+//
+// The program is the binary itself, not a shell sourcing ~/.neverseen/.env first.
+// That `.` failed outright when the file was absent — `neverseen service install` run
+// without install.sh — and KeepAlive turned the failure into a respawn every ten
+// seconds. The agent and the icon read that file themselves (proxy.LoadConfigFile),
+// so the sourcing only ever added a way to fail.
 func renderLaunchd(l Layout) []Definition {
 	dir := l.join(l.Home, "Library", "LaunchAgents")
 
@@ -17,7 +25,7 @@ func renderLaunchd(l Layout) []Definition {
 			Label: AgentLabel,
 			Path:  l.join(dir, AgentLabel+".plist"),
 			Content: plist(l, AgentLabel,
-				sourceAndRun(l.ConfigFile, l.Binary(JobAgent), "proxy"),
+				[]string{l.Binary(JobAgent), "proxy"},
 				// KeepAlive, because nobody is meant to be able to stop the masking
 				// by accident.
 				"  <key>KeepAlive</key><true/>\n"),
@@ -27,7 +35,7 @@ func renderLaunchd(l Layout) []Definition {
 			Label: TrayLabel,
 			Path:  l.join(dir, TrayLabel+".plist"),
 			Content: plist(l, TrayLabel,
-				sourceAndRun(l.ConfigFile, l.Binary(JobTray)),
+				[]string{l.Binary(JobTray)},
 				`  <!-- No KeepAlive, unlike the agent's. The icon's own menu offers "Quit the
        icon", and launchd would put it straight back — the person would click it
        and watch nothing happen. The agent keeps KeepAlive because nobody is meant
@@ -44,7 +52,11 @@ func renderLaunchd(l Layout) []Definition {
 // newline-terminated, so the template holds no conditional: a template that branches
 // on which job it is rendering is a template where the two can quietly diverge in
 // something other than the line that is supposed to differ.
-func plist(l Layout, label, command, extra string) string {
+func plist(l Layout, label string, args []string, extra string) string {
+	var program strings.Builder
+	for _, a := range args {
+		program.WriteString("<string>" + escapeXML(a) + "</string>")
+	}
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -52,13 +64,12 @@ func plist(l Layout, label, command, extra string) string {
   <key>Label</key><string>%s</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/bin/sh</string><string>-c</string>
-    <string>%s</string>
+    %s
   </array>
   <key>RunAtLoad</key><true/>
 %s  <key>StandardOutPath</key><string>%s</string>
   <key>StandardErrorPath</key><string>%s</string>
 </dict>
 </plist>
-`, escapeXML(label), escapeXML(command), extra, escapeXML(l.LogFile), escapeXML(l.LogFile))
+`, escapeXML(label), program.String(), extra, escapeXML(l.LogFile), escapeXML(l.LogFile))
 }

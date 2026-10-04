@@ -186,23 +186,7 @@ func Render(l Layout) ([]Definition, error) {
 	}
 }
 
-// sourceAndRun is the shell one-liner that gives the agent its configuration on the
-// platforms that have a shell in the loop.
-//
-// The configuration lives in a file no Go code reads: launchd sources it here and
-// systemd through EnvironmentFile. That is why Windows cannot be rendered the same
-// way — Task Scheduler has neither, and cmd cannot read a .env without an
-// incantation that would break on the first value carrying a space. See the TODO on
-// renderSchtasks.
-func sourceAndRun(configFile, binary string, args ...string) string {
-	cmd := quoteForShell(binary)
-	for _, a := range args {
-		cmd += " " + a
-	}
-	return fmt.Sprintf(`set -a; . %s; set +a; exec %s`, quoteForShell(configFile), cmd)
-}
-
-// quoteForShell wraps a path for the shell that launchd and systemd hand it to.
+// quoteForShell wraps a path for the shell the Linux desktop entry hands it to.
 //
 // Double quotes rather than single: a home directory can carry an apostrophe — it is
 // the surname of a good few million people — and a single-quoted string cannot hold

@@ -3,7 +3,6 @@ Description=Neverseen agent
 After=network-online.target
 
 [Service]
-EnvironmentFile=/home/o'brien/.neverseen/.env
 ExecStart="/home/o'brien/.local/bin/neverseen" proxy
 Restart=always
 RestartSec=5
