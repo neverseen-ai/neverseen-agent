@@ -79,14 +79,14 @@ re-encode, so it would have been reordered on the way back to the caller
 **A duplicated key is kept rather than collapsed.** Two members of the same name are
 pathological rather than useful, but a map keeps one of them — which is the agent
 deciding which, and whichever it dropped had gone to the provider in the original
-(`TestADuplicatedKeyIsNotCollapsed`). Readers here — `deltaText`, `walkUsage` — take
+(`TestADuplicatedKeyIsNotCollapsed`). Readers here — `deltaText`, `usageFrom` — take
 the **last** member of a name, which is what any parser a provider might use would
 do.
 
 **Anything reading the decoded document has to know that type.** Three consumers
 type-switched on `map[string]any`, and all three went on **compiling** while matching
 nothing: a `type switch` that falls into no branch is silent. `decodeEvent` would have
-rejected every event and the streaming rehydrator restored nothing; `walkUsage` would
+rejected every event and the streaming rehydrator restored nothing; `usageFrom` would
 have lost every token count. What caught it is that `TestDeltaText` and `TestUsageFrom`
 build their input from raw JSON through the real decoder — a test constructing a map by
 hand would have gone on passing over dead code.
@@ -451,8 +451,12 @@ on the machine.
 
 ## Token usage and counters
 
-`usageFrom` (`usage.go:28`) walks a response document for the model name and token counts,
-feeding `telemetry.Recorder`. **Reading token usage is where the vendors disagree about
+`usageFrom` (`usage.go`) reads the model name and token counts from the top of a response
+document, and from `message` (Anthropic's `message_start`) and `response` (OpenAI's
+Responses stream, which Codex speaks) — **never from anywhere else**: a walk of the whole
+document took a `model` key out of a tool call's arguments, a string the model chose,
+and put it on the wire as a key of the heartbeat's `models` map. It feeds
+`telemetry.Recorder`. **Reading token usage is where the vendors disagree about
 more than spelling:** Anthropic reports cache tokens *beside* the input, OpenAI reports the
 whole input with the cached part broken out underneath as a *subset*. Reading both would
 bill the same tokens twice, so the OpenAI breakdown is deliberately not read.

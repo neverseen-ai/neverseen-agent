@@ -65,6 +65,30 @@ func TestUsageFrom(t *testing.T) {
 			wantUsage: telemetry.TokenUsage{Output: 98},
 		},
 		{
+			// Codex speaks the Responses API, whose stream closes on an event
+			// carrying both under "response".
+			name: "openai responses stream, response.completed",
+			body: `{"type":"response.completed","response":{"id":"resp_1","model":"gpt-5-codex",
+			        "usage":{"input_tokens":5310,"output_tokens":240,"total_tokens":5550}}}`,
+			wantModel: "gpt-5-codex",
+			wantUsage: telemetry.TokenUsage{Input: 5310, Output: 240},
+		},
+		{
+			// A tool call's arguments are the model's to write. Read from there, a
+			// "model" key became a key of the heartbeat's models map and a nested
+			// "usage" was added to the bill.
+			name: "a tool call's arguments are not the provider's account",
+			body: `{"model":"claude-sonnet-4","content":[{"type":"tool_use","name":"deploy",
+			        "input":{"model":"anything-the-model-wrote","usage":{"input_tokens":999999}}}],
+			        "usage":{"input_tokens":10,"output_tokens":5}}`,
+			wantModel: "claude-sonnet-4",
+			wantUsage: telemetry.TokenUsage{Input: 10, Output: 5},
+		},
+		{
+			name: "a model the provider did not name is not read from a tool call",
+			body: `{"content":[{"type":"tool_use","input":{"model":"chosen-by-the-model"}}]}`,
+		},
+		{
 			name:      "a model with no usage at all",
 			body:      `{"model":"gpt-4o","choices":[]}`,
 			wantModel: "gpt-4o",
