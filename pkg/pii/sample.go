@@ -301,6 +301,7 @@ OpenAI : sk-proj-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGH, compte de service
 Anthropic : sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789
 Google : AIzaabcdefghijklmnopqrstuvwxyzABCDEFGHI
 AWS : AKIAIOSFODNN7EXAMPLE, temporaire ASIAY34FZKBOKMUTVV7A, porteur ABIAY34FZKBOKMUTVV7A, lié au contexte ACCAY34FZKBOKMUTVV7A, ancien A3TY34FZKBOKMUTVV7AB, et aws_secret_access_key = abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN
+AWS, le secret ailleurs que dans un fichier : aws configure set aws_secret_access_key bcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO, option --aws-secret-access-key cdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP, réponse STS "SecretAccessKey": "defghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ", credentials.csv ci,,AKIAY34FZKBOKMUTVV7C,efghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQR
 GitHub : ghp_abcdefghijklmnopqrstuvwxyz0123456789, gho_0123456789abcdefghijklmnopqrstuvwxyz, portée fine github_pat_11ABCDEFG0abcdefghijkl_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789AB
 GitLab : glpat-abcdefghijklmnopqrst
 Slack : xoxb-0123456789-a, applicatif xapp-0123456789-z, webhook https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX

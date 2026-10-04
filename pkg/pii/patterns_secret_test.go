@@ -83,11 +83,14 @@ func TestAWSSecretKeyIsReadInEveryNameSpelling(t *testing.T) {
 		"aws_secret", "AWS_SECRET", "Aws_Secret",
 		"aws_secret_access_key", "AWS_SECRET_ACCESS_KEY", "Aws_Secret_Access_Key",
 		"secret_access_key", "SECRET_ACCESS_KEY", "Secret_Access_Key",
+		"aws-secret-access-key", "SecretAccessKey", "secretAccessKey",
 	} {
 		text := "config: " + name + " = " + secret + " and the rest of the line"
 		found := false
 		for _, p := range SecretPatterns() {
-			if p.Category != CatAWSSecretKey {
+			// The pattern reading the secret beside its key id has no expression,
+			// and no name to be read in.
+			if p.Category != CatAWSSecretKey || p.Regex == nil {
 				continue
 			}
 			m := p.Regex.FindStringSubmatch(text)

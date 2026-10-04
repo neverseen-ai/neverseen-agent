@@ -142,12 +142,12 @@
    "fn": 0
   },
   "SECRET_AWS_ACCESS_KEY": {
-   "tp": 4,
+   "tp": 6,
    "fp": 0,
    "fn": 0
   },
   "SECRET_AWS_SECRET_KEY": {
-   "tp": 2,
+   "tp": 6,
    "fp": 0,
    "fn": 0
   },

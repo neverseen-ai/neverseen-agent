@@ -354,3 +354,55 @@ func TestAFindPatternIsFilteredLikeAnExpression(t *testing.T) {
 		t.Errorf("a plate placement refuses was masked: %v", got)
 	}
 }
+
+// An AWS secret has no shape of its own, so it is found by what is written beside it:
+// its name, or the access key id it is issued with. Each line here went out in clear
+// — the name followed by a space rather than `=`, the name spelled as a flag, and the
+// credentials.csv a console download produces, where the id was masked and the secret
+// one comma after it was not.
+func TestAWSSecretKeyIsFoundWhereItIsWritten(t *testing.T) {
+	const secret = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" // AWS's own documentation example
+	d := New(Config{})
+	for _, text := range []string{
+		"aws configure set aws_secret_access_key " + secret,
+		"run --aws-secret-access-key " + secret + " --region eu-west-3",
+		"with:\n  aws-secret-access-key: " + secret,
+		`{"AccessKeyId": "ASIAY34FZKBOKMUTVV7A", "SecretAccessKey": "` + secret + `"}`,
+		"const creds = { secretAccessKey: '" + secret + "' }",
+		"User name,Password,Access key ID,Secret access key\nci,,AKIAIOSFODNN7EXAMPLE," + secret,
+		"The access key AKIAIOSFODNN7EXAMPLE goes with secret " + secret + ", rotate both.",
+	} {
+		found := false
+		for _, m := range d.Scan(text) {
+			if m.Value == secret {
+				found = true
+				if m.Category != pii.CatAWSSecretKey {
+					t.Errorf("%q: the secret was masked as %s, want %s", text, m.Category, pii.CatAWSSecretKey)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("%q: the secret went out in clear", text)
+		}
+	}
+}
+
+// What sits beside an access key id is not always its secret. A commit hash is forty
+// characters of one case, a run glued to the id is the id's own, and a value a
+// paragraph further on belongs to something else.
+func TestOnlyTheSecretBesideAnAccessKeyIDIsTaken(t *testing.T) {
+	d := New(Config{})
+	for _, text := range []string{
+		"Rotated AKIAIOSFODNN7EXAMPLE in commit 9fceb02d0ae598e95dc970b74767f19372d61af8 yesterday.",
+		"Rotated AKIAIOSFODNN7EXAMPLE in commit 9FCEB02D0AE598E95DC970B74767F19372D61AF8 yesterday.",
+		"AKIAIOSFODNN7EXAMPLEwJalrXUtnFEMI/K7MDENG/bPxRfiCYEX is one run",
+		"AKIAIOSFODNN7EXAMPLE" + strings.Repeat(" and then some unrelated prose", 5) + " wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+		"AKIAIOSFODNN7EXAMPLE, blob wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEYwJalrXUtnFEMI/K7MDENG",
+	} {
+		for _, m := range d.Scan(text) {
+			if m.Category == pii.CatAWSSecretKey {
+				t.Errorf("%q: %q was taken as the secret", text, m.Value)
+			}
+		}
+	}
+}

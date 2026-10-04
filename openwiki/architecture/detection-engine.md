@@ -760,7 +760,8 @@ its own — positional, an SQL `VALUES` list, a CSV row — is still relaxed.
 `pii.Pattern` (`pkg/pii/pattern.go:12`) is one recognisable shape plus its category,
 `Label`, `Locale`, `Group`, `Refine`, a per-pattern `Verify` (nil for almost every
 pattern — see the checksum section), and `Find`, which replaces the regular expression
-for the licence plates alone (see `PlateCheck` above). Pattern files: `patterns_fr.go`,
+for the licence plates (see `PlateCheck` above) and for the AWS secret written beside its
+key id (below). Pattern files: `patterns_fr.go`,
 `patterns_gb.go`, `patterns_us.go`, `patterns_intl.go`, `patterns_secret.go`.
 
 **Order within a set is correctness, not taste.** The first pattern to claim a literal
@@ -809,6 +810,35 @@ patterns are 73% of this engine's scan — `xmlSecretRe` and the two
 (`genericSecretKeywordNames`, twenty-three names from `PASSWORD` and `TOKEN` to `DBPASS`
 and `SESSIONKEY`) is present in nearly any configuration text.
 The 150 that were added cost 0.56 ms, 1.4% on top of the scan as it stood.
+
+### The AWS secret has no shape, so it is found by what is written beside it
+
+Forty base64 characters are any blob, so the secret is read in two places and never on
+its own:
+
+- **Behind one of its names** (`awsSecretKeyPatterns`). The names are AWS's and nothing
+  else's, so a space alone separates too: `aws configure set aws_secret_access_key <key>`
+  and a `--aws-secret-access-key <key>` flag write no `=`, and both went out in clear. The
+  kebab and camel spellings (`aws-secret-access-key:` in a CI action, `"SecretAccessKey"`
+  in an STS answer, `secretAccessKey` in an SDK object) were already masked by the generic
+  secret — under the secret level, which can be raised past a key it then lets through.
+- **Just after the access key id it was issued with** (`awsSecretBesideKeyID`, a `Find`).
+  The console's `credentials.csv` is `user,,AKIA…,<secret>`: the id was masked and the
+  secret one comma after it was not. The id is read with certainty, so the first run of
+  *exactly* forty base64 characters within `awsSecretWindow` (100) bytes after it is taken
+  — bounded at both ends, so a longer blob is not cut into a key, and a run glued to the id
+  is the id's own. It must hold a capital and a lowercase letter: a commit hash beside a
+  rotated id is forty characters of one case (`sec-prec-aws-key-id-beside-commit-hash`),
+  and a real key lacks either about once in a billion. The prefixes are checked as
+  literals first, so a text with no id pays nothing.
+
+**The secret alone is deliberately not read.** Requiring a `/` or a `+` would still miss
+the 28% of keys that carry neither, and would mask a forty-character source path
+(`internal/Proxy/stream2Handler/…`) in every code review — the over-masking
+`TestOurOwnSourceGrowsNoCredentials` exists to keep out. A `TODO:` names the other
+ceiling: a secret written *before* its id is still missed.
+`TestAWSSecretKeyIsFoundWhereItIsWritten` and `TestOnlyTheSecretBesideAnAccessKeyIDIsTaken`
+are one pair.
 
 `AllPatterns` (`pattern.go:66`) reads the locale registry rather than concatenating sets by
 hand. Agent Veil's hand-written version shipped with one set missing, which silently

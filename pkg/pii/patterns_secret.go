@@ -3,6 +3,7 @@ package pii
 import (
 	"regexp"
 	"strings"
+	"unicode"
 )
 
 // Credentials, in three tiers: vendor-specific prefixes, then structural
@@ -37,7 +38,12 @@ const (
 	// Forty base64 characters, and the span is the value rather than the
 	// assignment: masking the name would leave the reader unable to see which
 	// setting was redacted.
-	awsSecretKeyTail = `['"]?\s*[=:]\s*['"]?([a-zA-Z0-9/+=]{40})`
+	//
+	// A space alone separates too, because the name is AWS's and nothing else's:
+	// `aws configure set aws_secret_access_key <key>` and a command-line flag
+	// write no `=`, and both went out in clear while the generic names, which need
+	// one, are right to.
+	awsSecretKeyTail = `['"]?(?:\s*[=:]\s*|[ \t]+)['"]?([a-zA-Z0-9/+=]{40})`
 
 	// Twenty-four characters, the floor that separates a generated blob from a
 	// type name — the reasoning is above sessionSecretPatterns.
@@ -79,6 +85,12 @@ func namedSecretPatterns(cat Category, label, tail string, spellings ...string) 
 // `aws_secret` is a prefix of `aws_secret_access_key`, so the longer name is an
 // optional tail rather than a second spelling: that keeps one literal for Go to
 // scan for and still reports the whole name it found.
+//
+// The kebab and camel spellings are the ones the key travels under outside a
+// configuration file: a CI action's input (`aws-secret-access-key:`), an STS answer
+// (`"SecretAccessKey"`), an SDK's credentials object (`secretAccessKey`). The
+// generic secret read them, but under the secret level, which can be raised past
+// a key it then lets through.
 var awsSecretKeyPatterns = namedSecretPatterns(CatAWSSecretKey, "AWS secret access key", awsSecretKeyTail,
 	`aws_secret(?:_access_key)?`,
 	`AWS_SECRET(?:_ACCESS_KEY)?`,
@@ -86,7 +98,80 @@ var awsSecretKeyPatterns = namedSecretPatterns(CatAWSSecretKey, "AWS secret acce
 	`secret_access_key`,
 	`SECRET_ACCESS_KEY`,
 	`Secret_Access_Key`,
+	`aws-secret-access-key`,
+	`SecretAccessKey`,
+	`secretAccessKey`,
 )
+
+// awsSecretWindow is how far after an access key id its secret is looked for: one
+// separator in the CSV the console hands out, a few words in a sentence. Wider, and
+// the window reaches values that belong to something else.
+const awsSecretWindow = 100
+
+// awsSecretBesideKeyID finds the secret where no name is written: just after the
+// access key id it was issued with, which is a shape this catalogue already reads
+// with certainty. The console's credentials.csv is `user,,AKIA…,<secret>`, and the
+// id was masked while the secret one comma after it went out in clear.
+//
+// A Find rather than an expression because the evidence is the id, not anything
+// in the secret's own span, and RE2 cannot express "near". It costs nothing on a
+// text holding no id: the prefixes are checked first, as literals.
+//
+// TODO: only after the id. A secret written before its id (`secret K for AKIA…`)
+// is still missed; the upgrade is a window on both sides, once a corpus case shows
+// the order occurring.
+func awsSecretBesideKeyID(text string) [][]int {
+	if !strings.Contains(text, "AKIA") && !strings.Contains(text, "ASIA") && !strings.Contains(text, "ABIA") &&
+		!strings.Contains(text, "ACCA") && !strings.Contains(text, "A3T") {
+		return nil
+	}
+	var out [][]int
+	for _, id := range awsAccessKeyRe.FindAllStringIndex(text, -1) {
+		if span := awsSecretAfter(text, id[1]); span != nil {
+			out = append(out, span)
+		}
+	}
+	return out
+}
+
+// awsSecretAfter returns the first run of exactly forty base64 characters starting
+// within the window after pos, both ends bounded by a character outside the
+// alphabet. A run glued to the id is the id's own; a longer run is a blob, and its
+// first forty characters are not a key.
+func awsSecretAfter(text string, pos int) []int {
+	for pos < len(text) && isBase64(text[pos]) {
+		pos++
+	}
+	limit := min(len(text), pos+awsSecretWindow)
+	for i := pos; i < limit; {
+		if !isBase64(text[i]) {
+			i++
+			continue
+		}
+		end := i
+		for end < len(text) && isBase64(text[end]) {
+			end++
+		}
+		if end-i == 40 && mixedCase(text[i:end]) {
+			return []int{i, end}
+		}
+		i = end
+	}
+	return nil
+}
+
+// isBase64 includes `=`, so a run that ends on padding is not cut before it and
+// mistaken for a forty-character key.
+func isBase64(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '+' || c == '/' || c == '='
+}
+
+// mixedCase is what tells a key from a commit hash beside the id: forty random
+// base64 characters lack a capital or a lowercase letter about once in a billion
+// keys, and a SHA-1 is forty characters of one case.
+func mixedCase(s string) bool {
+	return strings.ContainsFunc(s, unicode.IsUpper) && strings.ContainsFunc(s, unicode.IsLower)
+}
 
 var (
 	// --- vendor prefixes ---------------------------------------------------
@@ -850,6 +935,7 @@ func SecretPatterns() []Pattern {
 		{Regex: googleRe, Category: CatGoogleKey, Label: "Google API key"},
 		{Regex: awsAccessKeyRe, Category: CatAWSAccessKey, Label: "AWS access key id"},
 	}, awsSecretKeyPatterns...)
+	out = append(out, Pattern{Find: awsSecretBesideKeyID, Category: CatAWSSecretKey, Label: "AWS secret access key (beside its key id)"})
 
 	out = append(out, []Pattern{
 		{Regex: githubRe, Category: CatGitHubToken, Label: "GitHub token"},
