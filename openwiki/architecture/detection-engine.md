@@ -453,7 +453,9 @@ the rule was in every one of them.
 **Letters in a signature are always L.** `expandSignatures` panics on anything else, because a
 literal `E` in a notation expands to a signature no text has; the German `E` suffix is an `L`
 that `GermanPlateCheck` narrows. The guard caught the first draft of Liechtenstein, written as
-`FL(…)`.
+`FL(…)`. `plateFinder` puts every signature through it, bare ones included — a bare signature
+expands to itself — because only the compact ones used to be: a typo in a bare one matched no
+text, and that country's plates went out in clear with nothing to say so.
 
 **Measured.** With `eu` — forty-one plate countries — a scan of 88KB costs ~300ms against ~263ms
 for `fr,gb,us`: about 1ms per country, the ceiling the `TODO` on `plateFinder` names. Over a

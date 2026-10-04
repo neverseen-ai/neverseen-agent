@@ -374,6 +374,8 @@ func TestSampleShowsEveryNotation(t *testing.T) {
 			want: notations(
 				"AB 12 345", pii.CatLicPlate,
 				"CD67890", pii.CatLicPlate,
+				"EF 23456", pii.CatLicPlate,
+				"GH-34-567", pii.CatLicPlate,
 			),
 		},
 		{

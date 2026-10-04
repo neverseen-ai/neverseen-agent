@@ -94,7 +94,7 @@ var bgProvinces = plateCodes(`A B BH BP BT C CA CB CH CM CO CT E EB EH H K KH M 
 var euroPlates = map[string]euroPlate{
 	// Ireland: year and half-year, county, sequence — "231-D-12345".
 	"ie": {
-		find: plateFinder(false, expandSignatures("DDD-L{1,2}-D{1,6}", "DD-L{1,2}-D{1,6}", "DDD L{1,2} D{1,6}")...),
+		find: plateFinder(false, "DDD-L{1,2}-D{1,6}", "DD-L{1,2}-D{1,6}", "DDD L{1,2} D{1,6}"),
 		verify: func(v string) bool {
 			r := plateRuns(v)
 			return len(r) == 3 && ieDistricts[r[1]] && plateNoZeroNumber(v)
@@ -152,7 +152,7 @@ var euroPlates = map[string]euroPlate{
 	},
 	// Croatia: city, three or four digits, one or two letters — "ZG 1234-AB".
 	"hr": {
-		find: plateFinder(false, expandSignatures("LL D{3,4}-L{1,2}", "LL-D{3,4}-L{1,2}", "LL D{3,4} L{1,2}")...),
+		find: plateFinder(false, "LL D{3,4}-L{1,2}", "LL-D{3,4}-L{1,2}", "LL D{3,4} L{1,2}"),
 		verify: func(v string) bool {
 			r := plateRuns(v)
 			return len(r) == 3 && hrCities[r[0]] && plateHasNone(v, "QWXY") && plateNoZeroNumber(v)
@@ -162,7 +162,7 @@ var euroPlates = map[string]euroPlate{
 	},
 	// Serbia: city, three to five digits, two letters — "BG 123-AB".
 	"rs": {
-		find: plateFinder(false, expandSignatures("LL D{3,5}-LL", "LL-D{3,5}-LL", "LL D{3,5} LL")...),
+		find: plateFinder(false, "LL D{3,5}-LL", "LL-D{3,5}-LL", "LL D{3,5} LL"),
 		verify: func(v string) bool {
 			r := plateRuns(v)
 			return len(r) == 3 && rsCities[r[0]] && plateNoZeroNumber(v)
@@ -174,8 +174,8 @@ var euroPlates = map[string]euroPlate{
 	// Latin and Cyrillic share.
 	"bg": {
 		find: anyPlateFinder(
-			plateFinder(false, expandSignatures("L{1,2} DDDD LL", "L{1,2}-DDDD-LL")...),
-			namedPlateFinder(expandSignatures("L{1,2}DDDDLL")...)),
+			plateFinder(false, "L{1,2} DDDD LL", "L{1,2}-DDDD-LL"),
+			namedPlateFinder("L{1,2}DDDDLL")),
 		verify: func(v string) bool {
 			r := plateRuns(v)
 			return len(r) == 3 && bgProvinces[r[0]] && plateHasOnly(v, "ABEKMHOPCTYX") && plateNoZeroNumber(v)
@@ -187,7 +187,7 @@ var euroPlates = map[string]euroPlate{
 	// Read only behind a word naming a vehicle: shapes ordinary text also takes.
 
 	"at": {
-		find: namedPlateFinder(expandSignatures("L{1,2}(-| |)D{1,5}( |)L{1,2}", "L{1,2}(-| )L{1,3}( |)D{1,3}")...),
+		find: namedPlateFinder("L{1,2}(-| |)D{1,5}( |)L{1,2}", "L{1,2}(-| )L{1,3}( |)D{1,3}"),
 		verify: func(v string) bool {
 			return plateHasNone(v, "Q") && plateNoZeroNumber(v) && len(strings.Join(plateRuns(v), "")) <= 8
 		},
@@ -195,13 +195,13 @@ var euroPlates = map[string]euroPlate{
 		label: "Kfz-Kennzeichen (Austrian)",
 	},
 	"ch": {
-		find:   namedPlateFinder(expandSignatures("LL( |-|)D{1,6}")...),
+		find:   namedPlateFinder("LL( |-|)D{1,6}"),
 		verify: func(v string) bool { r := plateRuns(v); return len(r) == 2 && chCantons[r[0]] && plateNoLeadingZero(v) },
 		fake:   "ZH 0@@@",
 		label:  "Kontrollschild (Swiss)",
 	},
 	"li": {
-		find: namedPlateFinder(expandSignatures("LL( |-|)D{1,5}")...),
+		find: namedPlateFinder("LL( |-|)D{1,5}"),
 		verify: func(v string) bool {
 			r := plateRuns(v)
 			return len(r) == 2 && r[0] == "FL" && plateNoLeadingZero(v)
@@ -210,16 +210,16 @@ var euroPlates = map[string]euroPlate{
 		label: "Kontrollschild (Liechtenstein)",
 	},
 	"lu": {
-		find:   namedPlateFinder(expandSignatures("LL( |-|)D{3,5}", "L( |-|)DDDD")...),
+		find:   namedPlateFinder("LL( |-|)D{3,5}", "L( |-|)DDDD"),
 		verify: plateNoZeroNumber,
 		fake:   "@@ 0000",
 		label:  "Plaque luxembourgeoise",
 	},
 	"pl": {
-		find: namedPlateFinder(expandSignatures(
+		find: namedPlateFinder(
 			"LL( |)DDDDD", "LL( |)DDDDL", "LL( |)DDDLL", "LL( |)DLDDD", "LL( |)DLLDD",
 			"LLL( |)LDDD", "LLL( |)DDLL", "LLL( |)DLDD", "LLL( |)DDLD", "LLL( |)DLLD",
-			"LLL( |)LLDD", "LLL( |)DDDDD", "LLL( |)DDDDL", "LLL( |)DDDLL")...),
+			"LLL( |)LLDD", "LLL( |)DDDDD", "LLL( |)DDDDL", "LLL( |)DDDLL"),
 		verify: func(v string) bool { return plateHasNone(v, "Q") && plateNoZeroNumber(v) },
 		fake:   "@@@ 00000",
 		label:  "Tablica rejestracyjna (Polish)",
@@ -243,7 +243,7 @@ var euroPlates = map[string]euroPlate{
 		label:  "Kjennemerke (Norwegian)",
 	},
 	"fi": {
-		find:   namedPlateFinder(expandSignatures("L{2,3}-D{1,3}", "L{2,3} D{1,3}", "L{2,3}D{1,3}")...),
+		find:   namedPlateFinder("L{2,3}-D{1,3}", "L{2,3} D{1,3}", "L{2,3}D{1,3}"),
 		verify: plateNoLeadingZero,
 		fake:   "@@@-0",
 		label:  "Rekisterikilpi (Finnish)",
@@ -261,7 +261,7 @@ var euroPlates = map[string]euroPlate{
 		label:  "Numbrimärk (Estonian)",
 	},
 	"lv": {
-		find:   namedPlateFinder(expandSignatures("LL-D{1,4}", "LL D{1,4}", "LLD{1,4}")...),
+		find:   namedPlateFinder("LL-D{1,4}", "LL D{1,4}", "LLD{1,4}"),
 		verify: plateNoLeadingZero,
 		fake:   "@@-0",
 		label:  "Numurzīme (Latvian)",
@@ -273,7 +273,7 @@ var euroPlates = map[string]euroPlate{
 		label:  "Valstybinis numeris (Lithuanian)",
 	},
 	"si": {
-		find:   namedPlateFinder(expandSignatures("LL( |-)LL-DDD", "LL( |-)DD-LLL", "LL( |-)LD-DDL")...),
+		find:   namedPlateFinder("LL( |-)LL-DDD", "LL( |-)DD-LLL", "LL( |-)LD-DDL"),
 		verify: plateNoZeroNumber,
 		fake:   "LJ @@-000",
 		label:  "Registrska tablica (Slovenian)",
@@ -303,7 +303,7 @@ var euroPlates = map[string]euroPlate{
 		label:  "Targa (Albanian)",
 	},
 	"mk": {
-		find:   namedPlateFinder(expandSignatures("LL D{3,4}( |-)LL", "LLD{3,4}LL")...),
+		find:   namedPlateFinder("LL D{3,4}( |-)LL", "LLD{3,4}LL"),
 		verify: plateNoZeroNumber,
 		fake:   "SK 0000 @@",
 		label:  "Регистарска таблица (North Macedonian)",
@@ -346,7 +346,7 @@ var euroPlates = map[string]euroPlate{
 	// Behind a word: "10 AB 12" is a version and two numbers as readily as a plate
 	// from Adana, and the province code is any two digits up to 81.
 	"tr": {
-		find: namedPlateFinder(expandSignatures("DD L{1,3} D{2,5}", "DDL{1,3}D{2,5}")...),
+		find: namedPlateFinder("DD L{1,3} D{2,5}", "DDL{1,3}D{2,5}"),
 		verify: func(v string) bool {
 			r := plateRuns(v)
 			return len(r) == 3 && r[0] >= "01" && r[0] <= "81" && plateHasNone(v, "QWX") && plateNoZeroNumber(v)

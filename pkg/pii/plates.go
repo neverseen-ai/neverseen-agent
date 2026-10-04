@@ -32,7 +32,13 @@ import (
 // the pass never considers a longer word as part of one.
 const plateMaxChunk = 8
 
-// plateFinder returns a Pattern.Find reading the given signatures.
+// plateFinder returns a Pattern.Find reading the given signatures, in the
+// notation expandSignatures reads.
+//
+// Every signature goes through it, written compactly or not: a bare signature
+// expands to itself, and one with a typo — "LL-DDD-Ll" — panics at start-up
+// rather than matching no text, in silence, and sending that country's plates out
+// in clear.
 //
 // Each case whole, never mixed: "AB-123-CD" and "ab-123-cd" are both how people
 // type a plate, "Ab-123-cD" is not. upperOnly refuses the lowercase form too, for
@@ -42,6 +48,7 @@ const plateMaxChunk = 8
 // plate notation a deployment loads. The upgrade is one pass shared by every loaded
 // country, handing each span to the patterns whose signatures it matches.
 func plateFinder(upperOnly bool, signatures ...string) func(string) [][]int {
+	signatures = expandSignatures(signatures...)
 	set := make(map[string]bool, len(signatures))
 	maxLen, maxChunks := 0, 0
 	for _, s := range signatures {

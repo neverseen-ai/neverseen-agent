@@ -18,6 +18,20 @@ cases:
     expect:
       - {category: LICENSE_PLATE, value: "CD67890"}
 
+  - id: dk-plate-3
+    text: "nummerplade EF 23456 — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "EF 23456"}
+
+  - id: dk-plate-4
+    text: "nummerplade GH-34-567 — noted."
+    expect:
+      - {category: LICENSE_PLATE, value: "GH-34-567"}
+
+  - id: dk-prec-postcode
+    text: "Ship to DK 28000 by Friday."
+    expect: []
+
   - id: dk-prec-no-word
     text: "Reference AB 12 345 — noted."
     expect: []

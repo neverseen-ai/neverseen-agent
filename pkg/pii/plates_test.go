@@ -75,6 +75,28 @@ func TestAMalformedSignaturePanicsWithItsName(t *testing.T) {
 	}
 }
 
+// plateFinder expands every signature it is handed, so one written out bare is
+// checked like a compact one. Before, only the compact ones were: a bare
+// signature with a typo matched no text, and the country's plates went out in
+// clear with nothing to say so. It relies on a bare signature expanding to
+// itself, which is the second half.
+func TestPlateFinderRefusesABareSignatureWithATypo(t *testing.T) {
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Error(`plateFinder took "LL-DDD-Ll", a signature no text has`)
+			}
+		}()
+		plateFinder(false, "LL-DDD-Ll")
+	}()
+
+	for _, bare := range []string{"LL-DDD-LL", "LL DDD LL", "LLDDDLL", "D-LLL-DDD", "L DD LLL"} {
+		if got := expandSignatures(bare); !reflect.DeepEqual(got, []string{bare}) {
+			t.Errorf("expandSignatures(%q) = %q, want it unchanged", bare, got)
+		}
+	}
+}
+
 // upperOnly is for a notation whose lowercase form is any reference code.
 func TestPlateFinderCanRefuseLowercase(t *testing.T) {
 	find := plateFinder(true, "L-DDDD-LL")

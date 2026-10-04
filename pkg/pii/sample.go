@@ -195,7 +195,7 @@ As printed and as typed: 231-D-12345, 12-KY-678
 `
 
 const sampleDK = `=== Denmark ===
-Behind a word naming a vehicle: nummerplade AB 12 345, nummerplade CD67890
+Behind a word naming a vehicle: nummerplade AB 12 345, nummerplade CD67890, nummerplade EF 23456, nummerplade GH-34-567
 `
 
 const sampleSE = `=== Sweden ===

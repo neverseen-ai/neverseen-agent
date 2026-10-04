@@ -27,9 +27,9 @@ import (
 //
 // A signature reads every letter as L, so the suffix is one more letter here and
 // GermanPlateCheck is what says it must be E or H.
-var dePlateFind = namedPlateFinder(expandSignatures(
+var dePlateFind = namedPlateFinder(
 	"L{1,3}(-| |)L{1,2}( |-|)D{1,4}( |)(L|)",
-)...)
+)
 
 // deDistricts are the distinguishing signs the Kraftfahrt-Bundesamt lists for
 // civil registration, the codes reissued since 2012 included. X and Y are left
