@@ -7,7 +7,7 @@ divergence nothing could notice, because each path had its own tests and both pa
 
 ```
 request  →  resolve provider from first path segment
-         →  read body (decompressing if needed) — unreadable ⇒ 415
+         →  read body (decompressing if needed) — unreadable ⇒ 415, over 32 MiB ⇒ 413
          →  mask it value by value, seeded from the session vault
          →  save what was minted to the vault
          →  forward to the upstream
@@ -94,6 +94,11 @@ hand would have gone on passing over dead code.
 error for an encoding it cannot read. Forwarding a body the agent could not inspect is the
 one failure mode a data-loss-prevention tool must never have — hence the 415
 (`TestUnreadableEncodingFailsClosed`, `TestGzippedRequestBodyIsMasked`).
+
+A body over `requestMaxBytes` (32 MiB, Anthropic's own request limit) is a 413 for the
+same reason: refused, never forwarded unread. The cap is measured on what gzip *yields*,
+not on what arrived — a few kilobytes of gzip inflate to gigabytes, and the read is what
+buffers them (`TestOversizedBodyIsRefused`).
 
 ## A pass keeps one identity per value
 

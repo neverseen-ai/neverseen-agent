@@ -674,6 +674,49 @@ func TestUnreadableEncodingFailsClosed(t *testing.T) {
 	}
 }
 
+// A body over the cap is refused, not forwarded and not buffered whole — measured
+// after decompression, so a gzip bomb a few kilobytes long is refused too.
+func TestOversizedBodyIsRefused(t *testing.T) {
+	var bomb bytes.Buffer
+	zw := gzip.NewWriter(&bomb)
+	if _, err := zw.Write(make([]byte, requestMaxBytes+1)); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tt := range []struct {
+		name     string
+		body     []byte
+		encoding string
+	}{
+		{"plain", bytes.Repeat([]byte("a"), requestMaxBytes+1), ""},
+		{"gzip", bomb.Bytes(), "gzip"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			up := newUpstream(t, echoJSON)
+			agent := newAgent(t, up, nil)
+
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodPost,
+				agent.URL+"/anthropic/v1/messages", bytes.NewReader(tt.body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tt.encoding != "" {
+				req.Header.Set("Content-Encoding", tt.encoding)
+			}
+
+			if got := do(t, agent, req); got.status != http.StatusRequestEntityTooLarge {
+				t.Errorf("status %d, want 413", got.status)
+			}
+			if bodies, _ := up.received(); len(bodies) != 0 {
+				t.Errorf("an oversized body was forwarded")
+			}
+		})
+	}
+}
+
 // A response the agent should not be reading at all is passed through untouched.
 func TestNonTextualResponseIsUntouched(t *testing.T) {
 	const payload = "\x89PNG\r\n\x1a\n not really a png"

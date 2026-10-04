@@ -368,6 +368,10 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request) {
 		// rather than a pass-through.
 		s.recorder.Refused()
 		s.log.Error("masking failed, refusing to forward", "session", session, "error", err)
+		if errors.Is(err, errBodyTooLarge) {
+			http.Error(w, "neverseen: "+err.Error(), http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, "neverseen: the request body could not be masked", http.StatusUnsupportedMediaType)
 		return
 	}
@@ -506,6 +510,18 @@ func (s *Server) maskRequest(session, provider string, r *http.Request) (*traceR
 	return &traceRef{path: path, provider: provider, masking: masking}, conversation, nil
 }
 
+// requestMaxBytes caps a provider request body, measured after decompression.
+//
+// 32 MiB because that is Anthropic's own request limit: a body the provider would
+// refuse anyway is one the agent need not hold in memory to mask. Measured on what
+// gzip yields rather than on what arrived, because a few kilobytes of gzip can
+// inflate to gigabytes, and the read is what buffers it.
+const requestMaxBytes = 32 << 20
+
+// errBodyTooLarge is a body over requestMaxBytes, refused rather than forwarded
+// unread for the same reason an unreadable encoding is.
+var errBodyTooLarge = fmt.Errorf("the request body is larger than %d bytes", requestMaxBytes)
+
 // readBody returns the request body as text, decompressing it when it arrived
 // compressed.
 //
@@ -513,19 +529,29 @@ func (s *Server) maskRequest(session, provider string, r *http.Request) (*traceR
 // forwarding a body the agent could not inspect — is the one failure mode a data
 // loss prevention tool must never have.
 func readBody(r *http.Request) ([]byte, error) {
+	var src io.Reader
 	switch encoding := strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Encoding"))); encoding {
 	case "", "identity":
-		return io.ReadAll(r.Body)
+		src = r.Body
 	case "gzip":
 		zr, err := gzip.NewReader(r.Body)
 		if err != nil {
 			return nil, fmt.Errorf("read a gzipped body: %w", err)
 		}
 		defer func() { _ = zr.Close() }()
-		return io.ReadAll(zr)
+		src = zr
 	default:
 		return nil, fmt.Errorf("cannot inspect a body encoded as %q", encoding)
 	}
+
+	body, err := io.ReadAll(io.LimitReader(src, requestMaxBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > requestMaxBytes {
+		return nil, errBodyTooLarge
+	}
+	return body, nil
 }
 
 // unmask puts the originals back into the response.

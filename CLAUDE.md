@@ -48,7 +48,8 @@ and it is deliberately not repeated here.
 - **One entrypoint assembles the pipeline**: `cmd/neverseen`. `cmd/neverseen-tray`
   is the one exception — it assembles nothing and holds no secret. A third `main`
   clears the same bar or it does not ship.
-- **Fail closed**: a body the agent cannot read is a 415, never a pass-through.
+- **Fail closed**: a body the agent cannot read is a 415, never a pass-through;
+  one over 32 MiB *after decompression* is a 413 (`requestMaxBytes`).
 - **A body is a JSON document, masked value by value**, never as raw bytes
   (`internal/proxy/jsonbody.go`).
 - **A decoded body is a `jsonObject`, not a `map[string]any`** — ordered, and a
