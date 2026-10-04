@@ -32,6 +32,11 @@ RE2's semantics, so the corpus and every lesson in it would not transfer.
 repositories a contract drifts. That is the class of failure this project documents
 everywhere else, and `extension/testdata/contract.json` is what the decision buys: one
 recorded file, replayed by both sides, in CI, on every commit.
+It is recorded in token mode and then switches to fake mode (an exchange's `substitution`
+field), because a stand-in held back across a chunk boundary is several words long, spaces
+included, and a token never is: recorded in one mode alone, a client that trimmed its tail
+would pass (`TestContractCoversWhatMatters` requires a multi-word tail).
+
 The claude.ai adapter restores `text_delta`, visible `thinking_delta` and the older
 `completion` shape. **`input_json_delta` is not restored**, behind a `TODO:` in
 `src/site/claude.ts`: the agent accumulates those fragments and expands the whole document,

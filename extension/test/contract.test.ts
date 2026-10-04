@@ -19,6 +19,9 @@ import { mask, unmask, type AgentConfig } from '../src/agent.ts';
 type Exchange = {
   name: string;
   why: string;
+  // The agent's mode from this exchange on. Nothing for the client to do with it:
+  // the same calls in either mode is the property the fake-mode exchanges hold.
+  substitution?: string;
   route: string;
   request: Record<string, unknown>;
   response: Record<string, unknown>;

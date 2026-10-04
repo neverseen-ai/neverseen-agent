@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/neverseen-ai/neverseen-agent/internal/detector"
@@ -66,6 +67,11 @@ type contractExchange struct {
 	// delete the next time it fails.
 	Why string `json:"why"`
 
+	// Substitution, when set, switches the agent to that mode before this exchange
+	// and leaves it there. The client is the same in either mode; the agent is not,
+	// and fake mode is where a held-back tail spans several words.
+	Substitution string `json:"substitution,omitempty"`
+
 	Route    string          `json:"route"`
 	Request  json.RawMessage `json:"request"`
 	Response json.RawMessage `json:"response"`
@@ -108,6 +114,16 @@ func TestExtensionContract(t *testing.T) {
 
 	live := make([]json.RawMessage, len(file.Exchanges))
 	for i, exchange := range file.Exchanges {
+		if exchange.Substitution != "" {
+			// On the detector rather than through PUT /policy, which would also purge
+			// the mappings: nothing after the switch names a token minted before it,
+			// so the purge would change no answer, and the extension never sends one.
+			mode, err := detector.ParseSubstitution(exchange.Substitution)
+			if err != nil {
+				t.Fatalf("%s: %v", exchange.Name, err)
+			}
+			det.SetSubstitution(mode)
+		}
 		got := postAs(t, agent, exchange.Route, testControlKey, file.Session, string(exchange.Request))
 		if got.status != 200 {
 			t.Fatalf("%s: status %d: %s", exchange.Name, got.status, got.body)
@@ -173,6 +189,21 @@ func TestContractCoversWhatMatters(t *testing.T) {
 	}
 	if !isFinal {
 		t.Error("no recorded exchange ends the stream, so the flush is untested")
+	}
+
+	// A stand-in held back across words — the reason TailLen is not TokenTailLen.
+	// Recorded in token mode alone, a client that trimmed or split a tail on its
+	// spaces would pass every exchange here.
+	var multiWordTail bool
+	for _, e := range file.Exchanges {
+		var req unmaskRequest
+		if e.Route == "/unmask" && json.Unmarshal(e.Request, &req) == nil &&
+			strings.Contains(strings.TrimSpace(req.Tail), " ") {
+			multiWordTail = true
+		}
+	}
+	if !multiWordTail {
+		t.Error("no recorded exchange carries a tail of several words, so fake mode's stand-ins are untested across the seam")
 	}
 }
 

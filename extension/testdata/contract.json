@@ -1,5 +1,5 @@
 {
-  "comment": "The recorded exchanges between the browser extension and the agent. Read by internal/proxy/contract_test.go, which replays them against a real agent, and by extension/test/contract.test.ts, which drives the extension's client against them. Regenerate the responses with `make contract-update`; the requests and the `why` lines are written by hand.",
+  "comment": "The recorded exchanges between the browser extension and the agent. Read by internal/proxy/contract_test.go, which replays them against a real agent, and by extension/test/contract.test.ts, which drives the extension's client against them. Regenerate the responses with `make contract-update`; the requests and the `why` lines are written by hand. An exchange carrying `substitution` switches the agent to that mode before it is replayed, and the mode holds for the exchanges after it; the client sends the same requests in either mode.",
   "detector": {
     "locales": [
       "fr"
@@ -108,6 +108,51 @@
       },
       "response": {
         "expanded": "as [EMAIL_99] said",
+        "tail": ""
+      }
+    },
+    {
+      "name": "fake mode: mask a telephone number",
+      "why": "Fake mode replaces a value with a stand-in of the same shape, and a French telephone number is five groups of digits. That stand-in is what the next two exchanges carry across a chunk boundary.",
+      "substitution": "fake",
+      "route": "/mask",
+      "request": {
+        "texts": [
+          "Rappelle-moi au 06 12 34 56 78 demain"
+        ]
+      },
+      "response": {
+        "texts": [
+          "Rappelle-moi au 06 39 98 00 00 demain"
+        ],
+        "masked": 1
+      }
+    },
+    {
+      "name": "fake mode: hold back a stand-in that spans words",
+      "why": "The chunk ends three groups into the stand-in. What is held back is several words long, spaces included — the case TailLen exists for and a token never produces. A client that trimmed the tail, or split it on a space, would put a fragment of a fictional number on screen and leave the rest unexpandable.",
+      "route": "/unmask",
+      "request": {
+        "text": "je compose le 06 39 98",
+        "tail": "",
+        "final": false
+      },
+      "response": {
+        "expanded": "je compose le ",
+        "tail": "06 39 98"
+      }
+    },
+    {
+      "name": "fake mode: complete the stand-in from the tail",
+      "why": "The multi-word tail from the call before, carried back exactly as it was answered. The person's own number comes back whole.",
+      "route": "/unmask",
+      "request": {
+        "text": " 00 00 ce soir",
+        "tail": "06 39 98",
+        "final": false
+      },
+      "response": {
+        "expanded": "06 12 34 56 78 ce soir",
         "tail": ""
       }
     }
