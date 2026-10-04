@@ -222,6 +222,66 @@ func TestReporterEnrolsOnceThenReports(t *testing.T) {
 	}
 }
 
+// An identity the disk refuses is kept, not dropped. The enrolment token is single-use:
+// dropped, the agent presented the spent token on every attempt and, once restarted,
+// never enrolled again. Kept, it reports without enrolling twice, and it lands on disk
+// the moment the disk takes it.
+func TestAnIdentityTheDiskRefusesIsKeptAndSavedLater(t *testing.T) {
+	b := newBackend(t)
+	r := NewRecorder(epoch)
+	r.WithClock(func() time.Time { return epoch })
+
+	// A directory where the write's temporary has to go: refused on every platform
+	// and for every user, where a read-only directory is neither.
+	identity := filepath.Join(t.TempDir(), "agent.json")
+	blocker := identity + ".tmp"
+	if err := os.MkdirAll(filepath.Join(blocker, "occupied"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	rep, err := NewReporter(Config{
+		BaseURL:        b.server.URL,
+		EnrolmentToken: "enrol-me",
+		IdentityFile:   identity,
+		BufferFile:     filepath.Join(t.TempDir(), "buffer.json"),
+		Recorder:       r,
+		State:          func() telemetry.State { return telemetry.State{Locales: []string{"fr"}} },
+		Now:            func() time.Time { return epoch },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r.Request("default", "", "")
+	rep.report(t.Context())
+	r.Request("default", "", "")
+	rep.report(t.Context())
+
+	got, _, enrolments := b.received()
+	if enrolments != 1 {
+		t.Errorf("enrolled %d times, want 1: the spent token was presented again", enrolments)
+	}
+	if len(got) != 2 {
+		t.Errorf("the backend saw %d heartbeats, want 2: the identity was dropped with the write", len(got))
+	}
+	if _, err := os.Stat(identity); !os.IsNotExist(err) {
+		t.Fatalf("the identity was written past a write that failed: %v", err)
+	}
+
+	if err := os.RemoveAll(blocker); err != nil {
+		t.Fatal(err)
+	}
+	r.Request("default", "", "")
+	rep.report(t.Context())
+
+	if _, found, err := LoadIdentity(identity); err != nil || !found {
+		t.Errorf("the identity is still not on disk once the disk takes it (found %v, %v)", found, err)
+	}
+	if _, _, enrolments := b.received(); enrolments != 1 {
+		t.Errorf("enrolled %d times, want 1", enrolments)
+	}
+}
+
 // The state is asked for at each heartbeat, so what the backend sees is what the
 // agent is applying now — not what it was configured with when it started.
 func TestReporterSendsLiveState(t *testing.T) {

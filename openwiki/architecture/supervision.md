@@ -264,6 +264,13 @@ The issued identity is stored by `internal/telemetry/identity.go` at
 (`TestIdentityDirectoryIsPrivate`). An incomplete identity file is refused rather than
 half-used (`TestIncompleteIdentityIsRefused`); a missing one is not an error.
 
+**An identity the disk refuses is kept in memory, not dropped** (`Reporter.issued`). The token
+is single-use, so an agent that dropped what it could not save presented the spent token on
+every attempt, was refused every time, and once restarted never enrolled again. Kept, it
+reports for the life of the process, retries the save on every send, and logs that a disk
+needs looking at; it never enrols twice, because the kept identity is returned before the
+token is reached (`TestAnIdentityTheDiskRefusesIsKeptAndSavedLater`).
+
 ## The recorder (`internal/telemetry/recorder.go`)
 
 `Recorder` accumulates the current window. The request path feeds it per session:

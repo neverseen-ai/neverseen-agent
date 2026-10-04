@@ -83,6 +83,10 @@ type Reporter struct {
 	token    string
 	identity string // path to the identity file
 
+	// issued is an identity the backend issued and the disk refused, kept for the
+	// life of the process — see ensureEnrolled. Touched only by Run's goroutine.
+	issued *Identity
+
 	queue    *buffer // buckets not yet delivered, mirrored to disk
 	recorder *Recorder
 
@@ -583,6 +587,14 @@ func (r *Reporter) ensureEnrolled(ctx context.Context) (Identity, error) {
 	} else if found {
 		return id, nil
 	}
+	if r.issued != nil {
+		// Saved again on every send until the disk takes it, so the agent stops
+		// depending on this process the moment whatever refused the write is fixed.
+		if err := SaveIdentity(r.identity, *r.issued); err != nil {
+			r.log.Error("the issued identity is still not saved; a restart will lose it", "error", err)
+		}
+		return *r.issued, nil
+	}
 
 	if r.token == "" {
 		return Identity{}, fmt.Errorf("no identity yet and no enrolment token configured")
@@ -612,11 +624,16 @@ func (r *Reporter) ensureEnrolled(ctx context.Context) (Identity, error) {
 
 	id := Identity{AgentID: issued.AgentID, Key: issued.Key}
 	if err := SaveIdentity(r.identity, id); err != nil {
-		// Refusing to carry on is deliberate. An agent that enrolled but could
-		// not persist the result would enrol again on every heartbeat, and the
-		// backend would fill with one agent per five minutes — each of them
-		// counting against whatever the operator is paying for.
-		return Identity{}, fmt.Errorf("persist the issued identity: %w", err)
+		// Kept in memory rather than refused. The token is single-use, so an agent
+		// that dropped the identity it could not save would present the spent token
+		// on every attempt, be refused every time, and — once restarted — never
+		// enrol again. Kept, it reports for as long as this process lives, and the
+		// log says a disk needs looking at. It never enrols twice either way: the
+		// check above returns this identity before the token is reached again.
+		r.log.Error("enrolled, but the issued identity could not be saved; a restart will lose it",
+			"agent", id.AgentID, "error", err)
+		r.issued = &id
+		return id, nil
 	}
 
 	r.log.Info("enrolled with the backend", "agent", id.AgentID)
