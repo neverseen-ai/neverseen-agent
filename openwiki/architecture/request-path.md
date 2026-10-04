@@ -15,7 +15,7 @@ request  →  refuse a Host that is not this agent's ⇒ 421
 response →  expand the masked values back (buffered or streamed)
 ```
 
-`Server.forward` (`proxy.go:306`) is that sequence end to end;
+`Server.forward` (`proxy.go:412`) is that sequence end to end;
 `Server.maskRequest` (`:352`) is the outbound half, `Server.unmask` (`:479`) the inbound.
 
 ## Provider routing
@@ -28,7 +28,7 @@ reaches `api.openai.com` (`provider.go:10-18`). Eight providers ship in
 Routing on an explicit segment rather than sniffing the path is what makes eight
 providers work on one port: six of them speak the same OpenAI-compatible paths, so
 `/v1/chat/completions` names no upstream at all. An unknown code is refused **by name**
-with the list of the ones that exist (`proxy.go:309-316`) — a proxy that silently picked
+with the list of the ones that exist (`proxy.go:415-422`) — a proxy that silently picked
 a provider would send one vendor's key to another vendor.
 
 `NEVERSEEN_PROVIDERS` applies `code=url` **overrides** onto the default set rather than
@@ -36,10 +36,10 @@ replacing it (`ParseProviders`, `provider.go:51`): a deployment pointing one pro
 its own gateway must not silently lose the other seven.
 
 **Reserved routes.** `reservedRoutes` = `healthz`, `test`, `policy`, `mask`, `unmask`
-(`proxy.go:201`) — every route the agent answers itself. A provider may
+(`proxy.go:215`) — every route the agent answers itself. A provider may
 not take one of those codes — `/healthz` would reach the agent while `/healthz/v1/…`
 reached the provider, a routing table nobody could reason about. `New` refuses it
-(`proxy.go:156-160`, asserted by `TestReservedRoutesCannotBeProviders`).
+(`proxy.go:163-167`, asserted by `TestReservedRoutesCannotBeProviders`).
 
 **No API keys.** Whatever credential the caller sent — a bearer token, an `x-api-key`
 header — is forwarded untouched, because the tool making the request already has it. A
@@ -56,7 +56,7 @@ carrying a quote or a newline cannot be spliced into raw JSON.
 
 `mapJSONStrings` (`jsonbody.go:39`) decodes, maps every string value, and re-encodes;
 `mapStrings` (`:54`) walks the tree. A body that is not JSON is masked as flat text
-(`proxy.go:402-411`). Either way it is **one pass over the whole body**, so a value
+(`proxy.go:526-535`). Either way it is **one pass over the whole body**, so a value
 repeated in two fields keeps one identity. A body carrying more than one JSON document is
 an error, not a guess (`errTrailingJSON`, `jsonbody.go:305`).
 
@@ -91,7 +91,7 @@ have lost every token count. What caught it is that `TestDeltaText` and `TestUsa
 build their input from raw JSON through the real decoder — a test constructing a map by
 hand would have gone on passing over dead code.
 
-**Fail closed.** `readBody` (`proxy.go:457`) decompresses a compressed body and returns an
+**Fail closed.** `readBody` (`proxy.go:593`) decompresses a compressed body and returns an
 error for an encoding it cannot read. Forwarding a body the agent could not inspect is the
 one failure mode a data-loss-prevention tool must never have — hence the 415
 (`TestUnreadableEncodingFailsClosed`, `TestGzippedRequestBodyIsMasked`).
@@ -283,7 +283,7 @@ known requirement (Redis, for a mapping surviving a restart) rather than a specu
   conversations through pauses and restarts and asserts no token left unexpanded, no
   second name, no wrong value and no leak.
 
-**Sessions scope the mapping.** `sessionOf` (`proxy.go:659`) reads the session a request
+**Sessions scope the mapping.** `sessionOf` (`proxy.go:811`) reads the session a request
 belongs to — `X-Session-Id`, else `X-Request-Id` — falling back to a single name. The
 *conversation* the heartbeat counts is a separate identity, `conversationOf`
 (`identifiers.go:155`): the same header, else the id Claude Code writes in
@@ -296,20 +296,20 @@ their credentials, and scopes the mapping by a header they control.
 ## Expansion on the way back
 
 Streaming and buffered responses go through the **same** expansion, so a value restored in
-one is restored in the other (`proxy.go:475-478`). They differ only in how much text the
+one is restored in the other (`proxy.go:621-624`). They differ only in how much text the
 expander can see at a time.
 
 Read for three things, rewritten for one. Every textual answer is decoded — for its token
 counts (`usageFrom`) and for the tool calls the model asked for (`reportToolCalls` on the
 buffered path, `stream.onTool` on the streamed one) — but the decode-and-encode round trip
 is not byte-preserving, so the body is re-encoded only when the session has minted something
-(`len(known) > 0`, `proxy.go:551-561`; `streamRehydrator.observe` for a stream). A stream
+(`len(known) > 0`, `proxy.go:703-713`; `streamRehydrator.observe` for a stream). A stream
 also reports a tool call whose arguments never formed a document through `onDegraded`
-(`proxy.go:508`), which is the heartbeat's `degraded` count. The console and the trace file
+(`proxy.go:654`), which is the heartbeat's `degraded` count. The console and the trace file
 that read these same two bodies are the operator's surface, described in
 [configuration](../operations/configuration.md).
 
-`isTextual` (`proxy.go:634`) gates it: an image or an audio stream is passed through
+`isTextual` (`proxy.go:786`) gates it: an image or an audio stream is passed through
 untouched (`TestNonTextualResponseIsUntouched`).
 
 **Both shapes of a masked value are expanded.** A bracket token is expanded by
@@ -464,7 +464,7 @@ bill the same tokens twice, so the OpenAI breakdown is deliberately not read.
 A refused request is not counted, and the test page is not counted
 (`TestARefusedRequestIsNotCounted`, `TestTheTestPageIsNotCounted`). The log line per
 exchange carries **counts and category names only** — the log is the one place a masked
-value could come back into the clear by accident (`proxy.go:440-442`).
+value could come back into the clear by accident (`proxy.go:564-566`).
 
 ## Where to start on a change here
 
