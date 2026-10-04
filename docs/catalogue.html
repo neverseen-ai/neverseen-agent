@@ -1,0 +1,1401 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Neverseen catalogue</title>
+<style>
+:root {
+  --bg: #f7f7f5; --surface: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --line: #e3e2dd;
+  --high: #2f7d4f; --mid: #b07a12; --low: #b23b2e; --track: #ecebe6;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #161615; --surface: #1f1f1d; --text: #ecebe6; --muted: #9a9a93; --line: #33332f;
+          --high: #5cba82; --mid: #e0a83a; --low: #e5705f; --track: #2c2c29; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+       font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 1100px; margin: 0 auto; padding: 32px 16px 64px; }
+h1 { font-size: 24px; margin: 0 0 4px; }
+h2 { font-size: 18px; margin: 40px 0 4px; }
+p { margin: 4px 0; }
+.muted { color: var(--muted); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-top: 16px; }
+.card ul { margin: 8px 0 0; padding-left: 20px; }
+.wrap { overflow-x: auto; margin-top: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 760px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+tr:last-child td { border-bottom: 0; }
+code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); }
+.score { display: flex; align-items: center; gap: 8px; min-width: 130px; font-variant-numeric: tabular-nums; font-weight: 600; }
+.bar { flex: 1; height: 6px; border-radius: 3px; background: var(--track); overflow: hidden; }
+.bar span { display: block; height: 100%; }
+.high { color: var(--high); } .high .bar span { background: var(--high); }
+.mid { color: var(--mid); }   .mid .bar span { background: var(--mid); }
+.low { color: var(--low); }   .low .bar span { background: var(--low); }
+.tag { display: inline-block; font-size: 12px; padding: 0 6px; border-radius: 4px; border: 1px solid var(--line); margin: 0 4px 2px 0; white-space: nowrap; }
+details summary { cursor: pointer; }
+.matrix th { text-transform: none; letter-spacing: 0; vertical-align: bottom; }
+.matrix td.cell { text-align: center; font-variant-numeric: tabular-nums; font-weight: 600; }
+.matrix tr.group td { background: var(--track); }
+details.full { margin-top: 12px; }
+details.full > summary { color: var(--muted); }
+details ul { margin: 4px 0 0; padding-left: 18px; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+<h1>What the agent tries to mask</h1>
+<p class="muted">Computed from the patterns in <code>pkg/pii</code>: every locale, whatever a deployment loads. Regenerate with <code>go run ./.claude/skills/catalogue-report</code> after changing the catalogue.</p>
+
+<div class="card">
+<strong>Coverage score</strong>
+<p>How few shapes a category's value can take, so how far one set of regular expressions can be trusted to catch every one of them. It is computed from the structure of the patterns, not measured on data: it is not a precision or a recall (<code>make bench-accuracy</code> measures those).</p>
+<ul>
+<li>Starts at 100.</li>
+<li>−15 when only the shape vouches for the value: no run of 3+ fixed characters in the value itself (<code>sk-</code>, <code>://</code>), or of 2 before a bounded value of 16+ characters (<code>SK</code> and 32 hex digits) and no check beyond the shape (checksum, parser).</li>
+<li>−25 for free text: a value of open length that spans words. −10 for an open length within one word.</li>
+<li>−5 per unanchored form past the first (at most −30): every form is one more case somebody had to write down. A notation whose every sample value has the shape of a value another notation already reads is one more <em>context</em> for that form — another way to find it — and costs nothing.</li>
+<li>−5 per country past the first (at most −20).</li>
+<li>−10 when source code satisfies the shape on its own (dates, runs of digits).</li>
+<li>Never below 5. A literal in the context around the value (<code>password=</code>) anchors the match, not the value, and earns nothing.</li>
+</ul>
+</div>
+
+
+
+
+<h2>Secrets <span class="muted">(4 below 100%, 128 at 100%)</span></h2>
+<p class="muted">Credentials: the agent replaces them with a token and never a stand-in, and none can be switched off.</p>
+<div class="wrap">
+<table>
+<thead><tr><th>Category</th><th>Score</th><th>Notations</th><th>Countries</th><th>Why</th></tr></thead>
+<tbody>
+<tr>
+<td>Secret in an assignment<br><code>SECRET_GENERIC</code></td>
+<td><div class="score mid">70%<div class="bar"><span style="width:70%"></span></div></div></td>
+<td><details><summary>5 (5 unanchored)</summary><ul><li>Named secret or password</li><li>Named secret in an XML element</li><li>NuGet feed password</li><li>Authorization header credential</li><li>Session token</li></ul></details></td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">check beyond the shape</span><span class="tag">open length</span></td>
+</tr>
+<tr>
+<td>Connection string<br><code>SECRET_CONN_STR</code></td>
+<td><div class="score mid">75%<div class="bar"><span style="width:75%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">open length</span><span class="tag">shape only</span></td>
+</tr>
+<tr>
+<td>Hexadecimal key<br><code>SECRET_HEX_KEY</code></td>
+<td><div class="score mid">75%<div class="bar"><span style="width:75%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">open length</span><span class="tag">shape only</span></td>
+</tr>
+<tr>
+<td>AWS secret key<br><code>SECRET_AWS_SECRET_KEY</code></td>
+<td><div class="score mid">85%<div class="bar"><span style="width:85%"></span></div></div></td>
+<td><details><summary>2 (2 unanchored, 1 form)</summary><ul><li>AWS secret access key</li><li>AWS secret access key (beside its key id)</li></ul></details></td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">shape only</span></td>
+</tr>
+
+</tbody>
+</table>
+</div>
+<details class="full"><summary>128 categories at 100%</summary><div class="wrap">
+<table>
+<thead><tr><th>Category</th><th>Score</th><th>Notations</th><th>Countries</th><th>Why</th></tr></thead>
+<tbody>
+<tr>
+<td>1Password credential<br><code>SECRET_1PASSWORD</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td><details><summary>2</summary><ul><li>1Password credential (A3-…)</li><li>1Password credential (ops_eyJ…)</li></ul></details></td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>42 Intra credential<br><code>SECRET_INTRA42</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>AWS access key<br><code>SECRET_AWS_ACCESS_KEY</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Adobe credential<br><code>SECRET_ADOBE</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Aikido credential<br><code>SECRET_AIKIDO</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td><details><summary>2</summary><ul><li>Aikido credential (AIK_CI_…)</li><li>Aikido credential (AIK_SECRET_…)</li></ul></details></td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Airtable credential<br><code>SECRET_AIRTABLE</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Alibaba Cloud credential<br><code>SECRET_ALIBABA</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td><details><summary>2</summary><ul><li>Alibaba Cloud credential (LTAI…)</li><li>Alibaba Cloud credential (STS.…)</li></ul></details></td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Anthropic key<br><code>SECRET_ANTHROPIC_KEY</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Apify credential<br><code>SECRET_APIFY</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Artifactory credential<br><code>SECRET_ARTIFACTORY</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td><details><summary>2</summary><ul><li>Artifactory credential (AKCp…)</li><li>Artifactory credential (cmVmd…)</li></ul></details></td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Asaas credential<br><code>SECRET_ASAAS</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td><details><summary>2</summary><ul><li>Asaas credential ($aact_prod_…)</li><li>Asaas credential ($aact_hmlg_…)</li></ul></details></td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Authress credential<br><code>SECRET_AUTHRESS</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td><details><summary>4</summary><ul><li>Authress credential (sc_…)</li><li>Authress credential (ext_…)</li><li>Authress credential (scauth_…)</li><li>Authress credential (authress_…)</li></ul></details></td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Azure App Configuration credential<br><code>SECRET_AZURE_APP_CONFIGURATION</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Azure Service Bus credential<br><code>SECRET_AZURE_SERVICEBUS</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Brave Search credential<br><code>SECRET_BRAVE_SEARCH</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Brevo credential<br><code>SECRET_SENDINBLUE</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Buildkite credential<br><code>SECRET_BUILDKITE</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td><details><summary>8</summary><ul><li>Buildkite credential (bkaa_…)</li><li>Buildkite credential (bkaj_…)</li><li>Buildkite credential (bkar_…)</li><li>Buildkite credential (bkct_…)</li><li>Buildkite credential (bkpt_…)</li><li>Buildkite credential (bkpat_…)</li><li>Buildkite credential (bkps_…)</li><li>Buildkite credential (bkua_…)</li></ul></details></td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Canva credential<br><code>SECRET_CANVA</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Cerebras credential<br><code>SECRET_CEREBRAS</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>CircleCI credential<br><code>SECRET_CIRCLECI</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>ClickHouse credential<br><code>SECRET_CLICKHOUSE</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Clojars credential<br><code>SECRET_CLOJARS</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Cloudflare credential<br><code>SECRET_CLOUDFLARE</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Cloudsmith credential<br><code>SECRET_CLOUDSMITH</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>CockroachDB Cloud credential<br><code>SECRET_COCKROACHLABS</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>ConfigCat credential<br><code>SECRET_CONFIGCAT</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>DataStax Astra credential<br><code>SECRET_DATASTAX_ASTRA</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Databricks credential<br><code>SECRET_DATABRICKS</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Deno Deploy credential<br><code>SECRET_DENO</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>DevCycle credential<br><code>SECRET_DEVCYCLE</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td><details><summary>3</summary><ul><li>DevCycle credential (dvc_client_…)</li><li>DevCycle credential (dvc_mobile_…)</li><li>DevCycle credential (dvc_server_…)</li></ul></details></td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Devin credential<br><code>SECRET_DEVIN</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td><details><summary>3</summary><ul><li>Devin credential (apk_user_…)</li><li>Devin credential (apk_…)</li><li>Devin credential (cog_…)</li></ul></details></td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>DigitalOcean credential<br><code>SECRET_DIGITALOCEAN</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td><details><summary>3</summary><ul><li>DigitalOcean credential (doo_v1_…)</li><li>DigitalOcean credential (dop_v1_…)</li><li>DigitalOcean credential (dor_v1_…)</li></ul></details></td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Docker token<br><code>SECRET_DOCKER_TOKEN</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Doppler credential<br><code>SECRET_DOPPLER</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Duffel credential<br><code>SECRET_DUFFEL</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Dynatrace credential<br><code>SECRET_DYNATRACE</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>EasyPost credential<br><code>SECRET_EASYPOST</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td><details><summary>2</summary><ul><li>EasyPost credential (EZAK…)</li><li>EasyPost credential (EZTK…)</li></ul></details></td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Elastic Cloud credential<br><code>SECRET_ELASTIC</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Exoscale credential<br><code>SECRET_EXOSCALE</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Facebook credential<br><code>SECRET_FACEBOOK</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Figma credential<br><code>SECRET_FIGMA</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Flutterwave credential<br><code>SECRET_FLUTTERWAVE</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td><details><summary>2</summary><ul><li>Flutterwave credential (FLWSECK_TEST-(?i)[a-h0-9]{12})</li><li>Flutterwave credential (FLWSECK_TEST-(?i)[a-h0-9]{32}-X)</li></ul></details></td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Fly.io credential<br><code>SECRET_FLYIO</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Frame.io credential<br><code>SECRET_FRAMEIO</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>GC Notify credential<br><code>SECRET_GC_NOTIFY</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>GitHub token<br><code>SECRET_GITHUB_TOKEN</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td><details><summary>2</summary><ul><li>GitHub token</li><li>GitHub fine-grained token</li></ul></details></td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>GitLab token<br><code>SECRET_GITLAB_TOKEN</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Google Gemini credential<br><code>SECRET_GOOGLE_GEMINI</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Google key<br><code>SECRET_GOOGLE_KEY</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Grafana credential<br><code>SECRET_GRAFANA</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td><details><summary>3</summary><ul><li>Grafana credential (eyJrIjoi…)</li><li>Grafana credential (glc_…)</li><li>Grafana credential (glsa_…)</li></ul></details></td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Groq API key<br><code>SECRET_GROQ_KEY</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Harness credential<br><code>SECRET_HARNESS</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td><details><summary>2</summary><ul><li>Harness credential (pat.…)</li><li>Harness credential (sat.…)</li></ul></details></td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>HashiCorp Vault credential<br><code>SECRET_VAULT</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td><details><summary>2</summary><ul><li>HashiCorp Vault credential (hvb.…)</li><li>HashiCorp Vault credential (hvs.…)</li></ul></details></td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Heroku credential<br><code>SECRET_HEROKU</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Hugging Face token<br><code>SECRET_HF_TOKEN</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Infracost credential<br><code>SECRET_INFRACOST</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Ionic credential<br><code>SECRET_IONIC</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>JSON web token<br><code>SECRET_JWT</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>LangSmith credential<br><code>SECRET_LANGSMITH</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td><details><summary>2</summary><ul><li>LangSmith credential (lsv2_pt_…)</li><li>LangSmith credential (lsv2_sk_…)</li></ul></details></td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Lichess credential<br><code>SECRET_LICHESS</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Linear credential<br><code>SECRET_LINEAR</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>MailerSend credential<br><code>SECRET_MAILERSEND</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Mercury credential<br><code>SECRET_MERCURY</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Mergify credential<br><code>SECRET_MERGIFY</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Microsoft Teams credential<br><code>SECRET_MICROSOFT_TEAMS</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>MiniMax credential<br><code>SECRET_MINIMAX</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>MongoDB Atlas credential<br><code>SECRET_MONGODB_ATLAS</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>NVIDIA credential<br><code>SECRET_NVIDIA</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Neon credential<br><code>SECRET_NEON</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Notion credential<br><code>SECRET_NOTION</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Octopus Deploy credential<br><code>SECRET_OCTOPUS_DEPLOY</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>OneSignal credential<br><code>SECRET_ONESIGNAL</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Onfido credential<br><code>SECRET_ONFIDO</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td><details><summary>3</summary><ul><li>Onfido credential (api_live_ca.…)</li><li>Onfido credential (api_live.…)</li><li>Onfido credential (api_live_us.…)</li></ul></details></td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>OpenAI key<br><code>SECRET_OPENAI_KEY</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td><details><summary>2</summary><ul><li>OpenAI API key</li><li>OpenAI API key (legacy)</li></ul></details></td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>OpenRouter credential<br><code>SECRET_OPENROUTER</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>OpenShift credential<br><code>SECRET_OPENSHIFT</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Paddle credential<br><code>SECRET_PADDLE</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Perplexity credential<br><code>SECRET_PERPLEXITY</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Persona credential<br><code>SECRET_PERSONA</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Pinecone credential<br><code>SECRET_PINECONE</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Pinterest credential<br><code>SECRET_PINTEREST</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>PlanetScale credential<br><code>SECRET_PLANETSCALE</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td><details><summary>3</summary><ul><li>PlanetScale credential (pscale_tkn_…)</li><li>PlanetScale credential (pscale_oauth_…)</li><li>PlanetScale credential (pscale_pw_…)</li></ul></details></td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Polar credential<br><code>SECRET_POLAR</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td><details><summary>3</summary><ul><li>Polar credential (polar_at_…)</li><li>Polar credential (polar_oat_…)</li><li>Polar credential (polar_pat_…)</li></ul></details></td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>PostHog credential<br><code>SECRET_POSTHOG</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td><details><summary>2</summary><ul><li>PostHog credential (phx_…)</li><li>PostHog credential (phc_…)</li></ul></details></td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Postman credential<br><code>SECRET_POSTMAN</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Prefect credential<br><code>SECRET_PREFECT</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Private key<br><code>SECRET_PEM_KEY</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td><details><summary>2</summary><ul><li>PEM private key, whole block</li><li>PEM private key header</li></ul></details></td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Proof credential<br><code>SECRET_PROOF</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Pulumi credential<br><code>SECRET_PULUMI</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>PyPI token<br><code>SECRET_PYPI_TOKEN</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Ramp credential<br><code>SECRET_RAMP</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>ReadMe credential<br><code>SECRET_README</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Render credential<br><code>SECRET_RENDER</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Replicate token<br><code>SECRET_REPLICATE_TOKEN</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Rootly credential<br><code>SECRET_ROOTLY</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>RubyGems credential<br><code>SECRET_RUBYGEMS</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>RunPod credential<br><code>SECRET_RUNPOD</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Salesforce credential<br><code>SECRET_SALESFORCE</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Samsara credential<br><code>SECRET_SAMSARA</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Scalingo credential<br><code>SECRET_SCALINGO</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Segment credential<br><code>SECRET_SEGMENT</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>SendGrid key<br><code>SECRET_SENDGRID_KEY</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Sentry credential<br><code>SECRET_SENTRY</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td><details><summary>2</summary><ul><li>Sentry credential (sntrys_eyJpYXQiO…)</li><li>Sentry credential (sntryu_…)</li></ul></details></td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>SettleMint credential<br><code>SECRET_SETTLEMINT</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td><details><summary>3</summary><ul><li>SettleMint credential (sm_aat_…)</li><li>SettleMint credential (sm_pat_…)</li><li>SettleMint credential (sm_sat_…)</li></ul></details></td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Shippo credential<br><code>SECRET_SHIPPO</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Shopify credential<br><code>SECRET_SHOPIFY</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td><details><summary>4</summary><ul><li>Shopify credential (shpat_…)</li><li>Shopify credential (shpca_…)</li><li>Shopify credential (shppa_…)</li><li>Shopify credential (shpss_…)</li></ul></details></td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Slack token<br><code>SECRET_SLACK_TOKEN</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td><details><summary>3</summary><ul><li>Slack bot or user token</li><li>Slack app-level token</li><li>Slack webhook URL</li></ul></details></td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Sourcegraph credential<br><code>SECRET_SOURCEGRAPH</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td><details><summary>2</summary><ul><li>Sourcegraph credential (sgp_(?:[a-fA-F0-9]{16}|local)_[a-fA-F0-9]{40})</li><li>Sourcegraph credential (sgp_[a-fA-F0-9]{40})</li></ul></details></td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Square credential<br><code>SECRET_SQUARE</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td><details><summary>2</summary><ul><li>Square credential (EAAA…)</li><li>Square credential (sq0atp-…)</li></ul></details></td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Stripe key<br><code>SECRET_STRIPE_KEY</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Supabase credential<br><code>SECRET_SUPABASE</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td><details><summary>2</summary><ul><li>Supabase credential (sbp_…)</li><li>Supabase credential (sb_secret_…)</li></ul></details></td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Tailscale credential<br><code>SECRET_TAILSCALE</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Temporal Cloud credential<br><code>SECRET_TEMPORAL</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Thunderstore credential<br><code>SECRET_THUNDERSTORE</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Together AI credential<br><code>SECRET_TOGETHERAI</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Twilio key<br><code>SECRET_TWILIO_KEY</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Unkey credential<br><code>SECRET_UNKEY</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>UpCloud credential<br><code>SECRET_UPCLOUD</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Val Town credential<br><code>SECRET_VAL_TOWN</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Vercel credential<br><code>SECRET_VERCEL</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td><details><summary>5</summary><ul><li>Vercel credential (vck_…)</li><li>Vercel credential (vca_…)</li><li>Vercel credential (vcr_…)</li><li>Vercel credential (vci_…)</li><li>Vercel credential (vcp_…)</li></ul></details></td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>WakaTime credential<br><code>SECRET_WAKATIME</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Weights &amp; Biases credential<br><code>SECRET_WEIGHTS_AND_BIASES</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Workato credential<br><code>SECRET_WORKATO</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>Zuplo credential<br><code>SECRET_ZUPLO</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>age credential<br><code>SECRET_AGE</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>npm token<br><code>SECRET_NPM_TOKEN</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>redirect.pizza credential<br><code>SECRET_REDIRECT_PIZZA</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+<tr>
+<td>xAI API key<br><code>SECRET_XAI_KEY</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">value anchored</span></td>
+</tr>
+
+</tbody>
+</table>
+</div></details>
+
+<h2>Personal data <span class="muted">(9 below 100%, 11 at 100%)</span></h2>
+<p class="muted">Personal and company data: masked by default, each family can be switched off on the settings page.</p>
+<div class="wrap">
+<table>
+<thead><tr><th>Category</th><th>Score</th><th>Notations</th><th>Countries</th><th>Why</th></tr></thead>
+<tbody>
+<tr>
+<td>Vehicle registration<br><code>LICENSE_PLATE</code></td>
+<td><div class="score low">35%<div class="bar"><span style="width:35%"></span></div></div></td>
+<td><details><summary>42 (42 unanchored, 21 forms)</summary><ul><li>Plaque d&#39;immatriculation (SIV)</li><li>Registration mark (2001)</li><li>Matrícula (nacional)</li><li>Matrícula (provincial)</li><li>Plaque / nummerplaat (2010)</li><li>Targa (1994)</li><li>Kenteken (sidecodes)</li><li>Matrícula portuguesa</li><li>Kfz-Kennzeichen</li><li>Tablica rejestracyjna (Polish)</li><li>Kfz-Kennzeichen (Austrian)</li><li>Kontrollschild (Swiss)</li><li>SPZ (Czech)</li><li>EČV (Slovak)</li><li>Rendszám (Hungarian, 2022)</li><li>Număr de înmatriculare (Romanian)</li><li>Irish registration</li><li>Nummerplade (Danish)</li><li>Registreringsnummer (Swedish)</li><li>Kjennemerke (Norwegian)</li><li>Rekisterikilpi (Finnish)</li><li>Πινακίδα (Greek, in Latin letters)</li><li>Регистрационен номер (Bulgarian)</li><li>Registarska oznaka (Croatian)</li><li>Registarska tablica (Serbian)</li><li>Registrska tablica (Slovenian)</li><li>Valstybinis numeris (Lithuanian)</li><li>Numurzīme (Latvian)</li><li>Numbrimärk (Estonian)</li><li>Plaque luxembourgeoise</li><li>Maltese registration</li><li>Cypriot registration</li><li>Bílnúmer (Icelandic)</li><li>Kontrollschild (Liechtenstein)</li><li>Targa (Albanian)</li><li>Регистарска таблица (North Macedonian)</li><li>Registarska tablica (Bosnian)</li><li>Registarska tablica (Montenegrin)</li><li>Targa (Kosovan)</li><li>Номерний знак (Ukrainian, in Latin letters)</li><li>Număr de înmatriculare (Moldovan)</li><li>Plaka (Turkish)</li></ul></details></td>
+<td><details><summary>41</summary><span class="tag">fr</span><span class="tag">gb</span><span class="tag">es</span><span class="tag">be</span><span class="tag">it</span><span class="tag">nl</span><span class="tag">pt</span><span class="tag">de</span><span class="tag">pl</span><span class="tag">at</span><span class="tag">ch</span><span class="tag">cz</span><span class="tag">sk</span><span class="tag">hu</span><span class="tag">ro</span><span class="tag">ie</span><span class="tag">dk</span><span class="tag">se</span><span class="tag">no</span><span class="tag">fi</span><span class="tag">gr</span><span class="tag">bg</span><span class="tag">hr</span><span class="tag">rs</span><span class="tag">si</span><span class="tag">lt</span><span class="tag">lv</span><span class="tag">ee</span><span class="tag">lu</span><span class="tag">mt</span><span class="tag">cy</span><span class="tag">is</span><span class="tag">li</span><span class="tag">al</span><span class="tag">mk</span><span class="tag">ba</span><span class="tag">me</span><span class="tag">xk</span><span class="tag">ua</span><span class="tag">md</span><span class="tag">tr</span></details></td>
+<td><span class="tag">shape only</span></td>
+</tr>
+<tr>
+<td>Postal address<br><code>ADDRESS</code></td>
+<td><div class="score low">40%<div class="bar"><span style="width:40%"></span></div></div></td>
+<td><details><summary>3 (3 unanchored)</summary><ul><li>Adresse française</li><li>UK street address</li><li>US street address</li></ul></details></td>
+<td><span class="tag">fr</span><span class="tag">gb</span><span class="tag">us</span></td>
+<td><span class="tag">free text</span><span class="tag">shape only</span></td>
+</tr>
+<tr>
+<td>Postcode<br><code>POSTAL_CODE</code></td>
+<td><div class="score low">45%<div class="bar"><span style="width:45%"></span></div></div></td>
+<td><details><summary>3 (3 unanchored)</summary><ul><li>Code postal et commune</li><li>UK postcode</li><li>US ZIP code</li></ul></details></td>
+<td><span class="tag">fr</span><span class="tag">gb</span><span class="tag">us</span></td>
+<td><span class="tag">check beyond the shape</span><span class="tag">free text</span><span class="tag">noisy in code</span></td>
+</tr>
+<tr>
+<td>Geographic point<br><code>GEO_POINT</code></td>
+<td><div class="score low">55%<div class="bar"><span style="width:55%"></span></div></div></td>
+<td><details><summary>8 (2 unanchored)</summary><ul><li>geo: URI</li><li>Google Maps link</li><li>Apple Maps link</li><li>OpenStreetMap link</li><li>WKT point</li><li>Degrees, minutes, seconds</li><li>Plus Code</li><li>what3words address</li></ul></details></td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">free text</span><span class="tag">shape only</span></td>
+</tr>
+<tr>
+<td>Telephone<br><code>PHONE</code></td>
+<td><div class="score low">55%<div class="bar"><span style="width:55%"></span></div></div></td>
+<td><details><summary>3 (3 unanchored)</summary><ul><li>Numéro de téléphone français</li><li>UK telephone number</li><li>US telephone number</li></ul></details></td>
+<td><span class="tag">fr</span><span class="tag">gb</span><span class="tag">us</span></td>
+<td><span class="tag">noisy in code</span><span class="tag">shape only</span></td>
+</tr>
+<tr>
+<td>Date of birth<br><code>DOB</code></td>
+<td><div class="score mid">60%<div class="bar"><span style="width:60%"></span></div></div></td>
+<td><details><summary>4 (4 unanchored, 3 forms)</summary><ul><li>Date (jour d&#39;abord)</li><li>Date (day first)</li><li>Date (month first)</li><li>Date (ISO)</li></ul></details></td>
+<td><span class="tag">fr</span><span class="tag">gb</span><span class="tag">us</span></td>
+<td><span class="tag">check beyond the shape</span><span class="tag">open length</span><span class="tag">noisy in code</span></td>
+</tr>
+<tr>
+<td>Database identifier<br><code>MONGO_ID</code></td>
+<td><div class="score mid">85%<div class="bar"><span style="width:85%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">shape only</span></td>
+</tr>
+<tr>
+<td>Employer identification number (us)<br><code>EIN</code></td>
+<td><div class="score mid">85%<div class="bar"><span style="width:85%"></span></div></div></td>
+<td>1</td>
+<td><span class="tag">us</span></td>
+<td><span class="tag">shape only</span></td>
+</tr>
+<tr>
+<td>Email address<br><code>EMAIL</code></td>
+<td><div class="score high">90%<div class="bar"><span style="width:90%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">check beyond the shape</span><span class="tag">open length</span></td>
+</tr>
+
+</tbody>
+</table>
+</div>
+<details class="full"><summary>11 categories at 100%</summary><div class="wrap">
+<table>
+<thead><tr><th>Category</th><th>Score</th><th>Notations</th><th>Countries</th><th>Why</th></tr></thead>
+<tbody>
+<tr>
+<td>Bank account (IBAN)<br><code>IBAN</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">check beyond the shape</span></td>
+</tr>
+<tr>
+<td>Bank routing number (us)<br><code>ROUTING_NUMBER</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="tag">us</span></td>
+<td><span class="tag">check beyond the shape</span></td>
+</tr>
+<tr>
+<td>IPv4 address<br><code>IP_ADDRESS</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">check beyond the shape</span></td>
+</tr>
+<tr>
+<td>IPv6 address<br><code>IPV6_ADDRESS</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">check beyond the shape</span></td>
+</tr>
+<tr>
+<td>NHS number (gb)<br><code>NHS_NUMBER</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="tag">gb</span></td>
+<td><span class="tag">check beyond the shape</span></td>
+</tr>
+<tr>
+<td>National Insurance number (gb)<br><code>NINO</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="tag">gb</span></td>
+<td><span class="tag">check beyond the shape</span></td>
+</tr>
+<tr>
+<td>Payment card<br><code>CREDIT_CARD</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="muted">any</span></td>
+<td><span class="tag">check beyond the shape</span></td>
+</tr>
+<tr>
+<td>SIREN (fr)<br><code>SIREN</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="tag">fr</span></td>
+<td><span class="tag">check beyond the shape</span></td>
+</tr>
+<tr>
+<td>SIRET (fr)<br><code>SIRET</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="tag">fr</span></td>
+<td><span class="tag">check beyond the shape</span></td>
+</tr>
+<tr>
+<td>Social security number (fr)<br><code>NIR</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="tag">fr</span></td>
+<td><span class="tag">check beyond the shape</span></td>
+</tr>
+<tr>
+<td>Social security number (us)<br><code>SSN</code></td>
+<td><div class="score high">100%<div class="bar"><span style="width:100%"></span></div></div></td>
+<td>1</td>
+<td><span class="tag">us</span></td>
+<td><span class="tag">check beyond the shape</span></td>
+</tr>
+
+</tbody>
+</table>
+</div></details>
+
+
+<h2>By country</h2>
+<p class="muted">Each cell is the category's score on that locale's patterns alone, so a deployment can read what loading a locale buys. An empty cell is a category the locale does not find. The first row loads every European locale at once.</p>
+<p class="muted">Found whatever the locale: Geographic point, Email address, Payment card, Bank account (IBAN), Database identifier, IPv4 address, IPv6 address, and every secret.</p>
+<div class="wrap">
+<table class="matrix">
+<thead><tr><th>Locale</th><th title="NIR">Social security number (fr)</th><th title="LICENSE_PLATE">Vehicle registration</th><th title="PHONE">Telephone</th><th title="DOB">Date of birth</th><th title="SIRET">SIRET (fr)</th><th title="ADDRESS">Postal address</th><th title="POSTAL_CODE">Postcode</th><th title="SIREN">SIREN (fr)</th><th title="NHS_NUMBER">NHS number (gb)</th><th title="NINO">National Insurance number (gb)</th><th title="SSN">Social security number (us)</th><th title="EIN">Employer identification number (us)</th><th title="ROUTING_NUMBER">Bank routing number (us)</th></tr></thead>
+<tbody>
+
+<tr class="group">
+<td><strong>eu</strong><br><span class="muted">all 41 European locales together</span></td>
+<td class="cell"><span class="high">100%</span></td><td class="cell"><span class="low">35%</span></td><td class="cell"><span class="mid">65%</span></td><td class="cell"><span class="mid">70%</span></td><td class="cell"><span class="high">100%</span></td><td class="cell"><span class="low">50%</span></td><td class="cell"><span class="low">55%</span></td><td class="cell"><span class="high">100%</span></td><td class="cell"><span class="high">100%</span></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>fr</strong></td>
+<td class="cell"><span class="high">100%</span></td><td class="cell"><span class="high">100%</span></td><td class="cell"><span class="mid">75%</span></td><td class="cell"><span class="mid">80%</span></td><td class="cell"><span class="high">100%</span></td><td class="cell"><span class="mid">60%</span></td><td class="cell"><span class="mid">65%</span></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>gb</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"><span class="mid">75%</span></td><td class="cell"><span class="mid">80%</span></td><td class="cell"></td><td class="cell"><span class="mid">75%</span></td><td class="cell"><span class="high">90%</span></td><td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>us</strong></td>
+<td class="cell"></td><td class="cell"></td><td class="cell"><span class="mid">75%</span></td><td class="cell"><span class="high">90%</span></td><td class="cell"></td><td class="cell"><span class="mid">75%</span></td><td class="cell"><span class="mid">80%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"><span class="mid">85%</span></td><td class="cell"><span class="high">100%</span></td>
+</tr>
+
+<tr>
+<td><strong>es</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">95%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>be</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>it</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>nl</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>pt</strong></td>
+<td class="cell"></td><td class="cell"><span class="mid">85%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>de</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>pl</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>at</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>ch</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>cz</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>sk</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>hu</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>ro</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>ie</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>dk</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>se</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>no</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>fi</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>gr</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>bg</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>hr</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>rs</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>si</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>lt</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>lv</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>ee</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>lu</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>mt</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>cy</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>is</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>li</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>al</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>mk</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>ba</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>me</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>xk</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>ua</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>md</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+<tr>
+<td><strong>tr</strong></td>
+<td class="cell"></td><td class="cell"><span class="high">100%</span></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td><td class="cell"></td>
+</tr>
+
+</tbody>
+</table>
+</div>
+</main>
+</body>
+</html>

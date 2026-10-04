@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Neverseen catalogue</title>
+<style>
+:root {
+  --bg: #f7f7f5; --surface: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --line: #e3e2dd;
+  --high: #2f7d4f; --mid: #b07a12; --low: #b23b2e; --track: #ecebe6;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #161615; --surface: #1f1f1d; --text: #ecebe6; --muted: #9a9a93; --line: #33332f;
+          --high: #5cba82; --mid: #e0a83a; --low: #e5705f; --track: #2c2c29; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+       font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 1100px; margin: 0 auto; padding: 32px 16px 64px; }
+h1 { font-size: 24px; margin: 0 0 4px; }
+h2 { font-size: 18px; margin: 40px 0 4px; }
+p { margin: 4px 0; }
+.muted { color: var(--muted); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-top: 16px; }
+.card ul { margin: 8px 0 0; padding-left: 20px; }
+.wrap { overflow-x: auto; margin-top: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 760px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+tr:last-child td { border-bottom: 0; }
+code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); }
+.score { display: flex; align-items: center; gap: 8px; min-width: 130px; font-variant-numeric: tabular-nums; font-weight: 600; }
+.bar { flex: 1; height: 6px; border-radius: 3px; background: var(--track); overflow: hidden; }
+.bar span { display: block; height: 100%; }
+.high { color: var(--high); } .high .bar span { background: var(--high); }
+.mid { color: var(--mid); }   .mid .bar span { background: var(--mid); }
+.low { color: var(--low); }   .low .bar span { background: var(--low); }
+.tag { display: inline-block; font-size: 12px; padding: 0 6px; border-radius: 4px; border: 1px solid var(--line); margin: 0 4px 2px 0; white-space: nowrap; }
+details summary { cursor: pointer; }
+.matrix th { text-transform: none; letter-spacing: 0; vertical-align: bottom; }
+.matrix td.cell { text-align: center; font-variant-numeric: tabular-nums; font-weight: 600; }
+.matrix tr.group td { background: var(--track); }
+details.full { margin-top: 12px; }
+details.full > summary { color: var(--muted); }
+details ul { margin: 4px 0 0; padding-left: 18px; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+<h1>What the agent tries to mask</h1>
+<p class="muted">Computed from the patterns in <code>pkg/pii</code>: every locale, whatever a deployment loads. Regenerate with <code>go run ./.claude/skills/catalogue-report</code> after changing the catalogue.</p>
+
+<div class="card">
+<strong>Coverage score</strong>
+<p>How few shapes a category's value can take, so how far one set of regular expressions can be trusted to catch every one of them. It is computed from the structure of the patterns, not measured on data: it is not a precision or a recall (<code>make bench-accuracy</code> measures those).</p>
+<ul>
+<li>Starts at 100.</li>
+<li>−{{.Penalty.ShapeOnly}} when only the shape vouches for the value: no run of {{.Penalty.MinAnchor}}+ fixed characters in the value itself (<code>sk-</code>, <code>://</code>), or of {{.Penalty.MinShortAnchor}} before a bounded value of {{.Penalty.MinFixedLength}}+ characters (<code>SK</code> and 32 hex digits) and no check beyond the shape (checksum, parser).</li>
+<li>−{{.Penalty.FreeText}} for free text: a value of open length that spans words. −{{.Penalty.OpenLength}} for an open length within one word.</li>
+<li>−{{.Penalty.PerForm}} per unanchored form past the first (at most −{{.Penalty.CapForms}}): every form is one more case somebody had to write down. A notation whose every sample value has the shape of a value another notation already reads is one more <em>context</em> for that form — another way to find it — and costs nothing.</li>
+<li>−{{.Penalty.PerCountry}} per country past the first (at most −{{.Penalty.CapCountries}}).</li>
+<li>−{{.Penalty.Noisy}} when source code satisfies the shape on its own (dates, runs of digits).</li>
+<li>Never below {{.Penalty.Floor}}. A literal in the context around the value (<code>password=</code>) anchors the match, not the value, and earns nothing.</li>
+</ul>
+</div>
+
+{{define "row"}}<tr>
+<td>{{.Label}}<br><code>{{.Code}}</code></td>
+<td><div class="score {{if ge .Score 90}}high{{else if ge .Score 60}}mid{{else}}low{{end}}">{{.Score}}%<div class="bar"><span style="width:{{.Score}}%"></span></div></div></td>
+<td>{{if gt (len .Notations) 1}}<details><summary>{{len .Notations}}{{if .Unanchored}} ({{.Unanchored}} unanchored{{if ne .Forms .Unanchored}}, {{.Forms}} {{if eq .Forms 1}}form{{else}}forms{{end}}{{end}}){{end}}</summary><ul>{{range .Notations}}<li>{{.}}</li>{{end}}</ul></details>{{else}}1{{end}}</td>
+<td>{{if gt (len .Countries) 6}}<details><summary>{{len .Countries}}</summary>{{range .Countries}}<span class="tag">{{.}}</span>{{end}}</details>{{else if .Countries}}{{range .Countries}}<span class="tag">{{.}}</span>{{end}}{{else}}<span class="muted">any</span>{{end}}</td>
+<td>{{if .Anchored}}<span class="tag">value anchored</span>{{end}}{{if .Rule}}<span class="tag">check beyond the shape</span>{{end}}{{if .FreeText}}<span class="tag">free text</span>{{else if .OpenLength}}<span class="tag">open length</span>{{end}}{{if .Noisy}}<span class="tag">noisy in code</span>{{end}}{{if and (not .Anchored) (not .Rule)}}<span class="tag">shape only</span>{{end}}</td>
+</tr>
+{{end}}
+{{define "table"}}<div class="wrap">
+<table>
+<thead><tr><th>Category</th><th>Score</th><th>Notations</th><th>Countries</th><th>Why</th></tr></thead>
+<tbody>
+{{range .}}{{template "row" .}}{{end}}
+</tbody>
+</table>
+</div>{{end}}
+{{range .Sections}}
+<h2>{{.Title}} <span class="muted">({{len .Rows}} below 100%, {{len .Full}} at 100%)</span></h2>
+<p class="muted">{{.Note}}</p>
+{{if .Rows}}{{template "table" .Rows}}{{end}}
+{{if .Full}}<details class="full"><summary>{{len .Full}} categories at 100%</summary>{{template "table" .Full}}</details>{{end}}
+{{end}}
+
+<h2>By country</h2>
+<p class="muted">Each cell is the category's score on that locale's patterns alone, so a deployment can read what loading a locale buys. An empty cell is a category the locale does not find. The first row loads every European locale at once.</p>
+<p class="muted">Found whatever the locale: {{range $i, $l := .Matrix.Everyone}}{{if $i}}, {{end}}{{$l}}{{end}}, and every secret.</p>
+<div class="wrap">
+<table class="matrix">
+<thead><tr><th>Locale</th>{{range .Matrix.Columns}}<th title="{{.Code}}">{{.Label}}</th>{{end}}</tr></thead>
+<tbody>
+{{range .Matrix.Rows}}
+<tr{{if .Note}} class="group"{{end}}>
+<td><strong>{{.Name}}</strong>{{if .Note}}<br><span class="muted">{{.Note}}</span>{{end}}</td>
+{{range .Cells}}<td class="cell">{{if .}}<span class="{{if ge . 90}}high{{else if ge . 60}}mid{{else}}low{{end}}">{{.}}%</span>{{end}}</td>{{end}}
+</tr>
+{{end}}
+</tbody>
+</table>
+</div>
+</main>
+</body>
+</html>
