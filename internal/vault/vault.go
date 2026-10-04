@@ -28,11 +28,11 @@ import (
 //
 // Three hours rather than the thirty minutes it was: a pause longer than this
 // lifetime is when an answer comes back carrying a token nothing expands, and
-// half an hour is shorter than lunch. Recall is what covers a pause longer than
+// half an hour is shorter than lunch. Name is what covers a pause longer than
 // this one; the lifetime only decides how often it has to.
 const DefaultTTL = 3 * time.Hour
 
-// namesTTL is how long Recall remembers a session's names after the session's last
+// namesTTL is how long Name remembers a session's names after the session's last
 // request.
 //
 // Far longer than the mapping, because it covers the pauses the mapping does not —
@@ -67,28 +67,47 @@ type Vault struct {
 	ttl   time.Duration
 
 	// names remembers what each value was replaced by, per session, for longer
-	// than the mapping lives: fingerprint → name. See Recall.
+	// than the mapping lives: fingerprint → name. See Name.
 	//
 	// Keyed by an HMAC of the value under a key derived from the vault's own,
 	// never by the value: the lifetime is the window the originals exist in
 	// memory, and this is kept past it. A plain hash would not do, because a plate
 	// or a phone number is a small enough space to hash every candidate of.
 	//
-	// mu also covers the store's writes, so a Forget cannot land between a Save's
-	// mapping and its names and leave a name of the shape just switched away from.
+	// mu also covers the store's writes, so a Forget cannot land between a name and
+	// the Save of its mapping without both being dropped together.
 	//
 	// active is when each session last saved, which is every request it made: a
 	// name lives as long as its session does, because a value the live mapping
-	// already holds is reused without Recall ever being asked — dated per name, a
+	// already holds is reused without Name ever being asked — dated per name, a
 	// conversation in use for longer than namesTTL would lose names it still needs.
 	mark   []byte
 	mu     sync.Mutex
 	names  map[string]name
 	active map[string]time.Time
 	swept  time.Time
+
+	// highest is each session's numbering: prefix → the last index it handed out.
+	// See next. written receives it whenever it changes in a way a restart must
+	// not lose, and dirty says one has happened since it was last handed over.
+	highest map[string]map[string]int64
+	written func(Numbering)
+	dirty   bool
 }
 
-// name is what Recall hands back, and the session it belongs to.
+// Numbering is what a restart needs to keep a session from handing out a name it
+// already gave a different value: for each session, when it last made a request
+// and the last index it handed out per token prefix. Counts and prefixes, never a
+// value — which is why it can be written to disk where the mapping cannot.
+type Numbering map[string]SessionNumbering
+
+// SessionNumbering is one session's half of Numbering.
+type SessionNumbering struct {
+	Last    time.Time        `json:"last"`
+	Highest map[string]int64 `json:"highest"`
+}
+
+// name is what Name hands back, and the session it belongs to.
 type name struct {
 	masked  string
 	session string
@@ -140,6 +159,7 @@ func New(store Store, key []byte, ttl time.Duration) (*Vault, error) {
 	return &Vault{
 		store: store, aead: aead, ttl: ttl, mark: mark,
 		names: make(map[string]name), active: make(map[string]time.Time),
+		highest: make(map[string]map[string]int64),
 	}, nil
 }
 
@@ -188,15 +208,132 @@ func (v *Vault) Save(session string, entries map[string]string) error {
 	v.store.Merge(session, sealed, v.ttl)
 
 	now := time.Now()
+	// A numbered session's request date is written at most hourly when it mints
+	// nothing: dated only by its last mint, a conversation that went on reusing
+	// its values for a week would read as idle after a restart, and be swept back
+	// to index 1 under names the model still remembers.
+	if now.Sub(v.active[session]) > time.Hour && v.highest[session] != nil {
+		v.dirty = true
+	}
 	v.active[session] = now
 	v.sweep(now)
-	for masked, original := range entries {
-		v.names[v.fingerprint(session, original)] = name{masked: masked, session: session}
-	}
+	v.write()
 	return nil
 }
 
-// sweep drops the names of every session idle for namesTTL, at most once an hour.
+// Name returns what a value is replaced by in a session: the name the session gave
+// it before, or a new one, rendered from the session's next index for prefix.
+//
+// Looked up and claimed in one step under the vault's lock, because two steps let
+// two requests in flight that both met a value for the first time mint two names:
+// the mapping kept both while it lived, the book remembered only the last, and
+// after a pause the conversation that had been told the other one read it back
+// unexpanded. Claimed here, the second request is handed the first one's name.
+//
+// A name is claimed before the Save that stores its mapping, so a request that
+// fails in between leaves a name with no mapping — which the next request naming
+// the value puts back, under that name.
+//
+// The book is how a value keeps its name once the mapping has expired. The model
+// remembers a token longer than the mapping does: what it reasoned about comes
+// back to it on every turn inside the thinking block's signature, encrypted — a
+// client replays the signature and an empty text beside it — so the agent can
+// neither mask nor restore it, and it still says [PLATE_381] after a pause has
+// expired the mapping. The history, replayed in clear, was then masked afresh as
+// [PLATE_412]; the model wrote the name it had reasoned with, and the caller read
+// "[PLATE_381]" back. Handing the value the name it had before closes that:
+// re-masking the history puts the entry back into the mapping, under the name the
+// model is still using. It also keeps the prefix a provider caches the same across
+// a pause, which a renumbering broke from the first value it renamed.
+//
+// render runs under the lock; it is the substitution mode applied to an index, and
+// takes no lock of its own.
+func (v *Vault) Name(session, original, prefix string, render func(index int64) string) string {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	fingerprint := v.fingerprint(session, original)
+	if n, ok := v.names[fingerprint]; ok {
+		return n.masked
+	}
+
+	// A session's first claim dates it, or a Save of another session sweeping in
+	// between would drop this name as belonging to no session in use. Only the
+	// first: a claim refreshing the date would hide from Save that the date on
+	// disk has gone stale.
+	if _, ok := v.active[session]; !ok {
+		v.active[session] = time.Now()
+	}
+	masked := render(v.next(session, prefix))
+	v.names[fingerprint] = name{masked: masked, session: session}
+	return masked
+}
+
+// next hands out a session's next index for a token prefix. Called with mu held.
+//
+// Per session, and remembered across a restart once Persist is called, because a
+// counter that started again at 1 with every process handed out names the model
+// had already been told meant something else. A conversation running through a
+// restart remembers [PLATE_12] as one vehicle; the new process gave [PLATE_12] to
+// the first plate it met, and the answer naming the first came back carrying the
+// second — restored, plausible and wrong, with nothing to say so.
+//
+// Per session rather than per process also keeps the numbers small, and the fake
+// stand-ins inside their generators' capacity, which a number grown over every
+// conversation since the agent started would not.
+//
+// Under the vault's lock, so two requests in flight on one session never take the
+// same index for two values.
+func (v *Vault) next(session, prefix string) int64 {
+	h := v.highest[session]
+	if h == nil {
+		h = make(map[string]int64)
+		v.highest[session] = h
+	}
+	h[prefix]++
+	v.dirty = true
+	return h[prefix]
+}
+
+// Persist resumes the numbering a previous process wrote, and hands every later
+// change to write.
+//
+// Written from Save, never from Name: a name only leaves the workstation after the
+// Save of the request that minted it, so a process killed in between loses names
+// nobody was ever told — and Save is once per request, where Name is once per value.
+// write is called under the vault's lock, so two writes never race to the disk with
+// the older one landing last.
+func (v *Vault) Persist(from Numbering, write func(Numbering)) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	for session, n := range from {
+		v.highest[session] = maps.Clone(n.Highest)
+		// A zero date reads as idle since forever, so a session written without
+		// one is swept at the first write rather than kept with no way to age out.
+		v.active[session] = n.Last
+	}
+	v.written = write
+}
+
+// write hands the numbering over if it changed. Called with mu held.
+func (v *Vault) write() {
+	if !v.dirty || v.written == nil {
+		return
+	}
+	v.dirty = false
+	out := make(Numbering, len(v.highest))
+	for session, h := range v.highest {
+		out[session] = SessionNumbering{Last: v.active[session], Highest: maps.Clone(h)}
+	}
+	v.written(out)
+}
+
+// sweep drops the names and the numbering of every session idle for namesTTL, at
+// most once an hour.
+//
+// The numbering goes with the names because both answer one question — what has
+// this conversation been told — and a session idle for a week is taken to have
+// ended. Driven by active, which Name dates on a session's first claim, so a session
+// whose first request is still between Name and Save is not swept mid-request.
 //
 // On a write rather than on a timer, as Memory.Merge purges its sessions: a process
 // that keeps writing keeps the map bounded, and one that has stopped has nothing to
@@ -210,6 +347,10 @@ func (v *Vault) sweep(now time.Time) {
 	for session, last := range v.active {
 		if now.Sub(last) > namesTTL {
 			delete(v.active, session)
+			if _, numbered := v.highest[session]; numbered {
+				delete(v.highest, session)
+				v.dirty = true
+			}
 		}
 	}
 	for fingerprint, n := range v.names {
@@ -217,32 +358,6 @@ func (v *Vault) sweep(now time.Time) {
 			delete(v.names, fingerprint)
 		}
 	}
-}
-
-// Recall returns what a value was replaced by earlier in a session, even after
-// the session's mapping has expired.
-//
-// The model remembers a token longer than the mapping does. What it reasoned
-// about comes back to it on every turn inside the thinking block's signature,
-// encrypted — a client replays the signature and an empty text beside it — so
-// the agent can neither mask nor restore it, and it still says [PLATE_381]
-// after a pause has expired the mapping. The history, replayed in clear, was
-// then masked afresh as [PLATE_412]; the model wrote the name it had reasoned
-// with, and the caller read "[PLATE_381]" back. Handing the value the name it
-// had before closes that: re-masking the history puts the entry back into the
-// mapping, under the name the model is still using.
-//
-// It also keeps the prefix a provider caches the same across a pause, which a
-// renumbering broke from the first value it renamed.
-//
-// One name per value: two requests in flight that both met a value for the first
-// time mint two, the mapping keeps both, and only the one saved last is remembered
-// here once the mapping has expired.
-func (v *Vault) Recall(session, original string) (string, bool) {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	n, ok := v.names[v.fingerprint(session, original)]
-	return n.masked, ok
 }
 
 // fingerprint names a value within a session without holding it.
@@ -267,14 +382,16 @@ func (v *Vault) fingerprint(session, original string) string {
 // an answer still in flight comes back carrying a token nothing expands. That window
 // is one exchange wide, against a control that otherwise appears not to work at all.
 //
-// The names Recall remembers go with the mapping, or a value seen before the change
-// would be handed back the shape the operator just switched away from.
+// The names Name remembers go with the mapping, or a value seen before the change
+// would be handed back the shape the operator just switched away from. The
+// numbering stays, for the reason it survives a restart: the conversation still
+// remembers the names minted before the change, and a counter back at 1 would give
+// them to other values.
 func (v *Vault) Forget() {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	v.store.Forget()
 	v.names = make(map[string]name)
-	v.active = make(map[string]time.Time)
 }
 
 // seal encrypts one original. The nonce is fresh per value and prefixed to the
@@ -315,7 +432,7 @@ func (v *Vault) open(sealed string) (string, error) {
 // with it: the token counters (see the detector's index source, or two agents on
 // one session mint the same index for different values and the second write
 // erases the first), the encryption key, which must be configured rather
-// than generated per process, and the names Recall remembers, which live on the
+// than generated per process, and the names Name remembers, which live on the
 // Vault rather than in the store and would not be shared.
 type Memory struct {
 	mu       sync.Mutex

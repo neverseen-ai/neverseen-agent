@@ -383,13 +383,17 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request) {
 	route.ServeHTTP(w, r.WithContext(withTrace(ctx, ref)))
 }
 
-// newPass starts a pass over what the session's mapping holds, handing a value the
-// session named before the name it had, even once the mapping has expired — see
-// vault.Recall. One constructor for every route that stores what it masks, so the
-// extension and the request path cannot disagree about a value's name.
+// newPass starts a pass over what the session's mapping holds, and names every
+// other value through the vault: the name the session gave it before, even once the
+// mapping has expired, or a new one in the session's own numbering, which a restart
+// does not reset — claimed in one step, so two requests in flight cannot give one
+// value two names (vault.Name). One constructor for every route that stores what it
+// masks, so the extension and the request path cannot disagree about a value's name.
 func (s *Server) newPass(session string) *detector.Pass {
 	pass := s.det.NewPass(s.vault.Load(session))
-	pass.Recall = func(original string) (string, bool) { return s.vault.Recall(session, original) }
+	pass.Name = func(original, prefix string, render func(int64) string) string {
+		return s.vault.Name(session, original, prefix, render)
+	}
 	return pass
 }
 

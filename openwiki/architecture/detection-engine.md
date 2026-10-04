@@ -967,7 +967,7 @@ match is dropped whole rather than clipped.
 or `fake`, read from `NEVERSEEN_PII_SUBSTITUTION`. The zero value is `token`, so a `Config` built by hand keeps
 the reversible behaviour without saying so.
 
-`Detector.render` (`mask.go:113`) applies the mode to one index:
+`Detector.render` (`mask.go:118`) applies the mode to one index:
 
 ```go
 if fake mode && !pii.IsSecret(cat) { if stand-in available for (cat, locale, index) → use it }
@@ -999,7 +999,7 @@ back to a token.
 **The known gap is named rather than hidden.** A short stand-in can be matched by
 coincidence: a fake postcode is five digits, and a model that wrote those five digits about
 something else has them replaced by the caller's real postcode. The `TODO` on
-`detector.Unmask` (`mask.go:224`) carries it, with the upgrade path — a minimum length, or
+`detector.Unmask` (`mask.go:229`) carries it, with the upgrade path — a minimum length, or
 marking the substitution invisibly.
 
 ## Tokens
@@ -1009,10 +1009,16 @@ marking the substitution invisibly.
 `ReplaceTokens` walks text expanding them, and `TokenTailLen` says how much of a trailing
 fragment could still become a token. `maxTokenLen` is 48 (`token.go:113`).
 
-Indices come from `Detector.nextIndex` (`mask.go:132`), per category, and are safe under
-concurrency: `TestConcurrentPassesNeverShareAMask`. A value the session named before is not
-given one — `Pass.Recall` hands it back the replacement it had, even once the mapping has
-expired (see [the request path](request-path.md#the-session-vault)).
+On the agent, a value is named through `Pass.Name`, wired to `vault.Name`: the name the
+session gave it before, or a new one from the session's own numbering — per session and per
+prefix, carried across a restart, and safe under concurrency because the vault looks up and
+claims a name in one step under its lock (`TestConcurrentClaimsNeverRepeatAnIndex`,
+`TestConcurrentClaimsGiveOneValueOneName`). Per session also keeps the numbers small and
+the stand-ins inside their generators' capacity. A pass given no index source — the test
+page, `scan`, `replay` — falls back to `Detector.nextIndex` (`mask.go:137`), per category
+and process-wide (`TestConcurrentPassesNeverShareAMask`). A value the session named before
+is given no index at all — `vault.Name` hands it back the replacement it had, even once
+the mapping has expired (see [the request path](request-path.md#the-session-vault)).
 
 ## The sample is a reference, and must stay one
 

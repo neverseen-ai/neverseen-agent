@@ -2,7 +2,9 @@ package vault
 
 import (
 	"crypto/rand"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -336,49 +338,103 @@ func TestForgetDropsEveryMapping(t *testing.T) {
 	}
 }
 
+// token renders an index as the bracket token the detector would, for a prefix.
+func token(prefix string) func(int64) string {
+	return func(index int64) string { return fmt.Sprintf("[%s_%d]", prefix, index) }
+}
+
 // A value keeps its name after its session's mapping has expired.
 //
 // The model remembers a token longer than the mapping does — inside a thinking
 // block's signature, which the agent cannot read — so a pause that expired the
 // mapping and renamed the value on the next turn left the model writing a name
 // nothing expanded any more.
-func TestRecallOutlivesTheMapping(t *testing.T) {
+func TestANameOutlivesTheMapping(t *testing.T) {
 	v, store := newTestVault(t)
 
-	if err := v.Save("s1", map[string]string{"[PLATE_381]": "AB-123-CD"}); err != nil {
+	first := v.Name("s1", "AB-123-CD", "PLATE", token("PLATE"))
+	second := v.Name("s1", "EF-456-GH", "PLATE", token("PLATE"))
+	if err := v.Save("s1", map[string]string{first: "AB-123-CD", second: "EF-456-GH"}); err != nil {
 		t.Fatal(err)
 	}
 	store.mu.Lock()
 	store.sessions["s1"].expires = time.Now().Add(-time.Second)
 	store.mu.Unlock()
 
-	// The precondition, so the assertion below is about Recall and not about a
+	// The precondition, so the assertion below is about the names and not about a
 	// mapping that never expired.
 	if got := v.Load("s1"); len(got) != 0 {
 		t.Fatalf("the mapping did not expire: %v", got)
 	}
-	if got, ok := v.Recall("s1", "AB-123-CD"); !ok || got != "[PLATE_381]" {
-		t.Errorf("Recall = %q, %v after the mapping expired, want [PLATE_381]", got, ok)
+	if got := v.Name("s1", "EF-456-GH", "PLATE", token("PLATE")); got != second {
+		t.Errorf("after the mapping expired the value was named %s, want %s", got, second)
 	}
 
-	// Per session, as the mapping is: a name recalled in another conversation
-	// would tell the provider the two are about the same vehicle.
-	if got, ok := v.Recall("s2", "AB-123-CD"); ok {
-		t.Errorf("another session recalled %q", got)
-	}
-	if got, ok := v.Recall("s1", "EF-456-GH"); ok {
-		t.Errorf("a value never saved recalled %q", got)
+	// Per session, as the mapping is: another conversation numbers the value in its
+	// own sequence, and a name shared between two would tell the provider they are
+	// about the same vehicle.
+	if got := v.Name("s2", "EF-456-GH", "PLATE", token("PLATE")); got != "[PLATE_1]" {
+		t.Errorf("another session named the value %s, want its own [PLATE_1]", got)
 	}
 }
 
-// What Recall keeps past the mapping's lifetime must not be the value, or the
-// lifetime would stop being the window the originals exist in memory.
-func TestRecallDoesNotHoldTheValue(t *testing.T) {
+// Many requests in flight that all meet one value for the first time give it one
+// name. Looked up and claimed in two steps, each minted its own, and after a pause
+// every conversation but the last to save read its name back unexpanded.
+func TestConcurrentClaimsGiveOneValueOneName(t *testing.T) {
 	v, _ := newTestVault(t)
 
-	if err := v.Save("s1", map[string]string{"[PLATE_381]": "AB-123-CD"}); err != nil {
-		t.Fatal(err)
+	const n = 200
+	got := make(chan string, n)
+	var wg sync.WaitGroup
+	for range n {
+		wg.Go(func() { got <- v.Name("s1", "AB-123-CD", "PLATE", token("PLATE")) })
 	}
+	wg.Wait()
+	close(got)
+
+	names := map[string]bool{}
+	for name := range got {
+		names[name] = true
+	}
+	if len(names) != 1 {
+		t.Errorf("one value was given %d names: %v", len(names), names)
+	}
+	if next := v.Name("s1", "EF-456-GH", "PLATE", token("PLATE")); next != "[PLATE_2]" {
+		t.Errorf("the next value was named %s, want [PLATE_2]: a claim that lost the race spent an index", next)
+	}
+}
+
+// Many requests in flight that all meet different values never give two of them
+// one index, which is what the process-wide counters guaranteed before the
+// numbering moved here.
+func TestConcurrentClaimsNeverRepeatAnIndex(t *testing.T) {
+	v, _ := newTestVault(t)
+
+	const n = 200
+	got := make(chan string, n)
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Go(func() { got <- v.Name("s1", fmt.Sprintf("user%d@example.fr", i), "EMAIL", token("EMAIL")) })
+	}
+	wg.Wait()
+	close(got)
+
+	seen := make(map[string]bool, n)
+	for name := range got {
+		if seen[name] {
+			t.Fatalf("%s was handed out twice", name)
+		}
+		seen[name] = true
+	}
+}
+
+// What the names keep past the mapping's lifetime must not be the value, or the
+// lifetime would stop being the window the originals exist in memory.
+func TestTheNamesDoNotHoldTheValue(t *testing.T) {
+	v, _ := newTestVault(t)
+
+	v.Name("s1", "AB-123-CD", "PLATE", token("PLATE"))
 	v.mu.Lock()
 	for fingerprint, n := range v.names {
 		if strings.Contains(fingerprint, "AB-123-CD") || strings.Contains(n.masked, "AB-123-CD") {
@@ -399,17 +455,14 @@ func TestRecallDoesNotHoldTheValue(t *testing.T) {
 // The names of a session idle for namesTTL are dropped, because a session can be a
 // single request and a book that kept every one would grow with the traffic for the
 // life of the process. A session still making requests keeps every name, however
-// long ago it was minted: a value its live mapping holds is reused without Recall
+// long ago it was minted: a value its live mapping holds is reused without Name
 // being asked, so nothing but the session's own activity says the name is in use.
-func TestRecallForgetsTheNamesOfAnIdleSession(t *testing.T) {
+func TestTheNamesOfAnIdleSessionAreSwept(t *testing.T) {
 	v, _ := newTestVault(t)
 
-	if err := v.Save("idle", map[string]string{"[PLATE_381]": "AB-123-CD"}); err != nil {
-		t.Fatal(err)
-	}
-	if err := v.Save("busy", map[string]string{"[PLATE_382]": "EF-456-GH"}); err != nil {
-		t.Fatal(err)
-	}
+	idle := v.Name("idle", "AB-123-CD", "PLATE", token("PLATE"))
+	busy := v.Name("busy", "EF-456-GH", "PLATE", token("PLATE"))
+	v.Name("busy", "JK-789-LM", "PLATE", token("PLATE"))
 
 	// Both sessions last seen past namesTTL, and the sweep due.
 	v.mu.Lock()
@@ -425,31 +478,135 @@ func TestRecallForgetsTheNamesOfAnIdleSession(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if got, ok := v.Recall("idle", "AB-123-CD"); ok {
-		t.Errorf("a session idle for longer than namesTTL kept its name: %q", got)
-	}
-	if got, ok := v.Recall("busy", "EF-456-GH"); !ok || got != "[PLATE_382]" {
-		t.Errorf("a session still in use lost its name: %q, %v", got, ok)
-	}
+	// Read off the book rather than through Name: a swept session numbers from 1
+	// again, so its first value comes back as the very name it had.
 	v.mu.Lock()
-	_, idleKept := v.active["idle"]
+	_, kept := v.names[v.fingerprint("idle", "AB-123-CD")]
 	v.mu.Unlock()
-	if idleKept {
-		t.Error("the idle session was swept from the names but kept in active")
+	if kept {
+		t.Errorf("a session idle for longer than namesTTL kept its name %s", idle)
+	}
+	if got := v.Name("busy", "EF-456-GH", "PLATE", token("PLATE")); got != busy {
+		t.Errorf("a session still in use lost its name: %s, want %s", got, busy)
 	}
 }
 
-// A mode change drops the names with the mapping, or a value seen before the change
-// would be handed back the shape the operator just switched away from.
-func TestForgetDropsWhatRecallRemembers(t *testing.T) {
+// A mode change forgets the mapping and the names, not the numbering: the
+// conversation still remembers the names minted before it, and a counter back at 1
+// would hand them to other values.
+func TestForgetDropsTheNamesAndKeepsTheNumbering(t *testing.T) {
 	v, _ := newTestVault(t)
 
-	if err := v.Save("s1", map[string]string{"[PLATE_381]": "AB-123-CD"}); err != nil {
-		t.Fatal(err)
-	}
+	before := v.Name("s1", "AB-123-CD", "PLATE", token("PLATE"))
 	v.Forget()
 
-	if got, ok := v.Recall("s1", "AB-123-CD"); ok {
-		t.Errorf("Recall = %q after Forget", got)
+	if got := v.Name("s1", "AB-123-CD", "PLATE", token("PLATE")); got == before {
+		t.Errorf("the value kept %s across Forget, in the shape just switched away from", got)
+	} else if got != "[PLATE_2]" {
+		t.Errorf("the value was renamed %s after Forget, want [PLATE_2]", got)
+	}
+}
+
+// Each session counts on its own, from 1, and per prefix: the numbers a provider
+// sees stay small, and the fake stand-ins inside their generators' capacity.
+func TestNumberingIsPerSession(t *testing.T) {
+	v, _ := newTestVault(t)
+
+	for i, want := range []string{"[PLATE_1]", "[PLATE_2]"} {
+		if got := v.Name("s1", fmt.Sprintf("plate %d", i), "PLATE", token("PLATE")); got != want {
+			t.Errorf("s1's plate #%d = %s, want %s", i+1, got, want)
+		}
+	}
+	if got := v.Name("s2", "another plate", "PLATE", token("PLATE")); got != "[PLATE_1]" {
+		t.Errorf("s2's first plate = %s, want [PLATE_1]: one session's numbering reached another", got)
+	}
+	if got := v.Name("s1", "claire@example.fr", "EMAIL", token("EMAIL")); got != "[EMAIL_1]" {
+		t.Errorf("s1's first address = %s, want [EMAIL_1]: the prefixes share a counter", got)
+	}
+}
+
+// A restart resumes each session where it stopped. Counting from 1 again gave the
+// first plate the new process met a name the conversation remembered as another
+// vehicle, and the answer naming that one came back carrying the wrong plate.
+func TestNumberingSurvivesARestart(t *testing.T) {
+	before, _ := newTestVault(t)
+	var stored Numbering
+	before.Persist(nil, func(n Numbering) { stored = n })
+
+	entries := map[string]string{}
+	for i := range 3 {
+		value := fmt.Sprintf("plate %d", i)
+		entries[before.Name("s1", value, "PLATE", token("PLATE"))] = value
+	}
+	if err := before.Save("s1", entries); err != nil {
+		t.Fatal(err)
+	}
+	if stored["s1"].Highest["PLATE"] != 3 || stored["s1"].Last.IsZero() {
+		t.Fatalf("the numbering handed over = %+v, want PLATE at 3 and a date", stored)
+	}
+
+	after, _ := newTestVault(t)
+	after.Persist(stored, func(Numbering) {})
+	if got := after.Name("s1", "a new plate", "PLATE", token("PLATE")); got != "[PLATE_4]" {
+		t.Errorf("the first plate after the restart = %s, want [PLATE_4]", got)
+	}
+}
+
+// Written from Save, not from Name — a name leaves the workstation only after the
+// Save of the request that minted it — and not on a Save that changed nothing.
+func TestNumberingIsWrittenFromSaveAndOnlyWhenItChanged(t *testing.T) {
+	v, _ := newTestVault(t)
+	writes := 0
+	v.Persist(nil, func(Numbering) { writes++ })
+
+	name := v.Name("s1", "AB-123-CD", "PLATE", token("PLATE"))
+	if writes != 0 {
+		t.Fatalf("Name wrote the numbering %d time(s); a name nobody was told needs no record", writes)
+	}
+	if err := v.Save("s1", map[string]string{name: "AB-123-CD"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := v.Save("s1", nil); err != nil {
+		t.Fatal(err)
+	}
+	if writes != 1 {
+		t.Errorf("wrote the numbering %d time(s), want 1: a request that minted nothing within the hour changes nothing", writes)
+	}
+
+	// An hour on, a request that mints nothing still dates the session, or a
+	// conversation reusing its values for a week reads as idle after a restart.
+	v.mu.Lock()
+	v.active["s1"] = time.Now().Add(-2 * time.Hour)
+	v.mu.Unlock()
+	if err := v.Save("s1", nil); err != nil {
+		t.Fatal(err)
+	}
+	if writes != 2 {
+		t.Errorf("wrote the numbering %d time(s), want 2: a session's date went more than an hour stale on disk", writes)
+	}
+}
+
+// A session idle for namesTTL loses its numbering with its names, and the drop is
+// written, or the file would carry every session it ever held.
+func TestAnIdleSessionsNumberingIsSwept(t *testing.T) {
+	v, _ := newTestVault(t)
+	var stored Numbering
+	v.Persist(Numbering{
+		"gone": {Last: time.Now().Add(-namesTTL - time.Hour), Highest: map[string]int64{"PLATE": 9}},
+		"zero": {Highest: map[string]int64{"PLATE": 4}},
+	}, func(n Numbering) { stored = n })
+
+	name := v.Name("s1", "claire@example.fr", "EMAIL", token("EMAIL"))
+	if err := v.Save("s1", map[string]string{name: "claire@example.fr"}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, session := range []string{"gone", "zero"} {
+		if _, kept := stored[session]; kept {
+			t.Errorf("the numbering of %q survived the sweep: %+v", session, stored)
+		}
+	}
+	if got := v.Name("gone", "AB-123-CD", "PLATE", token("PLATE")); got != "[PLATE_1]" {
+		t.Errorf("a swept session resumed at %s, want [PLATE_1]", got)
 	}
 }

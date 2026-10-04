@@ -44,11 +44,15 @@ type Pass struct {
 	// cannot be, because it changes with every request.
 	Exempt map[string]bool
 
-	// Recall, when set, returns what a value was replaced by earlier in the
-	// session although the mapping no longer holds it (vault.Recall). A value it
-	// names is handed that replacement rather than a new index, and goes into
-	// minted all the same, because the mapping has to learn it again.
-	Recall func(original string) (string, bool)
+	// Name, when set, names a value the session's mapping does not hold
+	// (vault.Name): the name the session gave it before, even once the mapping
+	// has expired, or a new one rendered from the session's own numbering, which
+	// a restart does not reset — looked up and claimed in one step, so two
+	// requests in flight cannot give one value two names. What it returns goes
+	// into minted either way, because the mapping has to learn it. Left nil by the
+	// passes that store nothing — the test page, scan, replay — which keep the
+	// detector's process-wide counters.
+	Name func(original, prefix string, render func(index int64) string) string
 
 	// counts is how many values were replaced per category, repeats included.
 	//
@@ -86,11 +90,12 @@ func (p *Pass) mask(cat pii.Category, locale, original string) string {
 		return masked
 	}
 
-	masked, ok := "", false
-	if p.Recall != nil {
-		masked, ok = p.Recall(original)
-	}
-	if !ok {
+	var masked string
+	if p.Name != nil {
+		masked = p.Name(original, pii.Prefix(cat), func(index int64) string {
+			return p.d.render(cat, locale, index)
+		})
+	} else {
 		masked = p.d.render(cat, locale, p.d.nextIndex(cat))
 	}
 

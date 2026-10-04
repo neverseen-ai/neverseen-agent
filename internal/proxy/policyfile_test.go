@@ -64,6 +64,7 @@ func TestAChangeSurvivesARestartAndBeatsTheEnvironment(t *testing.T) {
 	restarted, err := FromEnv(nil, Options{
 		ControlKeyFile: filepath.Join(t.TempDir(), "control.key"),
 		PolicyFile:     file,
+		NumberingFile:  NoFile,
 	})
 	if err != nil {
 		t.Fatalf("FromEnv: %v", err)
@@ -199,6 +200,7 @@ func TestAnUnreadableStoredPolicyLeavesTheEnvironmentAlone(t *testing.T) {
 	agent, err := FromEnv(nil, Options{
 		ControlKeyFile: filepath.Join(t.TempDir(), "control.key"),
 		PolicyFile:     file,
+		NumberingFile:  NoFile,
 	})
 	if err != nil {
 		t.Fatalf("a torn policy file stopped the agent: %v", err)
@@ -217,6 +219,7 @@ func TestNoStoredPolicyMeansTheEnvironmentDecides(t *testing.T) {
 	agent, err := FromEnv(nil, Options{
 		ControlKeyFile: filepath.Join(dir, "control.key"),
 		PolicyFile:     filepath.Join(dir, "policy.json"),
+		NumberingFile:  NoFile,
 	})
 	if err != nil {
 		t.Fatalf("FromEnv: %v", err)
@@ -247,6 +250,7 @@ func TestAPartialStoredPolicyLeavesTheEnvironmentAlone(t *testing.T) {
 	agent, err := FromEnv(nil, Options{
 		ControlKeyFile: filepath.Join(t.TempDir(), "control.key"),
 		PolicyFile:     file,
+		NumberingFile:  NoFile,
 	})
 	if err != nil {
 		t.Fatalf("a partial policy file stopped the agent: %v", err)

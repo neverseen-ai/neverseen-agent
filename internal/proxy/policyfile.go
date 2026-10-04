@@ -51,24 +51,32 @@ const DefaultPolicyFile = "~/.neverseen/policy.json"
 // direction, since the alternative is starting with a state read from half a
 // document.
 func loadPolicyFile(path string) (*policyRequest, error) {
+	var stored policyRequest
+	if found, err := readStateFile(path, &stored); !found || err != nil {
+		return nil, err
+	}
+	return &stored, nil
+}
+
+// readStateFile decodes one of the JSON files the agent keeps under ~/.neverseen
+// into v, and reports false with no error when there is no file yet.
+func readStateFile(path string, v any) (bool, error) {
 	resolved, err := expandHome(path)
 	if err != nil {
-		return nil, err
+		return false, err
 	}
 
 	raw, err := os.ReadFile(filepath.Clean(resolved))
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil, nil
+			return false, nil
 		}
-		return nil, fmt.Errorf("read %s: %w", resolved, err)
+		return false, fmt.Errorf("read %s: %w", resolved, err)
 	}
-
-	var stored policyRequest
-	if err := json.Unmarshal(raw, &stored); err != nil {
-		return nil, fmt.Errorf("read %s: %w", resolved, err)
+	if err := json.Unmarshal(raw, v); err != nil {
+		return false, fmt.Errorf("read %s: %w", resolved, err)
 	}
-	return &stored, nil
+	return true, nil
 }
 
 // writePolicyFile stores the state where only its owner can read it.
@@ -80,12 +88,18 @@ func loadPolicyFile(path string) (*policyRequest, error) {
 // and an agent that cannot read this one goes back to the environment: a crash
 // mid-write would silently undo the change it was recording.
 func writePolicyFile(path string, state policyRequest) error {
+	return writeStateFile(path, ".policy-*.json", state)
+}
+
+// writeStateFile stores one of the agent's JSON files — directory 0700, file 0600,
+// written by rename under a temporary name matching pattern.
+func writeStateFile(path, pattern string, v any) error {
 	resolved, err := expandHome(path)
 	if err != nil {
 		return err
 	}
 
-	body, err := json.MarshalIndent(state, "", "  ")
+	body, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -104,7 +118,7 @@ func writePolicyFile(path string, state policyRequest) error {
 	// call, or the two torn together. Either parses to a state nobody asked for, or
 	// to nothing at all — which hands the agent back to the environment at the next
 	// start, silently.
-	tmp, err := os.CreateTemp(dir, ".policy-*.json")
+	tmp, err := os.CreateTemp(dir, pattern)
 	if err != nil {
 		return fmt.Errorf("write beside %s: %w", resolved, err)
 	}

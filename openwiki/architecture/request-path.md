@@ -105,8 +105,8 @@ duplicates.
 
 `NewPass(known)` is seeded with what the session already holds, so a value seen on turn two
 reuses the mask minted on turn one (`TestMaskReusesASessionsExistingTokens`). A value the
-mapping has forgotten but the session has not is handed its old name through `Pass.Recall`
-(see [the session vault](#the-session-vault)).
+mapping does not hold is named through `Pass.Name` — its old name if the session gave it
+one, else a new one in the session's numbering (see [the session vault](#the-session-vault)).
 `Pass.Minted()` is what still has to be stored; `Pass.Counts()` is per-category and
 **includes repeats**, because a value masked three times is three values that did not leave
 the machine.
@@ -171,46 +171,73 @@ field this exists to protect.
 
 `internal/vault` holds one mapping per session, **masked → original** — the direction the
 response path reads it. The originals are encrypted at rest with AES-256-GCM, and the key
-may be nil, in which case one is generated for the life of the process (`vault.go:102-108`).
+may be nil, in which case one is generated for the life of the process (`vault.go:129-134`).
 There is deliberately no second, plaintext mode that only shows up in a deployment nobody
 tested.
 
 What that buys today is stated plainly in the code: the store is in memory, so it protects
 the originals in a core dump or a swapped page, not against anything with access to the
 running process. It earns its keep when the mapping moves to a shared store — which is why
-`Store` is an interface with one implementation (`vault.go:53`), the second one being a
+`Store` is an interface with one implementation (`vault.go:54`), the second one being a
 known requirement (Redis, for a mapping surviving a restart) rather than a speculative one.
 
 - The nonce is fresh per value, so two identical originals under two tokens do not produce
   identical ciphertext — which would tell anyone reading the store that they are the same
-  person (`vault.go:271-280`, `TestIdenticalOriginalsSealDifferently`).
-- An entry that cannot be decrypted is **dropped, not reported** (`vault.go:150-152`): it means
+  person (`vault.go:397-406`, `TestIdenticalOriginalsSealDifferently`).
+- An entry that cannot be decrypted is **dropped, not reported** (`vault.go:180-182`): it means
   the process restarted under a new ephemeral key, so the token is simply unknown and the
   response path leaves it alone rather than failing a request over bookkeeping.
 - `DefaultTTL` is three hours (`vault.go:33`) — long enough for a conversation left over
   lunch to keep one identity per value, short enough that a workstation left running
   overnight does not carry yesterday's data into the morning. It is a privacy setting as
   much as a cache setting. It was thirty minutes, which is shorter than lunch.
-- **A value keeps its name past the mapping's lifetime** (`Vault.Recall`, wired into every
-  pass by `Server.newPass`). The model remembers a token longer than the mapping does: what
+- **A value keeps its name past the mapping's lifetime, and has only one** (`vault.Name`,
+  wired into every pass as `Pass.Name` by `Server.newPass`). The model remembers a token longer than the mapping does: what
   it reasoned about comes back to it on every turn inside the thinking block's
   `signature`, encrypted — the client replays the signature beside an empty `thinking`
   text — so the agent can neither mask nor restore it. After a pause expired the mapping,
   the history replayed in clear was masked afresh under new indices, the model wrote the
   token it had reasoned with, and the caller read `[PLATE_381]` back. So the vault
   remembers, per session, which replacement each value was given, keyed by an HMAC of the
-  value under a per-process key and never by the value; a value seen again is handed the
+  value and never by the value; a value seen again is handed the
   same name, and re-masking the history puts the entry back in the mapping under the name
   the model is still using. The same rule keeps the cached prefix intact across a pause.
+  The name is looked up **and claimed in one step**, under the vault's lock: in two steps,
+  two requests in flight that both met a value for the first time minted two names, the
+  mapping kept both while it lived, the book only the last, and after a pause the
+  conversation told the other one read it back unexpanded
+  (`TestConcurrentClaimsGiveOneValueOneName`). A name is claimed before the `Save` of its
+  mapping; a request failing in between leaves a name the next request puts back.
   The fingerprint key is derived from the vault's own key, never drawn separately and
   never the AES key itself. The names of a session idle for a week are swept (`namesTTL`,
   on a write, at most hourly), because `sessionOf` can make a session of a single request
   and a book kept for the life of the process would grow with the traffic. Dated by the
-  session, not the name: a value the live mapping holds is reused without `Recall` being
-  asked, so a name dated by its own use would be swept from a conversation still using it. `Forget` drops these
-  names with the mapping, under the same lock as `Save`, or a mode change would hand a
-  value back the shape just switched away from. A restart loses them, as it loses the
-  mapping; the `TODO` on `Memory` says what a shared store would have to carry.
+  session, not the name: a value the live mapping holds is reused without `Name` being
+  asked, so a name dated by its own use would be swept from a conversation still using
+  it. `Forget` drops these names with the mapping, under the same lock as `Save`, or a
+  mode change would hand a value back the shape just switched away from. A restart loses
+  them, as it loses the mapping; the `TODO` on `Memory` says what a shared store would
+  have to carry.
+- **A restart never hands a remembered name to another value** (`vault.next`, behind
+  `vault.Name`). The counters were process-wide and started again at 1
+  with every process: a conversation running through a restart remembered `[PLATE_1]` as
+  one vehicle, the new process gave `[PLATE_1]` to the first plate it met, and the answer
+  naming the first came back restored as the second — plausible, wrong, and silent. So
+  each session numbers on its own, per prefix, and the numbering is written to
+  `~/.neverseen/numbering.json` (`DefaultNumberingFile`, `Options.NumberingFile`; 0700 /
+  0600, by rename) and resumed at start-up. It holds session names, dates and counts —
+  never a value, which is why it can go to disk where the mapping cannot. Written from
+  `Save`, never from `Name`: a name leaves the workstation only after the `Save` of the
+  request that minted it, so a process killed in between loses names nobody was told, and
+  the file is written once per minting request rather than once per value. A session that
+  mints nothing is re-dated at most hourly, or a conversation reusing its values for a
+  week would read as idle after a restart. The numbering is swept with the names (a week
+  idle) and **survives `Forget`**, for the reason it survives a restart. A file that cannot
+  be read or written is a warning, not a refusal: the agent then counts from 1 again, where
+  every restart left it before. `TestARestartDoesNotHandARememberedNameToAnotherValue`
+  goes through `FromEnv` twice and fails, without the file, with the wrong plate restored.
+  What a restart still loses is the mapping itself: a token minted before it comes back
+  unexpanded — never as another value.
 
 **Sessions scope the mapping.** `sessionOf` (`proxy.go:659`) reads the session a request
 belongs to — `X-Session-Id`, else `X-Request-Id` — falling back to a single name. The
@@ -253,7 +280,7 @@ expand one into a live secret on its way to a caller. `TestFakeMode` asserts bot
 See [Detection engine](detection-engine.md#substitution-modes).
 
 **Expansion is one forward walk, not a replacement per entry** (`UnmaskSeen`,
-`internal/detector/mask.go:237`). One stand-in can contain another — a fake postcode inside
+`internal/detector/mask.go:242`). One stand-in can contain another — a fake postcode inside
 the fake address it belongs to — and replacing them in turn expands the shorter one inside
 text already expanded, putting a value inside a value. A session that minted only tokens
 keeps the single-regex fast path it always had (`standInsOf` is empty), so token mode is

@@ -6,8 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -350,7 +353,7 @@ func TestATokenTheModelRemembersSurvivesAnExpiredMapping(t *testing.T) {
 	}
 
 	// The store's own Forget, not the vault's: it drops every mapping as a pause
-	// past the lifetime does, and leaves what Recall remembers where it is.
+	// past the lifetime does, and leaves the names the vault remembers where they are.
 	store.Forget()
 	got := post(t, agent, "/anthropic/v1/messages", "s1", body)
 
@@ -360,6 +363,111 @@ func TestATokenTheModelRemembersSurvivesAnExpiredMapping(t *testing.T) {
 	}
 	if !strings.Contains(got.body, "AB-123-CD") || strings.Contains(got.body, "[PLATE_") {
 		t.Errorf("the token the model remembered was not restored: %s", got.body)
+	}
+}
+
+// A restart does not hand a name the conversation remembers to another value.
+//
+// The counters used to start again at 1 with every process. A conversation that
+// ran through a restart remembered [PLATE_1] as one vehicle, the new process gave
+// [PLATE_1] to the first plate it met, and the answer naming the first came back
+// restored — as the second. Asserted through FromEnv and the file, twice, because a
+// restart is a second assembly reading what the first one wrote.
+func TestARestartDoesNotHandARememberedNameToAnotherValue(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		// The model names the vehicle it met before the restart.
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"text": "Le boîtier de [PLATE_1] n'envoie pas de cap."})
+	})
+	t.Setenv(EnvProviders, "anthropic="+up.server.URL)
+	t.Setenv("NEVERSEEN_PII_LOCALE", "fr")
+	t.Setenv("NEVERSEEN_BACKEND_URL", "")
+	numbering := filepath.Join(t.TempDir(), "numbering.json")
+
+	start := func() *httptest.Server {
+		agent, err := FromEnv(nil, Options{PolicyFile: NoFile, ControlKeyFile: NoFile, NumberingFile: numbering})
+		if err != nil {
+			t.Fatal(err)
+		}
+		server := httptest.NewServer(agent.Server.Handler())
+		t.Cleanup(server.Close)
+		return server
+	}
+
+	post(t, start(), "/anthropic/v1/messages", "s1", `{"messages":[{"content":"Le véhicule AB-123-CD."}]}`)
+	got := post(t, start(), "/anthropic/v1/messages", "s1", `{"messages":[{"content":"Et le véhicule EF-456-GH ?"}]}`)
+
+	bodies, _ := up.received()
+	if len(bodies) != 2 || !strings.Contains(bodies[0], "[PLATE_1]") {
+		t.Fatalf("the first process did not name the plate [PLATE_1]: %v", bodies)
+	}
+	if strings.Contains(bodies[1], "[PLATE_1]") {
+		t.Errorf("the restarted agent reused [PLATE_1] for another plate: %s", bodies[1])
+	}
+	if strings.Contains(got.body, "EF-456-GH") {
+		t.Errorf("the name the model remembered came back as the other plate: %s", got.body)
+	}
+}
+
+// A numbering file that cannot be read leaves the agent counting from 1 — where
+// every restart left it before the file existed — rather than refusing to mask; and
+// the next request writes a file that reads.
+func TestAnUnreadableNumberingFileIsReplacedNotFatal(t *testing.T) {
+	up := newUpstream(t, echoJSON)
+	t.Setenv(EnvProviders, "anthropic="+up.server.URL)
+	t.Setenv("NEVERSEEN_PII_LOCALE", "fr")
+	t.Setenv("NEVERSEEN_BACKEND_URL", "")
+	numbering := filepath.Join(t.TempDir(), "numbering.json")
+	if err := os.WriteFile(numbering, []byte("{half a document"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	agent, err := FromEnv(nil, Options{PolicyFile: NoFile, ControlKeyFile: NoFile, NumberingFile: numbering})
+	if err != nil {
+		t.Fatalf("an unreadable numbering file stopped the agent: %v", err)
+	}
+	server := httptest.NewServer(agent.Server.Handler())
+	t.Cleanup(server.Close)
+	post(t, server, "/anthropic/v1/messages", "s1", `{"c":"écrire à claire@example.fr"}`)
+
+	var stored vault.Numbering
+	if _, err := readStateFile(numbering, &stored); err != nil || stored["s1"].Highest["EMAIL"] != 1 {
+		t.Errorf("the numbering written after the request = %+v, %v; want s1 at EMAIL 1", stored, err)
+	}
+}
+
+// A numbering file nobody can read or write — here a path under a regular file —
+// costs a warning at start-up and one per write, and never the masking.
+func TestANumberingFileThatCannotBeWrittenIsAWarning(t *testing.T) {
+	up := newUpstream(t, echoJSON)
+	t.Setenv(EnvProviders, "anthropic="+up.server.URL)
+	t.Setenv("NEVERSEEN_PII_LOCALE", "fr")
+	t.Setenv("NEVERSEEN_BACKEND_URL", "")
+	notADir := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(notADir, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var logged bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logged, nil))
+	agent, err := FromEnv(logger, Options{
+		PolicyFile: NoFile, ControlKeyFile: NoFile, NumberingFile: filepath.Join(notADir, "numbering.json"),
+	})
+	if err != nil {
+		t.Fatalf("an unwritable numbering file stopped the agent: %v", err)
+	}
+	server := httptest.NewServer(agent.Server.Handler())
+	t.Cleanup(server.Close)
+	post(t, server, "/anthropic/v1/messages", "s1", `{"c":"écrire à claire@example.fr"}`)
+
+	bodies, _ := up.received()
+	if len(bodies) != 1 || strings.Contains(bodies[0], "claire@example.fr") {
+		t.Errorf("the request was not masked: %v", bodies)
+	}
+	for _, want := range []string{"could not be read", "could not be stored"} {
+		if !strings.Contains(logged.String(), want) {
+			t.Errorf("no warning saying the numbering %s:\n%s", want, logged.String())
+		}
 	}
 }
 

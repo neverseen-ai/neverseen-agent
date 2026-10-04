@@ -699,7 +699,7 @@ second is how many of those were added to the session's mapping, which is exactl
 set listed as `MASK` lines below it. They are equal only in a session's first exchange:
 after that a value keeps the replacement it was first given, so the mapping is reused
 and nothing is minted. The one exception is the turn after a pause that expired the
-mapping: every value comes back under the name `Vault.Recall` remembers, and is listed
+mapping: every value comes back under the name `vault.Name` remembers, and is listed
 and stored again without being new — which is why the header says "added to the
 mapping" and not "first seen".
 

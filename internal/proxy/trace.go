@@ -254,7 +254,7 @@ func indented(body string) string {
 // explained by the header rather than read as a contradiction.
 //
 // "Added to the mapping" rather than "first seen": a value the mapping had forgotten
-// after a pause, and Recall handed its old name, is listed and stored again without
+// after a pause, and vault.Name handed its old name, is listed and stored again without
 // being new — and a header calling it first seen would report a conversation's whole
 // history as new data on the turn after lunch.
 //

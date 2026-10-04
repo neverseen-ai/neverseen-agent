@@ -266,7 +266,7 @@ func TestNoBackendMeansNoReporter(t *testing.T) {
 	t.Setenv("NEVERSEEN_PII_LOCALE", "fr")
 	t.Setenv("NEVERSEEN_BACKEND_URL", "")
 
-	agent, err := FromEnv(nil, Options{PolicyFile: NoFile})
+	agent, err := FromEnv(nil, Options{PolicyFile: NoFile, NumberingFile: NoFile})
 	if err != nil {
 		t.Fatalf("FromEnv: %v", err)
 	}
@@ -304,7 +304,7 @@ func TestBackendConfiguredMeansAReporter(t *testing.T) {
 	t.Setenv("NEVERSEEN_ENROLMENT_TOKEN", "enrol-me")
 	t.Setenv("NEVERSEEN_IDENTITY_FILE", t.TempDir()+"/agent.json")
 
-	agent, err := FromEnv(nil, Options{PolicyFile: NoFile})
+	agent, err := FromEnv(nil, Options{PolicyFile: NoFile, NumberingFile: NoFile})
 	if err != nil {
 		t.Fatalf("FromEnv: %v", err)
 	}
