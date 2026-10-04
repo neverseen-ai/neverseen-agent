@@ -134,6 +134,15 @@ and none of the three for the icon.
 `TestOnlyTheAgentIsRestarted` holds both halves rather than leaving them to the golden
 files — a golden file records what the code does, and this records what it must.
 
+That is the *supervisor*. The verb is the other way round: **`neverseen service restart`
+restarts the icon too, on macOS and on Windows** — the unload and load of every installed
+plist, the `/End` and `/Run` of every registered task. A restart is somebody asking for the
+configuration to take effect, and an icon still reporting the old one beside a restarted
+agent is the disagreement between two surfaces this package exists to prevent. "Quit the
+icon" still holds: nothing brings it back but this verb, asked for by name, or the next
+login. Windows spared the icon until the two platforms were aligned; Linux still cannot
+restart it, because an XDG autostart entry supervises nothing (`apply_linux.go`).
+
 ### Services
 
 - **macOS** — a launchd agent at `~/Library/LaunchAgents/ai.neverseen.agent.plist`, with

@@ -62,18 +62,37 @@ func Uninstall(l Layout) error {
 	return nil
 }
 
-// Restart stops and starts the agent.
+// Restart stops and starts whatever is installed, the icon included — as macOS does.
 //
-// The icon is left running, unlike on macOS. Task Scheduler's /Run starts a second
-// instance rather than replacing the first where the policy allows it, and the icon's
-// policy is IgnoreNew — so an /End and /Run pair on an icon somebody had quit would
-// put it back, which is the one thing "Quit the icon" must not do.
+// It used to spare the icon, on the ground that an /End and /Run pair would put back
+// an icon somebody had quit. That is what macOS's unload and load do too, on purpose:
+// a restart is somebody asking for the configuration to take effect, and an icon still
+// reporting the old one beside a restarted agent is the disagreement between two
+// surfaces this package exists to prevent. One verb, one meaning, on both platforms
+// that can restart an icon; Linux cannot (see apply_linux.go).
+//
+// "Quit the icon" still works: nothing restarts it but this verb, asked for by name.
+// The definition file is what says a task was installed — Install writes it for every
+// task it registers — so an icon that was never registered is not started here.
 func Restart(l Layout) error {
-	// The stop is tolerated, as launchctl's unload is on macOS: restarting an agent
-	// that is not currently running — after a crash, or before the first logon — must
-	// start it rather than refuse and leave it stopped.
-	_ = run("schtasks", "/End", "/TN", WindowsAgentTask)
-	return run("schtasks", "/Run", "/TN", WindowsAgentTask)
+	defs, err := Render(l)
+	if err != nil {
+		return err
+	}
+	for _, d := range defs {
+		if _, err := os.Stat(d.Path); err != nil {
+			continue
+		}
+		// The stop is tolerated, as launchctl's unload is on macOS: restarting a task
+		// that is not running — after a crash, after "Quit the icon", before the first
+		// logon — must start it rather than refuse and leave it stopped. /End first
+		// because /Run on a running instance is ignored under IgnoreNew.
+		_ = run("schtasks", "/End", "/TN", d.Label)
+		if err := run("schtasks", "/Run", "/TN", d.Label); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // utf16LE encodes for schtasks, which reads an imported task as Unicode and rejects

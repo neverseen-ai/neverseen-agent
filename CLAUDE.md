@@ -377,9 +377,11 @@ and it is deliberately not repeated here.
   change: **no definition names `~/.neverseen/.env`** — the agent reads it itself, and a
   sourced or `EnvironmentFile` path that is absent is a respawn loop
   (`TestNoDefinitionNeedsTheConfigFile`).
-- **The agent is restarted and the icon is not, on every platform.**
-  `TestOnlyTheAgentIsRestarted` holds both halves rather than leaving them to the
-  golden files, which record what the code does where the test records what it must.
+- **The agent is restarted and the icon is not, on every platform** — by the
+  supervisor. `TestOnlyTheAgentIsRestarted` holds both halves rather than leaving them
+  to the golden files, which record what the code does where the test records what it
+  must. The *verb* `neverseen service restart` restarts the icon too, on macOS and
+  Windows alike; Linux has nothing to restart it through.
 - **The menu bar is a separate process on purpose.** An icon inside the proxy
   vanishes at the moment it becomes useful.
 - **A background job and a desktop job go to two registries on Linux**: the agent is

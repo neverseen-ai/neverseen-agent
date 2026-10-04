@@ -70,8 +70,8 @@ func Uninstall(l Layout) error {
 
 // Restart reloads the agent's unit from disk and restarts it.
 //
-// The agent only — and not because the icon is spared on purpose here, the way the
-// Windows task deliberately spares it. There is nothing on this platform to restart it
+// The agent only — and not because the icon is spared on purpose here: macOS and
+// Windows both restart it. There is nothing on this platform to restart it
 // through: the icon is an XDG desktop entry, which starts a process at login and
 // supervises nothing, so there is no equivalent of the unload-and-load that does reload
 // it on macOS. Somebody who quit it here gets it back by logging in again, or by running
