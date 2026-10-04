@@ -296,9 +296,12 @@ func writeCatalogue(w io.Writer, status proxy.Status) {
 
 	fmt.Fprintf(w, "  substitution   %s\n", or(status.Substitution, "unknown"))
 	fmt.Fprintf(w, "  secret level   %s\n", or(status.SecretLevel, "unknown"))
-	fmt.Fprintf(w, "  countries      %s   (of %s)\n\n",
-		or(strings.Join(status.Locales, ", "), "none"),
-		strings.Join(status.AvailableLocales, ", "))
+	// Wrapped, and the catalogue on a line of its own: forty-two codes on the line
+	// they shared ran to 190 columns, and to 350 with every country loaded.
+	const column = len("  countries      ")
+	fmt.Fprintf(w, "  countries      %s\n", or(wrapList(status.Locales, column, usageWidth), "none"))
+	fmt.Fprintf(w, "%s(of %s)\n\n", strings.Repeat(" ", column),
+		wrapList(status.AvailableLocales, column+len("(of "), usageWidth-len(")")))
 
 	for _, g := range status.Groups {
 		locked := true

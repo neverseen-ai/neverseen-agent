@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/neverseen-ai/neverseen-agent/internal/proxy"
+	"github.com/neverseen-ai/neverseen-agent/pkg/pii"
 )
 
 // fakeAgent answers /healthz with a catalogue and records what /policy was sent, so
@@ -449,6 +450,28 @@ func TestMaskListsTheModeAndTheCountries(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("the listing does not carry %q:\n%s", want, got)
 		}
+	}
+}
+
+// The country lists are wrapped: on one line, the forty-two codes the agent offers
+// ran to 190 columns, and to 350 with every one of them loaded. Every registered
+// code, so the test grows with the registry rather than passing on three.
+func TestMaskWrapsTheCountryLists(t *testing.T) {
+	codes := pii.LocaleCodes()
+	var out strings.Builder
+	writeCatalogue(&out, proxy.Status{Health: proxy.Health{Locales: codes, AvailableLocales: codes}})
+
+	// The block runs from the countries line to the blank line closing the list.
+	_, block, _ := strings.Cut(out.String(), "  countries")
+	block, _, _ = strings.Cut(block, "\n\n")
+	for line := range strings.SplitSeq(block, "\n") {
+		if len(line) > usageWidth {
+			t.Errorf("a country line runs to %d columns, past %d:\n%s", len(line), usageWidth, line)
+		}
+	}
+	last := ", " + codes[len(codes)-1]
+	if !strings.Contains(block, last+"\n") || !strings.HasSuffix(block, last+")") {
+		t.Errorf("a list does not run to its last code, %q:\n%s", codes[len(codes)-1], block)
 	}
 }
 
