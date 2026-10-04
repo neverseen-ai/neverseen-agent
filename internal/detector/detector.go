@@ -191,13 +191,16 @@ func (d *Detector) candidates(text string) []Match {
 			// Last, because it is the only rule that reads outside the value and so
 			// the only one that costs a slice of the surrounding text. Everything
 			// cheaper has already had its chance to reject.
-			if pii.RejectedByPlacement(p.Category, value, pii.PlacementAt(text, span[0], span[1])) {
+			placement := pii.PlacementAt(text, span[0], span[1])
+			if pii.RejectedByPlacement(p.Category, value, placement) {
 				continue
 			}
-			if inCode && pii.NoisyInCode(p.Category) {
+			if inCode && pii.NoisyInCode(p.Category) && !pii.NamedByItsKey(p.Category, placement) {
 				// A category whose shape source code satisfies, in text that is
 				// source code. No credential is ever marked, so this cannot reach
-				// a key in a configuration file the agent has just read.
+				// a key in a configuration file the agent has just read. Unless the
+				// value's own name says what it is: a fixture's `BirthDate` is a
+				// birth date wherever it is written.
 				continue
 			}
 

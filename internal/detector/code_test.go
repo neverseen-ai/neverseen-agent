@@ -135,6 +135,40 @@ func TestCodeRelaxesOnlyWhereTheShapeIsNoise(t *testing.T) {
 	}
 }
 
+// A real customer record in a test fixture: the case the relaxation was never measured
+// against. It reads as code, and its telephone and date of birth went out in clear
+// beside its masked email and address. Their names say what they are.
+func TestANamedFieldInAFixtureIsMasked(t *testing.T) {
+	d := New(Config{Locales: []string{"fr"}})
+
+	const fixture = "func TestInvoiceForARealCustomer(t *testing.T) {\n" +
+		"\tcustomer := Customer{\n" +
+		"\t\tName:      \"Claire Martin\",\n" +
+		"\t\tEmail:     \"claire.martin@orange.fr\",\n" +
+		"\t\tPhone:     \"06 12 34 56 78\",\n" +
+		"\t\tBirthDate: \"14/03/1987\",\n" +
+		"\t\tAddress:   \"12 rue des Lilas, 69003 Lyon\",\n" +
+		"\t}\n" +
+		"\tif got := invoice(customer); got.Total != 120 {\n" +
+		"\t\tt.Fatalf(\"total = %d\", got.Total)\n" +
+		"\t}\n" +
+		"}\n"
+
+	if !looksLikeCode(fixture) {
+		t.Fatal("the fixture no longer reads as code, so this test proves nothing")
+	}
+
+	var cats []string
+	for _, m := range d.Scan(fixture) {
+		cats = append(cats, string(m.Category))
+	}
+	for _, want := range []string{"EMAIL", "PHONE", "DOB", "ADDRESS"} {
+		if !containsString(cats, want) {
+			t.Errorf("%s in a named field of a fixture went out in clear: got %v", want, cats)
+		}
+	}
+}
+
 // The invariant the whole stage is built around.
 //
 // A coding agent reading a settings file is the moment a real key appears, and it

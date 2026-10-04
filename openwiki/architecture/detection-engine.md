@@ -741,6 +741,20 @@ not (an address in a fixture is still somebody's), `IP_ADDRESS` is not (a pasted
 configuration *is* code, and an internal host in it is a topology), and no credential
 ever is.
 
+**Unless the value's own name says what it is** (`pii.NamedByItsKey`, `pkg/pii/keyname.go`).
+A real customer record in a test fixture was the case the relaxation had never been
+measured against, and it sent the record's telephone and date of birth out in clear beside
+its masked email and address. The identifier the value is assigned to — `BirthDate:`,
+`"phone":`, `tel=`, `<telephone>`, `zip_code:` — is split on punctuation and camel case and
+read against `keyWords`, whole words or a declared stem, so `telemetry`, `hotel`, `zipfile`
+and a release's `Date` bring nothing back. Only that identifier, never any word in the
+window: in `{"phone": "x", "version": "01 02 03 04 05"}` the word names another field.
+Measured over this repository's own Go and TypeScript: eleven findings more, every one a
+named telephone or birth date in a test, and none of the changelogs and byte arrays the
+relaxation exists for. `TestEveryCategoryRelaxedInCodeHasKeyWords` makes a category newly
+marked `NoisyInCode` declare its names. A `TODO:` names the ceiling: a value with no name of
+its own — positional, an SQL `VALUES` list, a CSV row — is still relaxed.
+
 ## The catalogue: patterns
 
 `pii.Pattern` (`pkg/pii/pattern.go:12`) is one recognisable shape plus its category,
