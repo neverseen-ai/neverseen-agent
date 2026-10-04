@@ -191,10 +191,13 @@ func expandSignature(t string) []string {
 			i += end
 		case (c == 'L' || c == 'D') && i+1 < len(t) && t[i+1] == '{':
 			end := strings.IndexByte(t[i:], '}')
+			if end < 0 {
+				panic("pii: unclosed repetition in plate signature " + strconv.Quote(t))
+			}
 			lo, hi, ok := strings.Cut(t[i+2:i+end], ",")
 			a, errA := strconv.Atoi(lo)
 			b, errB := strconv.Atoi(hi)
-			if end < 0 || !ok || errA != nil || errB != nil || a < 1 || b < a {
+			if !ok || errA != nil || errB != nil || a < 1 || b < a {
 				panic("pii: bad repetition in plate signature " + strconv.Quote(t))
 			}
 			var alts []string

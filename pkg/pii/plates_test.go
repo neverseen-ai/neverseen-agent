@@ -2,6 +2,8 @@ package pii
 
 import (
 	"reflect"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -44,6 +46,32 @@ func TestPlateFinderCutsWhereAPlateBeginsAndEnds(t *testing.T) {
 		if !reflect.DeepEqual(got, c.want) {
 			t.Errorf("find(%q) = %q, want %q — %s", c.text, got, c.want, c.why)
 		}
+	}
+}
+
+// A malformed notation panics with a sentence naming it, not with a runtime
+// error: the panic fires at start-up, and "slice bounds out of range" says
+// nothing about which of forty countries to open. An unclosed repetition was
+// sliced before it was checked.
+func TestAMalformedSignaturePanicsWithItsName(t *testing.T) {
+	for _, notation := range []string{
+		"LL-D{1,2",  // unclosed repetition
+		"LL-(D|DD",  // unclosed group
+		"LL-D{2,1}", // a range that runs backwards
+		"LL-D{,2}",  // a range with no lower bound
+		"LL-DDD-Ll", // a lowercase letter, which no text's signature has
+		"LL-DDD-LE", // a literal letter, ditto
+	} {
+		func() {
+			defer func() {
+				r := recover()
+				msg, ok := r.(string)
+				if !ok || !strings.HasPrefix(msg, "pii: ") || !strings.Contains(msg, strconv.Quote(notation)) {
+					t.Errorf("expandSignatures(%q) panicked with %v, want a message naming the notation", notation, r)
+				}
+			}()
+			expandSignatures(notation)
+		}()
 	}
 }
 
