@@ -517,7 +517,9 @@ func serveAgent(logger *slog.Logger, agent *proxy.Agent) error {
 		// Bounded, because a hung backend must not stop the agent from stopping.
 		select {
 		case <-reported:
-		case <-time.After(20 * time.Second):
+		// A second past the reporter's own bound, so it is that deadline which ends
+		// the last delivery, never the process exiting under it.
+		case <-time.After(telemetry.ShutdownWait + time.Second):
 			logger.Warn("the last heartbeat did not finish; its window will be retried on restart")
 		}
 		return err

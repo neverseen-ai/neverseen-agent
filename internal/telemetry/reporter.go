@@ -50,6 +50,16 @@ const maxWindowAge = 7 * 24 * time.Hour
 // seconds for the life of the process.
 const snapshotInterval = 30 * time.Second
 
+// ShutdownWait bounds the last delivery Run makes once its context is cancelled.
+//
+// Exported because the command that starts Run waits for it, and the two have to
+// agree. Unbounded on this side, enrolling and sending took up to the client's two
+// timeouts — a minute — while the command gave up after twenty seconds and exited,
+// killing the drain wherever it was: harmless today, since a bucket delivered and
+// not yet forgotten is re-sent and the backend keys it by window, but a deadline
+// nobody owned.
+const ShutdownWait = 20 * time.Second
+
 // suspendAfter is how far the wall clock may move between two turns of the
 // reporter's loop before the period is treated as one this agent did not measure.
 //
@@ -262,9 +272,10 @@ func (r *Reporter) Run(ctx context.Context) {
 			// service manager allows a stop, which the last heartbeat needs. What rtk
 			// recorded since the last bucket is lost with the process, as it is on a
 			// start anyway (rtkTally's TODO).
-			out := context.WithoutCancel(ctx)
+			out, cancel := context.WithTimeout(context.WithoutCancel(ctx), ShutdownWait)
 			r.collectAt(r.now())
 			r.drain(out)
+			cancel()
 			return
 
 		case <-collect.C:
