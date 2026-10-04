@@ -147,6 +147,25 @@ export const claudeAi: Site = {
       };
     }
 
+    // {"type":"content_block_delta","delta":{"type":"thinking_delta","thinking":"…"}}
+    // — visible thinking, which is text, so the tail rule applies to it unchanged.
+    // Left out, a value the model reasoned over showed in the thinking panel as its
+    // replacement.
+    //
+    // TODO: input_json_delta, whose partial_json carries an artifact or a tool call,
+    // is still not restored. The agent accumulates those fragments and expands the
+    // whole document, falling back to whole tokens; expanding a fragment of JSON on
+    // its own is the leak that rule exists for. Waits for a recorded exchange showing
+    // what claude.ai streams for an artifact.
+    if (delta && typeof delta === 'object' && typeof delta.thinking === 'string') {
+      return {
+        text: delta.thinking,
+        set: (value: string) => {
+          delta.thinking = value;
+        },
+      };
+    }
+
     // {"type":"completion","completion":"…"} — the older shape, still served.
     if (typeof obj.completion === 'string') {
       return {

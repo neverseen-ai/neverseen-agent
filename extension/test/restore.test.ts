@@ -232,3 +232,18 @@ test('the older completion shape is restored too', async () => {
   const stream = await through([raw('write to [EMA'), raw('IL_1]')], expander(known));
   assert.equal(textsOf(stream), 'write to claire@example.fr');
 });
+
+test('visible thinking is restored, split across events like any text', async () => {
+  const raw = (thinking: string) =>
+    'event: content_block_delta\n' +
+    `data: ${JSON.stringify({ type: 'content_block_delta', delta: { type: 'thinking_delta', thinking } })}\n\n`;
+  const stream = await through([raw('she wrote from [EMA'), raw('IL_1] twice')], expander(known));
+
+  let thought = '';
+  for (const line of stream.split('\n')) {
+    if (!line.startsWith('data:')) continue;
+    const event = JSON.parse(line.slice('data:'.length).trim()) as { delta?: { thinking?: string } };
+    thought += event.delta?.thinking ?? '';
+  }
+  assert.equal(thought, 'she wrote from claire@example.fr twice');
+});

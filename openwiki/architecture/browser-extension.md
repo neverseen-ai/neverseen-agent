@@ -32,6 +32,10 @@ RE2's semantics, so the corpus and every lesson in it would not transfer.
 repositories a contract drifts. That is the class of failure this project documents
 everywhere else, and `extension/testdata/contract.json` is what the decision buys: one
 recorded file, replayed by both sides, in CI, on every commit.
+The claude.ai adapter restores `text_delta`, visible `thinking_delta` and the older
+`completion` shape. **`input_json_delta` is not restored**, behind a `TODO:` in
+`src/site/claude.ts`: the agent accumulates those fragments and expands the whole document,
+and expanding a fragment of JSON alone is the leak that rule exists for.
 
 **Fail closed.** A send that could not be masked is not sent. This is the extension's
 mirror of the proxy's 415 on a body it cannot read, and it is the rule somebody will be
