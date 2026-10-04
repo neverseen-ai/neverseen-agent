@@ -537,6 +537,12 @@ func (s *Server) maskRequest(session, provider string, r *http.Request) (*traceR
 	} else {
 		masked = mask(string(body))
 	}
+	if count == 0 {
+		// Nothing replaced, so the bytes that arrived are the ones that leave. Re-encoded,
+		// an indented body went out compacted and `é` or `\/` decoded — the same
+		// document, but an agent with nothing to do should not be visible at all.
+		masked = string(body)
+	}
 	masking := time.Since(scanned)
 
 	// Both halves, side by side, before anything else can fail: the two bodies are

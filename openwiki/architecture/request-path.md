@@ -60,6 +60,13 @@ carrying a quote or a newline cannot be spliced into raw JSON.
 repeated in two fields keeps one identity. A body carrying more than one JSON document is
 an error, not a guess (`errTrailingJSON`, `jsonbody.go:305`).
 
+**A body in which nothing was replaced leaves as the bytes that arrived** (`maskRequest`,
+`count == 0`). Re-encoding is only needed to carry a replacement; done anyway, an indented
+body went out compacted and `\u00e9` or `\/` decoded — the same document to a parser, but
+an agent visible where it had nothing to do (`TestABodyWithNothingToMaskIsForwardedByteForByte`).
+This is not what keeps the provider's prompt cache: that compares tokens, not bytes, and is
+measured on `usage` (see the prefix rule in `CLAUDE.md`).
+
 **Key order is preserved, and that took an ordered representation.** An object is
 decoded into `jsonObject` (`jsonbody.go:211`) — a slice of `jsonMember`, read a
 token at a time by `decodeValue` (`:111`) — rather than into `map[string]any`, because a Go map

@@ -917,6 +917,28 @@ func TestTheMaskedBodyKeepsItsKeyOrder(t *testing.T) {
 	}
 }
 
+// A body with nothing to mask reaches the provider as the bytes that arrived:
+// indentation, escapes and all. Re-encoded, it went out compacted with `é` and
+// `\/` decoded — the same document to a parser, and still an agent visible where it
+// had nothing to do.
+func TestABodyWithNothingToMaskIsForwardedByteForByte(t *testing.T) {
+	up := newUpstream(t, echoJSON)
+	agent := newAgent(t, up, []string{"fr"})
+
+	const body = "{\n  \"model\": \"claude-opus-5\",\n" +
+		"  \"messages\": [\n    {\"role\": \"user\", \"content\": \"caf\\u00e9 \\/ th\\u00e9\\n\\tsuite\"}\n  ]\n}\n"
+
+	post(t, agent, "/anthropic/v1/messages", "", body)
+
+	bodies, _ := up.received()
+	if len(bodies) != 1 {
+		t.Fatalf("the provider saw %d requests, want 1", len(bodies))
+	}
+	if bodies[0] != body {
+		t.Errorf("the body was rewritten with nothing to mask in it:\n got %q\nwant %q", bodies[0], body)
+	}
+}
+
 // A duplicated key is kept rather than collapsed. Two members of the same name are
 // pathological rather than useful, but silently keeping one is the agent deciding
 // which — and whichever it dropped would have gone to the provider in the original.
