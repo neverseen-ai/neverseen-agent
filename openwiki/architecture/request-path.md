@@ -171,7 +171,7 @@ field this exists to protect.
 
 `internal/vault` holds one mapping per session, **masked → original** — the direction the
 response path reads it. The originals are encrypted at rest with AES-256-GCM, and the key
-may be nil, in which case one is generated for the life of the process (`vault.go:146-151`).
+may be nil, in which case one is generated for the life of the process (`vault.go:149-154`).
 There is deliberately no second, plaintext mode that only shows up in a deployment nobody
 tested.
 
@@ -183,8 +183,8 @@ known requirement (Redis, for a mapping surviving a restart) rather than a specu
 
 - The nonce is fresh per value, so two identical originals under two tokens do not produce
   identical ciphertext — which would tell anyone reading the store that they are the same
-  person (`vault.go:458-467`, `TestIdenticalOriginalsSealDifferently`).
-- An entry that cannot be decrypted is **dropped, not reported** (`vault.go:197-199`): it means
+  person (`vault.go:461-470`, `TestIdenticalOriginalsSealDifferently`).
+- An entry that cannot be decrypted is **dropped, not reported** (`vault.go:200-202`): it means
   the process restarted under a new ephemeral key, so the token is simply unknown and the
   response path leaves it alone rather than failing a request over bookkeeping.
 - `DefaultTTL` is three hours (`vault.go:33`) — long enough for a conversation left over
@@ -246,9 +246,18 @@ known requirement (Redis, for a mapping surviving a restart) rather than a specu
   attached to a report without what makes its fingerprints testable. With no key the
   names stay in the process and only the numbering is kept. `Forget` writes the book at
   once, without its names, or a restart before the next `Save` would read the old shape
-  back. **What it costs is stated where it is written** (`vault.Book`): somebody who can
-  read both files can test a guess — a plate, a phone number — and learn whether this
-  agent named it in the last week. The same reader holds `control.key`, which switches
+  back. The file records the substitution mode its names were minted under (`namesFile`),
+  and a process starting in another mode — an environment edited with no policy file, a
+  policy file edited while the agent was stopped — drops the names and keeps the
+  numbering (`TestARestartInAnotherModeGivesEveryValueANewName`). **What it costs is
+  stated where it is written** (`vault.Book`): somebody who can read both files can test
+  a guess — a plate, a phone number — and learn whether this agent named it in the week
+  **before it last ran**. The week is the sweep's, and the sweep runs on a request: a
+  stopped agent leaves the book as it was until it starts again (a restart sweeps at its
+  first request), so uninstalling deletes the book and its key — the one exception to
+  `~/.neverseen` being left alone (`proxy.ForgetNames`, called by
+  `neverseen service uninstall`, which both installers go through;
+  `TestForgetNamesDeletesTheBookAndItsKeyAlone`). The same reader holds `control.key`, which switches
   masking off, and the client's own transcripts in clear; the book is the one copy only
   for a value typed into a browser chat. `TestARestartKeepsTheNamesAConversationRemembers`
   puts the other plate first in the replayed body, so only the book can put `[PLATE_1]`

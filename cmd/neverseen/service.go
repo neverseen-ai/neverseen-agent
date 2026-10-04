@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/neverseen-ai/neverseen-agent/internal/proxy"
 	"github.com/neverseen-ai/neverseen-agent/internal/service"
 )
 
@@ -77,12 +78,18 @@ func runService(args []string, stdout io.Writer) error {
 		if err := service.Uninstall(layout); err != nil {
 			return err
 		}
+		fmt.Fprintf(stdout, "Stopped it and removed the service.\n")
+
+		// The one thing taken out of ~/.neverseen, after the agent has stopped so it
+		// cannot write the book back. Both installers reach it through this verb, so
+		// it is decided once.
+		forgetNames(stdout, proxy.DefaultNamesFile)
+
 		// What is deliberately left behind is said here as well as in install.sh,
 		// because this command can be reached without that script: the directory
 		// holds the operator's configuration and the identity a supervision backend
 		// knows this machine by, and deleting the identity silently would have the
 		// next install enrol as a second agent and count twice.
-		fmt.Fprintf(stdout, "Stopped it and removed the service.\n")
 		fmt.Fprintf(stdout, "Left in place: %s\n", layout.ConfigFile)
 		return nil
 
@@ -99,6 +106,20 @@ func runService(args []string, stdout io.Writer) error {
 	}
 }
 
+// forgetNames deletes the session book at path and its key, and says what it did —
+// see proxy.ForgetNames for why it alone leaves ~/.neverseen on uninstall. A file
+// that will not go is reported and the uninstall carries on: the service is already
+// gone, and an error here would read as one about the service.
+func forgetNames(stdout io.Writer, path string) {
+	removed, err := proxy.ForgetNames(path)
+	for _, file := range removed {
+		fmt.Fprintf(stdout, "Deleted %s\n", file)
+	}
+	if err != nil {
+		fmt.Fprintf(stdout, "Could not delete what the agent remembered of each conversation: %v\n", err)
+	}
+}
+
 func printServiceUsage(w io.Writer) {
 	fmt.Fprint(w, `usage: neverseen service <command> [--prefix DIR]
 
@@ -107,6 +128,7 @@ The command comes first, then its flags.
   install     register the agent, and the menu bar icon if it is installed,
               to start at login, and start it now
   uninstall   stop it and remove the registration; leaves ~/.neverseen alone
+              but for the session book (names.json, names.key)
   restart     reload the definition and restart, after editing the config
 
 --prefix names where the binaries were installed. Empty means ~/.local, which

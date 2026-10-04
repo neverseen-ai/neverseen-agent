@@ -56,11 +56,21 @@ is written empty, because choosing a locale here would be worse than leaving it 
 one country's data with another country's patterns masks its invoice numbers and misses its
 identifiers. The directory is `0700` and the file `0600`. An existing config is kept.
 
-**`--uninstall` undoes exactly what the installer added and leaves `~/.neverseen/` alone.**
-That directory holds the operator's config, the identity a backend knows the machine by, and
-any buckets not yet delivered: deleting the identity silently would have the next install
-enrol as a **second agent and count twice** against what they pay for, and deleting the
-buffer would throw away the record of an outage still in progress.
+**`--uninstall` undoes exactly what the installer added and leaves `~/.neverseen/` alone —
+but for the session book.** That directory holds the operator's config, the identity a
+backend knows the machine by, and any buckets not yet delivered: deleting the identity
+silently would have the next install enrol as a **second agent and count twice** against what
+they pay for, and deleting the buffer would throw away the record of an outage still in
+progress.
+
+The exception is `names.json` and `names.key`, which `neverseen service uninstall` deletes
+once the agent has stopped (`proxy.ForgetNames`; both installers reach it through that verb,
+so it is decided once). The book holds no value, but with its key beside it a reader can test
+whether a given plate or phone number was named, and its week-long bound is enforced by the
+running agent's sweep — once the agent is gone, nothing sweeps it. Losing it costs one round
+of unexpanded tokens in conversations resumed after a reinstall; nothing is billed twice and
+nothing undelivered is lost. What stays after an uninstall is `.env`, `policy.json`,
+`control.key`, `agent.json`, the telemetry buffer and `agent.log`.
 
 ### One owner of the service definition
 
@@ -72,7 +82,7 @@ that *restarted* it.
 
 ```
 neverseen service install     register both jobs and start the agent now
-neverseen service uninstall   stop and deregister; leaves ~/.neverseen alone
+neverseen service uninstall   stop and deregister; leaves ~/.neverseen alone but for names.*
 neverseen service restart     reload the definition and restart
 ```
 

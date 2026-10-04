@@ -84,8 +84,9 @@ and it is deliberately not repeated here.
   with the fingerprint key beside it in `names.key`, never inside. Written from `Save`,
   never from `Name`; written at once by `Forget`, without the names. The numbering
   survives `Forget`. A file that cannot be read or written is a warning: the fallback is
-  counting from 1, never refusing to mask. What a reader of both files can learn is
-  stated on `vault.Book`. `TestARestartDoesNotHandARememberedNameToAnotherValue`,
+  counting from 1, never refusing to mask. The file records the substitution mode, and a
+  process starting in another one drops the names. What a reader of both files can learn
+  — what this agent named in the week before it *last ran* — is stated on `vault.Book`. `TestARestartDoesNotHandARememberedNameToAnotherValue`,
   `TestARestartKeepsTheNamesAConversationRemembers`,
   `TestSimulatedConversationsKeepTheirNames`.
 - **Both shapes of a masked value are expanded** — bracket token and stand-in —
@@ -406,7 +407,10 @@ and it is deliberately not repeated here.
 - **The installer never exports a base URL into a shell profile.** It adds
   `eval "$(neverseen env)"` — availability over enforcement, on purpose. It touches
   no login file unless asked (`--shell`), and `--uninstall` leaves `~/.neverseen/`
-  alone.
+  alone **but for the session book** (`names.json`, `names.key`), which
+  `neverseen service uninstall` deletes (`proxy.ForgetNames`): the rest is state worth more
+  than the agent — the configuration, the identity a backend bills by, an undelivered
+  outage — and the book is only a record of values nothing sweeps once the agent is gone.
 
 ## Conventions
 

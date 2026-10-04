@@ -110,10 +110,13 @@ type Vault struct {
 // Never a value. A name is keyed by the value's fingerprint, an HMAC under a key
 // kept beside this file. What that does not protect against has to be said where
 // it is written: somebody who can read both files can test a guess — a plate, a
-// phone number — and learn whether this agent named it in the last week. The same
-// reader holds the control key, which switches masking off, and the client's own
-// transcripts in clear; the book adds nothing for a value that already reached a
-// disk that way, and is the one copy for a value typed into a browser chat.
+// phone number — and learn whether this agent named it in the week before it last
+// ran. The week is the sweep's, and the sweep runs on a request: an agent that is
+// stopped leaves the book as it was until it starts again, which is why
+// uninstalling deletes it (proxy.ForgetNames). The same reader holds the control
+// key, which switches masking off, and the client's own transcripts in clear; the
+// book adds nothing for a value that already reached a disk that way, and is the
+// one copy for a value typed into a browser chat.
 type Book map[string]SessionBook
 
 // SessionBook is one session's half of Book.

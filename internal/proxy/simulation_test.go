@@ -132,9 +132,9 @@ func simulate(t *testing.T, cfg simConfig) simReport {
 		if err != nil {
 			t.Fatal(err)
 		}
-		keepNames(logger, v, names)
-		srv, err := New(Config{Providers: []Provider{{Code: "anthropic", BaseURL: model.URL}}},
-			detector.New(detector.Config{Locales: []string{"fr"}}), v)
+		agentDet := detector.New(detector.Config{Locales: []string{"fr"}})
+		keepNames(logger, v, agentDet, names)
+		srv, err := New(Config{Providers: []Provider{{Code: "anthropic", BaseURL: model.URL}}}, agentDet, v)
 		if err != nil {
 			t.Fatal(err)
 		}

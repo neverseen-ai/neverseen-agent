@@ -154,7 +154,7 @@ func FromEnv(logger *slog.Logger, opts Options) (*Agent, error) {
 	if err != nil {
 		return nil, err
 	}
-	keepNames(logger, v, resolveFileOption(opts.NamesFile, DefaultNamesFile))
+	keepNames(logger, v, det, resolveFileOption(opts.NamesFile, DefaultNamesFile))
 
 	providers, err := ParseProviders(os.Getenv(EnvProviders))
 	if err != nil {
