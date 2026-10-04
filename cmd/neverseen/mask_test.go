@@ -462,8 +462,10 @@ func TestMaskWrapsTheCountryLists(t *testing.T) {
 	writeCatalogue(&out, proxy.Status{Health: proxy.Health{Locales: codes, AvailableLocales: codes}})
 
 	// The block runs from the countries line to the blank line closing the list.
-	_, block, _ := strings.Cut(out.String(), "  countries")
-	block, _, _ = strings.Cut(block, "\n\n")
+	// Sliced from the label, not cut after it: the first line is the longest
+	// one the fix touched, and it is measured whole.
+	s := out.String()
+	block, _, _ := strings.Cut(s[strings.Index(s, "  countries"):], "\n\n")
 	for line := range strings.SplitSeq(block, "\n") {
 		if len(line) > usageWidth {
 			t.Errorf("a country line runs to %d columns, past %d:\n%s", len(line), usageWidth, line)
