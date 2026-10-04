@@ -38,6 +38,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -271,6 +273,67 @@ func TestUninstallRemovesOnlyTheLineTheInstallerWrote(t *testing.T) {
 	}
 	if strings.Contains(after, line) {
 		t.Errorf("--uninstall left its own line behind:\n%s", after)
+	}
+}
+
+// With the binary already gone, `neverseen service uninstall` cannot run, and removing
+// the binaries over a definition left in place had launchd or systemd respawn a missing
+// program for the rest of the login. The script removes the registration itself.
+//
+// launchctl and systemctl are stubs on PATH that record their arguments: the real
+// systemctl --user addresses the person's own manager whatever HOME says, and would
+// disable the agent of whoever runs this test.
+func TestUninstallWithoutTheBinaryStillRemovesTheRegistration(t *testing.T) {
+	home := t.TempDir()
+
+	stubs := t.TempDir()
+	calls := filepath.Join(stubs, "calls")
+	for _, name := range []string{"launchctl", "systemctl"} {
+		stub := "#!/bin/sh\necho " + name + ` "$@" >> ` + calls + "\n"
+		if err := os.WriteFile(filepath.Join(stubs, name), []byte(stub), 0o700); err != nil { //nolint:gosec // a stub this test runs
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", stubs+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	var definitions []string
+	switch runtime.GOOS {
+	case "darwin":
+		dir := filepath.Join(home, "Library", "LaunchAgents")
+		definitions = []string{filepath.Join(dir, "ai.neverseen.agent.plist"), filepath.Join(dir, "ai.neverseen.tray.plist")}
+	case "linux":
+		definitions = []string{
+			filepath.Join(home, ".config", "systemd", "user", "neverseen.service"),
+			filepath.Join(home, ".config", "autostart", "neverseen-tray.desktop"),
+		}
+	default:
+		t.Skipf("install.sh does not run on %s", runtime.GOOS)
+	}
+	config := filepath.Join(home, ".neverseen")
+	book := []string{filepath.Join(config, "names.json"), filepath.Join(config, "names.key")}
+	registered := slices.Concat(definitions, book)
+	for _, path := range registered {
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		write(t, path, "registered\n")
+	}
+	write(t, filepath.Join(config, ".env"), "NEVERSEEN_PII_LOCALE=fr\n")
+
+	if _, stderr, code := runIn(t, home, "--uninstall"); code != 0 {
+		t.Fatalf("--uninstall exited %d:\n%s", code, stderr)
+	}
+
+	for _, path := range registered {
+		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("%s survived the uninstall, so whatever reads it carries on without a binary", path)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(config, ".env")); err != nil {
+		t.Errorf("the configuration went with the service, and it is the person's own work: %v", err)
+	}
+	if recorded, _ := os.ReadFile(calls); !strings.Contains(string(recorded), "ctl") { //nolint:gosec // a path this test built
+		t.Errorf("the registration was deleted from disk but never unloaded, so the running job carries on")
 	}
 }
 

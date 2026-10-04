@@ -74,7 +74,14 @@ nothing undelivered is lost. What stays after an uninstall is `.env`, `policy.js
 
 ### One owner of the service definition
 
-`internal/service` renders and registers them; `install.sh` calls it. Before that the
+`internal/service` renders and registers them; `install.sh` calls it. **One exception, on
+the way out**: when `neverseen service uninstall` cannot run — the binary already gone,
+or the verb failed — `install.sh` removes the registration itself (`unregister_service`):
+unloads and deletes the definitions that verb would have, and the session book. Removing
+the binaries over a definition left in place had `KeepAlive` and `Restart=always` respawn
+a missing program for the rest of the login. "Reinstall so that you can uninstall" was the
+alternative, and nobody wants to read it
+(`TestUninstallWithoutTheBinaryStillRemovesTheRegistration`). Before that the
 plist and the unit were heredocs in the script, which meant anything else that wanted
 to install this agent could only write a fourth copy of them — and of the copies that
 drifted, the pair that mattered would be the one that *installed* the agent and the one
@@ -207,7 +214,11 @@ A Go test rather than a shell harness, because it costs nothing to add: it is in
 `NEVERSEEN_PREFIX` to ruin, and a failure prints like every other failure here. The
 script is driven as a subprocess — the real file, not a copy with the awkward parts
 removed. `--uninstall` is safe to run in a case because `service_cmd` reaches for a
-binary under the temporary prefix, which is not there.
+binary under the temporary prefix, which is not there — so the script falls back to
+`unregister_service`, which touches only definitions under the temporary `HOME` and calls
+`launchctl` or `systemctl` only when one is there. The case that puts one there puts
+stubs for both on `PATH` first: `systemctl --user` addresses the person's own manager
+whatever `HOME` says, and would disable the agent of whoever ran the test.
 
 **One seam was added for it**, and only one: `NEVERSEEN_INSTALL_LIB=1` makes the
 script define its functions and stop, instead of dispatching a verb. It exists

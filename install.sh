@@ -387,6 +387,40 @@ service_cmd() {
     "$BIN_DIR/$BIN_NAME" service "$1" --prefix "$PREFIX"
 }
 
+# The fallback for when the agent cannot remove its own registration: the binary is
+# already gone — a half-finished earlier uninstall, a manual rm — or the verb failed.
+# Removing the binaries over a definition left in place had launchd (KeepAlive) or
+# systemd (Restart=always) respawn a missing program for the rest of the login,
+# writing to agent.log every few seconds.
+#
+# The one place this script names a service path of its own, against the rule that
+# the agent owns the definition: here the agent is what is missing, and "reinstall so
+# that you can uninstall" is the sentence nobody wants to read. Only what
+# `neverseen service install` writes, each touched only if it is there — and the
+# session book, which `neverseen service uninstall` would have deleted.
+unregister_service() {
+    case "$PLATFORM" in
+        darwin)
+            for label in "$SERVICE_LABEL" "$TRAY_LABEL"; do
+                plist="$HOME/Library/LaunchAgents/$label.plist"
+                [ -f "$plist" ] || continue
+                launchctl unload "$plist" 2>/dev/null || true
+                rm -f "$plist"
+            done
+            ;;
+        linux)
+            unit="$HOME/.config/systemd/user/neverseen.service"
+            if [ -f "$unit" ]; then
+                systemctl --user disable --now neverseen.service 2>/dev/null || true
+                rm -f "$unit"
+                systemctl --user daemon-reload 2>/dev/null || true
+            fi
+            rm -f "$HOME/.config/autostart/neverseen-tray.desktop"
+            ;;
+    esac
+    rm -f "$CONFIG_DIR/names.json" "$CONFIG_DIR/names.key"
+}
+
 # ---------------------------------------------------------------- the shell
 
 wire_shell() {
@@ -557,7 +591,10 @@ do_logs() {
 do_uninstall() {
     # Before the binaries go, because it is the agent that owns the definition and
     # removing it first would leave the registration behind with nothing to remove it.
-    service_cmd uninstall || warn "could not remove the service; continuing"
+    if ! service_cmd uninstall; then
+        warn "the agent could not remove its own service; removing the registration directly"
+        unregister_service
+    fi
 
     unwire_shell
     rm -f "$BIN_DIR/$BIN_NAME" "$BIN_DIR/$TRAY_NAME"

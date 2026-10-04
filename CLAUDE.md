@@ -367,7 +367,8 @@ and it is deliberately not repeated here.
 - **One type answers `/healthz`** (`proxy.Health`) and **one function asks it**
   (`proxy.Query`).
 - **One owner of the service definition** (`internal/service`); `install.sh` is a
-  caller. `neverseen service install|uninstall|restart` is the whole surface —
+  caller — but for `unregister_service`, its fallback when the binary is no longer there
+  to uninstall itself, which would otherwise leave a respawn loop behind. `neverseen service install|uninstall|restart` is the whole surface —
   **three verbs, because each writes or removes a definition**. `--status` and
   `--logs` stay in the script, because they observe and author nothing. **`Render`
   takes the platform as a field, not `runtime.GOOS`**, so every definition is
