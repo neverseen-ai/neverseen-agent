@@ -59,7 +59,7 @@ def trace(body_in: str, body_out: str, back: str, masks: list[tuple[str, str]],
     s = (f"session:  s1\nprovider: anthropic\n"
          f"in:       {len(body_in.encode())} bytes\n"
          f"out:      {len(body_out.encode())} bytes\n"
-         f"replaced: 2 value(s), {len(masks)} of them first seen in this session\n")
+         f"replaced: 2 value(s), {len(masks)} of them added to the session's mapping\n")
     if masks:
         s += "\n" + "".join(f"MASK {a} TO {b}\n" for a, b in masks)
     s += f"\n{rule('IN   from the tool')}\n"

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -71,9 +72,16 @@ func echoJSON(w http.ResponseWriter, r *http.Request) {
 // "anthropic" because that is the code the end-to-end test uses too.
 func newAgent(t *testing.T, up *upstream, locales []string) *httptest.Server {
 	t.Helper()
+	return newAgentOver(t, up, locales, vault.NewMemory())
+}
+
+// newAgentOver is newAgent over a store the test keeps a handle on, for a test that
+// has to expire the mapping between two turns without sleeping through a lifetime.
+func newAgentOver(t *testing.T, up *upstream, locales []string, store vault.Store) *httptest.Server {
+	t.Helper()
 
 	det := detector.New(detector.Config{Locales: locales})
-	v, err := vault.New(vault.NewMemory(), nil, vault.DefaultTTL)
+	v, err := vault.New(store, nil, vault.DefaultTTL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -300,6 +308,58 @@ func TestMapJSONStrings(t *testing.T) {
 				t.Errorf("mapJSONStrings accepted %q", raw)
 			}
 		})
+	}
+}
+
+// A token the model remembers is restored after a pause expired the mapping.
+//
+// What the model reasoned about comes back to it inside the thinking block's
+// signature, encrypted and out of the agent's reach, so it still says the name it
+// reasoned with. The history, replayed in clear, used to be masked afresh under a
+// new index — and the caller read "Le boîtier de [PLATE_381]" back.
+func TestATokenTheModelRemembersSurvivesAnExpiredMapping(t *testing.T) {
+	var (
+		mu      sync.Mutex
+		turn    int
+		said    string
+		plateRe = regexp.MustCompile(`\[PLATE_\d+\]`)
+	)
+	up := newUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		defer mu.Unlock()
+		turn++
+		if turn == 1 {
+			said = plateRe.FindString(string(body))
+		}
+		// Every turn answers with the name the model met on the first.
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"text": "Le boîtier de " + said + " n'envoie pas de cap."})
+	})
+
+	store := vault.NewMemory()
+	agent := newAgentOver(t, up, []string{"fr"}, store)
+
+	const body = `{"messages":[{"role":"user","content":"Le véhicule AB-123-CD n'envoie pas de cap."}]}`
+	post(t, agent, "/anthropic/v1/messages", "s1", body)
+	mu.Lock()
+	first := said
+	mu.Unlock()
+	if first == "" {
+		t.Fatal("the first turn minted no plate token; the test proves nothing")
+	}
+
+	// The store's own Forget, not the vault's: it drops every mapping as a pause
+	// past the lifetime does, and leaves what Recall remembers where it is.
+	store.Forget()
+	got := post(t, agent, "/anthropic/v1/messages", "s1", body)
+
+	bodies, _ := up.received()
+	if len(bodies) != 2 || !strings.Contains(bodies[1], first) {
+		t.Errorf("the second turn renamed the plate: want %s in %v", first, bodies)
+	}
+	if !strings.Contains(got.body, "AB-123-CD") || strings.Contains(got.body, "[PLATE_") {
+		t.Errorf("the token the model remembered was not restored: %s", got.body)
 	}
 }
 

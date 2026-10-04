@@ -44,6 +44,12 @@ type Pass struct {
 	// cannot be, because it changes with every request.
 	Exempt map[string]bool
 
+	// Recall, when set, returns what a value was replaced by earlier in the
+	// session although the mapping no longer holds it (vault.Recall). A value it
+	// names is handed that replacement rather than a new index, and goes into
+	// minted all the same, because the mapping has to learn it again.
+	Recall func(original string) (string, bool)
+
 	// counts is how many values were replaced per category, repeats included.
 	//
 	// Repeats included on purpose: a value masked three times in one body is
@@ -80,8 +86,13 @@ func (p *Pass) mask(cat pii.Category, locale, original string) string {
 		return masked
 	}
 
-	index := p.d.nextIndex(cat)
-	masked := p.d.render(cat, locale, index)
+	masked, ok := "", false
+	if p.Recall != nil {
+		masked, ok = p.Recall(original)
+	}
+	if !ok {
+		masked = p.d.render(cat, locale, p.d.nextIndex(cat))
+	}
 
 	p.byValue[original] = masked
 	p.minted[masked] = original

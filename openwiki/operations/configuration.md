@@ -688,17 +688,20 @@ session:  default          ── IN   from the tool ─────────
 provider: anthropic        {
 in:       110 bytes          "prompt": "écris à pierre.paul@example.com, matricule ZZ-4471"
 out:      91 bytes         }
-replaced: 2 value(s), 2 of them first seen in this session
+replaced: 2 value(s), 2 of them added to the session's mapping
                            ── OUT  to anthropic ───────────────
 MASK pierre.paul@…           "prompt": "écris à [EMAIL_1], matricule ZZ-4471"
 ```
 
 **Two numbers, because they answer different questions.** The first is what was
 replaced in this body, repeats included — what left the machine transformed. The
-second is how many of those the session was seeing for the first time, which is
-exactly the set listed as `MASK` lines below it. They are equal only in a session's
-first exchange: after that a value keeps the replacement it was first given, so the
-mapping is reused and nothing is minted.
+second is how many of those were added to the session's mapping, which is exactly the
+set listed as `MASK` lines below it. They are equal only in a session's first exchange:
+after that a value keeps the replacement it was first given, so the mapping is reused
+and nothing is minted. The one exception is the turn after a pause that expired the
+mapping: every value comes back under the name `Vault.Recall` remembers, and is listed
+and stored again without being new — which is why the header says "added to the
+mapping" and not "first seen".
 
 The header used to carry the second number alone, under the first one's name. A
 trace then read `replaced: 0 value(s)` above a body holding `[SECRET_12]`,

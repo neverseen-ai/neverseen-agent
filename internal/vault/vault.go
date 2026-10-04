@@ -9,7 +9,9 @@ package vault
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 	"maps"
@@ -19,11 +21,27 @@ import (
 
 // DefaultTTL is how long a session's mapping outlives its last use.
 //
-// Long enough that a conversation with a pause in it keeps one identity for each
-// value, short enough that a workstation left running does not accumulate the
-// day's data. It is the window in which the originals exist in memory at all, so
-// it is a privacy setting as much as a cache setting.
-const DefaultTTL = 30 * time.Minute
+// Long enough that a conversation left over lunch keeps one identity for each
+// value, short enough that a workstation left running overnight does not carry
+// yesterday's data into the morning. It is the window in which the originals
+// exist in memory at all, so it is a privacy setting as much as a cache setting.
+//
+// Three hours rather than the thirty minutes it was: a pause longer than this
+// lifetime is when an answer comes back carrying a token nothing expands, and
+// half an hour is shorter than lunch. Recall is what covers a pause longer than
+// this one; the lifetime only decides how often it has to.
+const DefaultTTL = 3 * time.Hour
+
+// namesTTL is how long Recall remembers a session's names after the session's last
+// request.
+//
+// Far longer than the mapping, because it covers the pauses the mapping does not —
+// a conversation picked up the next morning, or after a weekend — and holds no
+// original to protect. Not forever, because a session can be a single request:
+// sessionOf falls back to X-Request-Id, and a client stamping a fresh one on every
+// call would otherwise leave every value of every request behind for the life of
+// the process.
+const namesTTL = 7 * 24 * time.Hour
 
 // Store holds one session's mapping. The mapping is masked → original, because
 // that is the direction the response path reads it.
@@ -47,6 +65,33 @@ type Vault struct {
 	store Store
 	aead  cipher.AEAD
 	ttl   time.Duration
+
+	// names remembers what each value was replaced by, per session, for longer
+	// than the mapping lives: fingerprint → name. See Recall.
+	//
+	// Keyed by an HMAC of the value under a key derived from the vault's own,
+	// never by the value: the lifetime is the window the originals exist in
+	// memory, and this is kept past it. A plain hash would not do, because a plate
+	// or a phone number is a small enough space to hash every candidate of.
+	//
+	// mu also covers the store's writes, so a Forget cannot land between a Save's
+	// mapping and its names and leave a name of the shape just switched away from.
+	//
+	// active is when each session last saved, which is every request it made: a
+	// name lives as long as its session does, because a value the live mapping
+	// already holds is reused without Recall ever being asked — dated per name, a
+	// conversation in use for longer than namesTTL would lose names it still needs.
+	mark   []byte
+	mu     sync.Mutex
+	names  map[string]name
+	active map[string]time.Time
+	swept  time.Time
+}
+
+// name is what Recall hands back, and the session it belongs to.
+type name struct {
+	masked  string
+	session string
 }
 
 // New builds a vault over a store.
@@ -84,7 +129,18 @@ func New(store Store, key []byte, ttl time.Duration) (*Vault, error) {
 	if ttl <= 0 {
 		ttl = DefaultTTL
 	}
-	return &Vault{store: store, aead: aead, ttl: ttl}, nil
+	// A key of its own for the fingerprints, derived rather than drawn, so the one
+	// secret the vault is built from is the only one there is: a configured key
+	// gives every agent sharing it the same fingerprints, a generated one gives
+	// each process its own. Never the AES key itself — one key, one purpose.
+	derive := hmac.New(sha256.New, key)
+	derive.Write([]byte("neverseen vault names"))
+	mark := derive.Sum(nil)
+
+	return &Vault{
+		store: store, aead: aead, ttl: ttl, mark: mark,
+		names: make(map[string]name), active: make(map[string]time.Time),
+	}, nil
 }
 
 // Load returns the session's mapping, masked → original.
@@ -126,8 +182,76 @@ func (v *Vault) Save(session string, entries map[string]string) error {
 		}
 		sealed[masked] = box
 	}
+
+	v.mu.Lock()
+	defer v.mu.Unlock()
 	v.store.Merge(session, sealed, v.ttl)
+
+	now := time.Now()
+	v.active[session] = now
+	v.sweep(now)
+	for masked, original := range entries {
+		v.names[v.fingerprint(session, original)] = name{masked: masked, session: session}
+	}
 	return nil
+}
+
+// sweep drops the names of every session idle for namesTTL, at most once an hour.
+//
+// On a write rather than on a timer, as Memory.Merge purges its sessions: a process
+// that keeps writing keeps the map bounded, and one that has stopped has nothing to
+// grow. Rate-limited because the map can hold a week of traffic, and walking it on
+// every request would cost each one in proportion to everything the agent has seen.
+func (v *Vault) sweep(now time.Time) {
+	if now.Sub(v.swept) < time.Hour {
+		return
+	}
+	v.swept = now
+	for session, last := range v.active {
+		if now.Sub(last) > namesTTL {
+			delete(v.active, session)
+		}
+	}
+	for fingerprint, n := range v.names {
+		if _, ok := v.active[n.session]; !ok {
+			delete(v.names, fingerprint)
+		}
+	}
+}
+
+// Recall returns what a value was replaced by earlier in a session, even after
+// the session's mapping has expired.
+//
+// The model remembers a token longer than the mapping does. What it reasoned
+// about comes back to it on every turn inside the thinking block's signature,
+// encrypted — a client replays the signature and an empty text beside it — so
+// the agent can neither mask nor restore it, and it still says [PLATE_381]
+// after a pause has expired the mapping. The history, replayed in clear, was
+// then masked afresh as [PLATE_412]; the model wrote the name it had reasoned
+// with, and the caller read "[PLATE_381]" back. Handing the value the name it
+// had before closes that: re-masking the history puts the entry back into the
+// mapping, under the name the model is still using.
+//
+// It also keeps the prefix a provider caches the same across a pause, which a
+// renumbering broke from the first value it renamed.
+//
+// One name per value: two requests in flight that both met a value for the first
+// time mint two, the mapping keeps both, and only the one saved last is remembered
+// here once the mapping has expired.
+func (v *Vault) Recall(session, original string) (string, bool) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	n, ok := v.names[v.fingerprint(session, original)]
+	return n.masked, ok
+}
+
+// fingerprint names a value within a session without holding it.
+func (v *Vault) fingerprint(session, original string) string {
+	h := hmac.New(sha256.New, v.mark)
+	h.Write([]byte(session))
+	h.Write([]byte{0})
+	h.Write([]byte(original))
+	return string(h.Sum(nil))
 }
 
 // Forget drops every mapping this vault holds.
@@ -142,7 +266,16 @@ func (v *Vault) Save(session string, entries map[string]string) error {
 // where it is made: replacements minted before the change stop being restored, and
 // an answer still in flight comes back carrying a token nothing expands. That window
 // is one exchange wide, against a control that otherwise appears not to work at all.
-func (v *Vault) Forget() { v.store.Forget() }
+//
+// The names Recall remembers go with the mapping, or a value seen before the change
+// would be handed back the shape the operator just switched away from.
+func (v *Vault) Forget() {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.store.Forget()
+	v.names = make(map[string]name)
+	v.active = make(map[string]time.Time)
+}
 
 // seal encrypts one original. The nonce is fresh per value and prefixed to the
 // box, so two identical originals under two tokens do not produce identical
@@ -181,8 +314,9 @@ func (v *Vault) open(sealed string) (string, error) {
 // A Redis-backed Store fixes the persistence, and then two things have to move
 // with it: the token counters (see the detector's index source, or two agents on
 // one session mint the same index for different values and the second write
-// erases the first), and the encryption key, which must be configured rather
-// than generated per process.
+// erases the first), the encryption key, which must be configured rather
+// than generated per process, and the names Recall remembers, which live on the
+// Vault rather than in the store and would not be shared.
 type Memory struct {
 	mu       sync.Mutex
 	sessions map[string]*memorySession

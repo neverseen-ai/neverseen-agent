@@ -49,7 +49,7 @@ says the organisation is at its quota rather than that a request was wrong.
 |---|---|
 | `sessions.active` | Distinct conversations that sent a request in the window |
 | `sessions.opened` | Conversations seen for the first time |
-| `sessions.closed` | Conversations idle for thirty minutes — the mapping's own lifetime |
+| `sessions.closed` | Conversations idle for three hours — the mapping's own lifetime |
 | `sessions.duration`, `.requests`, `.input`, `.output`, `.tool_calls`, `.masked` | One histogram each, per closed conversation |
 
 A conversation is the session header when the client sends one, else the id Claude

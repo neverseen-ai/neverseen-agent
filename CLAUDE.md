@@ -68,6 +68,14 @@ and it is deliberately not repeated here.
   re-indented before it is written (`json.Indent`, `trace.go`) and the client itself
   collapses the block that carried `cache_control` last turn, so a byte comparison
   of two traces reports a break where the provider sees none.
+- **A value keeps its name past the mapping's lifetime** (`Vault.Recall`, wired by
+  `Server.newPass`). The model reasons with a token inside the thinking `signature`,
+  which the agent can neither mask nor restore, so a value renamed after the mapping
+  expired leaves the model writing a name nothing expands. Keyed by an HMAC, never the
+  value; swept a week after its session's last request (`namesTTL`), because a session
+  can be one request;
+  dropped by `Forget` with the mapping.
+  `TestATokenTheModelRemembersSurvivesAnExpiredMapping`.
 - **Both shapes of a masked value are expanded** — bracket token and stand-in —
   in one forward walk, not a replacement per entry.
 - **A credential never gets a stand-in** (`Detector.render`); that is what makes

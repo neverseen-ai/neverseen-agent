@@ -79,7 +79,7 @@ func (s *Server) handleMask(w http.ResponseWriter, r *http.Request) {
 	// to be: /mask and /unmask for one conversation must name the same session, or
 	// the expansion finds nothing.
 	session := sessionOf(r)
-	pass := s.det.NewPass(s.vault.Load(session))
+	pass := s.newPass(session)
 
 	out := make([]string, len(req.Texts))
 	count := 0

@@ -481,14 +481,16 @@ def check_residue(t: Trace) -> list[Finding]:
 
 def check_count(t: Trace) -> list[Finding]:
     declared = t.header.get("replaced", "")
-    match = re.match(r"(\d+) value\(s\), (\d+) of them first seen", declared)
+    # Both wordings: "added to the session's mapping" since a value Recall handed its
+    # old name is stored again without being new, "first seen" in traces written before.
+    match = re.match(r"(\d+) value\(s\), (\d+) of them (?:added to|first seen)", declared)
     if not match:
         return []
     count, minted = int(match.group(1)), int(match.group(2))
 
     if minted != len(t.minted):
         return [Finding(FAIL, "the header and the MASK lines disagree",
-                        f"the header claims {minted} value(s) first seen here, "
+                        f"the header claims {minted} value(s) added to the mapping here, "
                         f"{len(t.minted)} MASK line(s) are listed.")]
 
     occurrences = sum(t.sent_out.count(r) for r in set(t.minted.values()))

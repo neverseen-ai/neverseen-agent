@@ -31,13 +31,13 @@ import (
 // SessionIdle is how long a session outlives its last request before it is
 // counted as closed.
 //
-// The same thirty minutes as vault.DefaultTTL, and it has to be: a session here
+// The same three hours as vault.DefaultTTL, and it has to be: a session here
 // is the conversation the mapping is scoped by, and closing one while its mapping
 // still lives — or keeping one after its mapping has gone — would have the
 // heartbeat describing conversations the agent no longer recognises. Not imported
 // from the vault, because this package must not reach into the request path;
 // TestSessionIdleMatchesTheVault holds the two together.
-const SessionIdle = 30 * time.Minute
+const SessionIdle = 3 * time.Hour
 
 // Recorder accumulates one window's counters.
 //

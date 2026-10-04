@@ -129,6 +129,30 @@ func TestMaskReusesASessionsExistingTokens(t *testing.T) {
 	}
 }
 
+// A value the session named before keeps that name once the mapping has forgotten
+// it, spends no index, and is handed back to be stored — the mapping that expired
+// has to learn it again, or the answer naming it comes back unexpanded.
+func TestARecalledValueKeepsItsNameAndIsStoredAgain(t *testing.T) {
+	d := New(Config{})
+
+	pass := d.NewPass(nil)
+	pass.Recall = func(original string) (string, bool) {
+		return "[EMAIL_381]", original == "claire@example.fr"
+	}
+	got, _ := d.Mask("écrire à claire@example.fr et à paul@example.fr", pass)
+
+	if !strings.Contains(got, "[EMAIL_381]") {
+		t.Errorf("the recalled name was not used: %s", got)
+	}
+	if pass.Minted()["[EMAIL_381]"] != "claire@example.fr" {
+		t.Errorf("the recalled value was not handed back to be stored: %v", pass.Minted())
+	}
+	// paul was never named, and takes the first index: claire spent none.
+	if !strings.Contains(got, "[EMAIL_1]") {
+		t.Errorf("a recalled value advanced the counter: %s", got)
+	}
+}
+
 // A conversation replays its whole history every turn, and a provider bills less
 // and answers faster when a request's prefix repeats the previous one's. So the
 // stability asserted above has to hold at the scale of a body, not just of a

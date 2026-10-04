@@ -51,9 +51,9 @@ func TestReplayRebuildsTheHeartbeatFromTraces(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// A third, an hour later, from another tool with a session header and no
+	// A third, four hours later, from another tool with a session header and no
 	// answer filed: the provider never replied.
-	at = at.Add(time.Hour)
+	at = at.Add(4 * time.Hour)
 	if _, err := tr.write("cursor-7", "openai", `{"c":"NIR 184037511600176"}`, `{"c":"[NIR_1]"}`, 1, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -64,8 +64,8 @@ func TestReplayRebuildsTheHeartbeatFromTraces(t *testing.T) {
 	}
 
 	// Three: the two exchanges at 08:24; the window in which the conversation went
-	// idle and closed, half an hour after its last request; and the exchange an
-	// hour later. A bucket with nothing but a closed session is a bucket, because
+	// idle and closed, three hours after its last request; and the exchange four
+	// hours later. A bucket with nothing but a closed session is a bucket, because
 	// the histograms in it are what the session counts exist for.
 	if len(batch.Buckets) != 3 {
 		t.Fatalf("got %d buckets, want 3\n%+v", len(batch.Buckets), batch.Buckets)
@@ -95,8 +95,8 @@ func TestReplayRebuildsTheHeartbeatFromTraces(t *testing.T) {
 	}
 
 	closing := batch.Buckets[1]
-	if want := time.Date(2026, 8, 28, 8, 50, 0, 0, time.UTC); !closing.Window.Start.Equal(want) {
-		t.Errorf("the conversation closed in the window starting %v, want %v: thirty idle minutes after 08:24:46", closing.Window.Start, want)
+	if want := time.Date(2026, 8, 28, 11, 20, 0, 0, time.UTC); !closing.Window.Start.Equal(want) {
+		t.Errorf("the conversation closed in the window starting %v, want %v: three idle hours after 08:24:46", closing.Window.Start, want)
 	}
 	if s := closing.Counters.Sessions; s.Closed != 1 || s.Requests == nil || s.Requests[2] != 1 || s.ToolCalls[1] != 1 {
 		t.Errorf("sessions = %+v, want the conversation closed with 2 requests and 1 tool call", s)

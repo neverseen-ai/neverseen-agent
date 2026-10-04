@@ -253,10 +253,15 @@ func indented(body string) string {
 // them are listed below as MASK lines, so a body with replacements and no lines is
 // explained by the header rather than read as a contradiction.
 //
+// "Added to the mapping" rather than "first seen": a value the mapping had forgotten
+// after a pause, and Recall handed its old name, is listed and stored again without
+// being new — and a header calling it first seen would report a conversation's whole
+// history as new data on the turn after lunch.
+//
 // Both are printed even when equal: a trace is evidence, and a header whose fields
 // appear and disappear is one a reader has to parse rather than scan.
 func replacedSummary(count, minted int) string {
-	return fmt.Sprintf("%d value(s), %d of them first seen in this session", count, minted)
+	return fmt.Sprintf("%d value(s), %d of them added to the session's mapping", count, minted)
 }
 
 // appendResponse adds the provider's answer to a trace already on disk.

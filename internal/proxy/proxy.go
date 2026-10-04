@@ -383,6 +383,16 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request) {
 	route.ServeHTTP(w, r.WithContext(withTrace(ctx, ref)))
 }
 
+// newPass starts a pass over what the session's mapping holds, handing a value the
+// session named before the name it had, even once the mapping has expired — see
+// vault.Recall. One constructor for every route that stores what it masks, so the
+// extension and the request path cannot disagree about a value's name.
+func (s *Server) newPass(session string) *detector.Pass {
+	pass := s.det.NewPass(s.vault.Load(session))
+	pass.Recall = func(original string) (string, bool) { return s.vault.Recall(session, original) }
+	return pass
+}
+
 // maskRequest replaces the sensitive values in the body and records what it
 // replaced, in the session's vault, before the request goes anywhere.
 //
@@ -403,7 +413,7 @@ func (s *Server) maskRequest(session, provider string, r *http.Request) (*traceR
 		return nil, session, err
 	}
 
-	pass := s.det.NewPass(s.vault.Load(session))
+	pass := s.newPass(session)
 
 	// Decoded once, here, because two things read the document: the exemption
 	// below, from one member of it, and the masking, over every string in it.

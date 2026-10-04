@@ -509,13 +509,13 @@ func TestATraceCountsWhatWasReplacedNotWhatWasMinted(t *testing.T) {
 		t.Fatalf("wrote %d traces, want 2", len(files))
 	}
 
-	const first = "replaced: 1 value(s), 1 of them first seen in this session"
+	const first = "replaced: 1 value(s), 1 of them added to the session's mapping"
 	if !strings.Contains(files[0], first) {
 		t.Errorf("the first trace does not say %q:\n%s", first, header(files[0]))
 	}
 
 	// The line the bug was: one value replaced, none of them new.
-	const second = "replaced: 1 value(s), 0 of them first seen in this session"
+	const second = "replaced: 1 value(s), 0 of them added to the session's mapping"
 	if !strings.Contains(files[1], second) {
 		t.Errorf("the second trace does not say %q:\n%s", second, header(files[1]))
 	}

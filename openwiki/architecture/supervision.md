@@ -101,7 +101,7 @@ identifier, so it is trusted on the way to Anthropic and nowhere else. Everythin
 the shared default session. The identity never leaves the recorder; the counts do.
 
 Per window: `Active` (distinct sessions that sent a request), `Opened` (first seen),
-`Closed` (idle for `SessionIdle`, thirty minutes — `TestSessionIdleMatchesTheVault` holds
+`Closed` (idle for `SessionIdle`, three hours — `TestSessionIdleMatchesTheVault` holds
 it equal to `vault.DefaultTTL`, because a session here *is* the conversation the mapping
 lives for). **The averages a dashboard wants are deliberately not computed by the agent.**
 A mean over a five-minute window is wrong for conversations that last hours, and the

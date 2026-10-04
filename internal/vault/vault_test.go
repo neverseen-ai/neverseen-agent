@@ -335,3 +335,121 @@ func TestForgetDropsEveryMapping(t *testing.T) {
 		t.Errorf("a value minted after Forget was not stored: %v", got)
 	}
 }
+
+// A value keeps its name after its session's mapping has expired.
+//
+// The model remembers a token longer than the mapping does — inside a thinking
+// block's signature, which the agent cannot read — so a pause that expired the
+// mapping and renamed the value on the next turn left the model writing a name
+// nothing expanded any more.
+func TestRecallOutlivesTheMapping(t *testing.T) {
+	v, store := newTestVault(t)
+
+	if err := v.Save("s1", map[string]string{"[PLATE_381]": "AB-123-CD"}); err != nil {
+		t.Fatal(err)
+	}
+	store.mu.Lock()
+	store.sessions["s1"].expires = time.Now().Add(-time.Second)
+	store.mu.Unlock()
+
+	// The precondition, so the assertion below is about Recall and not about a
+	// mapping that never expired.
+	if got := v.Load("s1"); len(got) != 0 {
+		t.Fatalf("the mapping did not expire: %v", got)
+	}
+	if got, ok := v.Recall("s1", "AB-123-CD"); !ok || got != "[PLATE_381]" {
+		t.Errorf("Recall = %q, %v after the mapping expired, want [PLATE_381]", got, ok)
+	}
+
+	// Per session, as the mapping is: a name recalled in another conversation
+	// would tell the provider the two are about the same vehicle.
+	if got, ok := v.Recall("s2", "AB-123-CD"); ok {
+		t.Errorf("another session recalled %q", got)
+	}
+	if got, ok := v.Recall("s1", "EF-456-GH"); ok {
+		t.Errorf("a value never saved recalled %q", got)
+	}
+}
+
+// What Recall keeps past the mapping's lifetime must not be the value, or the
+// lifetime would stop being the window the originals exist in memory.
+func TestRecallDoesNotHoldTheValue(t *testing.T) {
+	v, _ := newTestVault(t)
+
+	if err := v.Save("s1", map[string]string{"[PLATE_381]": "AB-123-CD"}); err != nil {
+		t.Fatal(err)
+	}
+	v.mu.Lock()
+	for fingerprint, n := range v.names {
+		if strings.Contains(fingerprint, "AB-123-CD") || strings.Contains(n.masked, "AB-123-CD") {
+			t.Errorf("the names hold the value in clear: %q → %q", fingerprint, n.masked)
+		}
+	}
+	v.mu.Unlock()
+
+	// Keyed, not merely hashed: a plate is a small enough space to hash every
+	// candidate of, so an unkeyed digest would be the value by another name. Only a
+	// key of the vault's own makes two vaults disagree about the same value.
+	other, _ := newTestVault(t)
+	if v.fingerprint("s1", "AB-123-CD") == other.fingerprint("s1", "AB-123-CD") {
+		t.Error("two vaults fingerprint a value alike: the fingerprint is not keyed")
+	}
+}
+
+// The names of a session idle for namesTTL are dropped, because a session can be a
+// single request and a book that kept every one would grow with the traffic for the
+// life of the process. A session still making requests keeps every name, however
+// long ago it was minted: a value its live mapping holds is reused without Recall
+// being asked, so nothing but the session's own activity says the name is in use.
+func TestRecallForgetsTheNamesOfAnIdleSession(t *testing.T) {
+	v, _ := newTestVault(t)
+
+	if err := v.Save("idle", map[string]string{"[PLATE_381]": "AB-123-CD"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := v.Save("busy", map[string]string{"[PLATE_382]": "EF-456-GH"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Both sessions last seen past namesTTL, and the sweep due.
+	v.mu.Lock()
+	for session := range v.active {
+		v.active[session] = time.Now().Add(-namesTTL - time.Hour)
+	}
+	v.swept = time.Time{}
+	v.mu.Unlock()
+
+	// "busy" makes a request that mints nothing — every value already in its
+	// mapping — and that alone keeps its names.
+	if err := v.Save("busy", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	if got, ok := v.Recall("idle", "AB-123-CD"); ok {
+		t.Errorf("a session idle for longer than namesTTL kept its name: %q", got)
+	}
+	if got, ok := v.Recall("busy", "EF-456-GH"); !ok || got != "[PLATE_382]" {
+		t.Errorf("a session still in use lost its name: %q, %v", got, ok)
+	}
+	v.mu.Lock()
+	_, idleKept := v.active["idle"]
+	v.mu.Unlock()
+	if idleKept {
+		t.Error("the idle session was swept from the names but kept in active")
+	}
+}
+
+// A mode change drops the names with the mapping, or a value seen before the change
+// would be handed back the shape the operator just switched away from.
+func TestForgetDropsWhatRecallRemembers(t *testing.T) {
+	v, _ := newTestVault(t)
+
+	if err := v.Save("s1", map[string]string{"[PLATE_381]": "AB-123-CD"}); err != nil {
+		t.Fatal(err)
+	}
+	v.Forget()
+
+	if got, ok := v.Recall("s1", "AB-123-CD"); ok {
+		t.Errorf("Recall = %q after Forget", got)
+	}
+}
