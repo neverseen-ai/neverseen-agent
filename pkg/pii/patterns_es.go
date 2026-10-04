@@ -59,16 +59,7 @@ var esProvinces = func() map[string]bool {
 // series is issued from: twenty, no vowel, no Ñ, no Q. It is the plate's strongest
 // rule — what keeps "1500 EUR" and "2024 AOC" out.
 func SpanishPlateCheck(value string) bool {
-	if !plateNoZeroNumber(value) {
-		return false
-	}
-	for i := 0; i < len(value); i++ {
-		c := value[i] | 0x20 // ASCII lowercase
-		if c >= 'a' && c <= 'z' && !strings.ContainsRune("bcdfghjklmnprstvwxyz", rune(c)) {
-			return false
-		}
-	}
-	return true
+	return plateNoZeroNumber(value) && plateHasOnly(value, "BCDFGHJKLMNPRSTVWXYZ")
 }
 
 // ProvincialPlateCheck reports whether a provincial plate opens on a province and

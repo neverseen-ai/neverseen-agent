@@ -1,9 +1,6 @@
 package pii
 
-import (
-	"fmt"
-	"strings"
-)
+import "fmt"
 
 // The Italian set. For now it is the licence plate alone; the codice fiscale,
 // which carries a check letter, is the next entry here.
@@ -20,7 +17,7 @@ var itPlateFind = plateFinder(false, "LL DDDLL", "LL DDD LL", "LL-DDD-LL", "LLDD
 // ItalianPlateCheck reports whether a plate's letters are ones the series is
 // issued from: never I, O, Q or U, which read as 1, 0, 0 and V.
 func ItalianPlateCheck(value string) bool {
-	return !strings.ContainsAny(strings.ToUpper(value), "IOQU")
+	return plateHasNone(value, "IOQU")
 }
 
 // italyFakes are the Italian stand-ins. O and Q are never issued, and no other

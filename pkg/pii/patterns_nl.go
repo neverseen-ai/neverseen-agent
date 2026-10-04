@@ -1,9 +1,6 @@
 package pii
 
-import (
-	"fmt"
-	"strings"
-)
+import "fmt"
 
 // The Dutch set. For now it is the licence plate alone; the BSN, which carries
 // an eleven-test, is the next entry here.
@@ -29,7 +26,7 @@ var nlPlateFind = plateFinder(false,
 // are the prefixes of motorcycles, dealers, boats and tractors, and a rule that
 // refused them would forward those in clear.
 func DutchPlateCheck(value string) bool {
-	return !strings.ContainsAny(strings.ToUpper(value), "AEIOUCQ") && plateNoZeroNumber(value)
+	return plateHasNone(value, "AEIOUCQ") && plateNoZeroNumber(value)
 }
 
 // netherlandsFakes are the Dutch stand-ins. A vowel is never issued, and no other
