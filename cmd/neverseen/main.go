@@ -206,9 +206,6 @@ func runStatus(stdout io.Writer) error {
 	return nil
 }
 
-// printUsage names the settings from the constants the code actually reads, and
-// the locales from the registry. Anything written out by hand here goes stale the
-// first time one of them is renamed, and a wrong instruction is worse than none.
 // usageColumn is where the usage text's descriptions start, and usageWidth the
 // line it keeps to.
 const (
@@ -241,6 +238,9 @@ func wrapList(items []string, indent, width int) string {
 	return strings.TrimRight(b.String(), " ")
 }
 
+// printUsage names the settings from the constants the code actually reads, and
+// the locales from the registry. Anything written out by hand here goes stale the
+// first time one of them is renamed, and a wrong instruction is worse than none.
 func printUsage(w io.Writer) {
 	listen := "http://" + proxy.DefaultListen
 	fmt.Fprintf(w, usage,
