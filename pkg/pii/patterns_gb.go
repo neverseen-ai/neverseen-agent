@@ -101,11 +101,17 @@ var (
 	// form took the space after it into the span — and a replacement that eats
 	// the following space runs the value into the next word.
 	//
+	// A separated suffix only after a separated body, one alternative per notation
+	// because RE2 cannot make the suffix depend on what came before it. Allowed after
+	// any body, "ref AB123456 A quick note" masked "AB123456 A" and took the article
+	// out of the model's text. The spaced notation is the one HMRC prints, with the
+	// suffix spaced too; a compact body is a database export, with the suffix glued.
+	//
 	// TODO: two letters and six digits with allowed letters is still a shape an
 	// internal reference can take, and there is no checksum to settle it. The
 	// deployment allow list is the escape hatch until one of the context words
 	// ("NI number", "National Insurance") can be required instead.
-	gbNINORe = regexp.MustCompile(`\b[A-Z]{2}[ -]?\d{2}[ -]?\d{2}[ -]?\d{2}(?:[ -]?[A-D])?\b`)
+	gbNINORe = regexp.MustCompile(`\b(?:[A-Z]{2}[ -]\d{2}[ -]\d{2}[ -]\d{2}[ -]?[A-D]|[A-Z]{2}[ -]?\d{2}[ -]?\d{2}[ -]?\d{2}[A-D]?)\b`)
 
 	// A full postcode: outward code, then the inward code's digit and two
 	// letters. The six valid layouts are all covered by making the third

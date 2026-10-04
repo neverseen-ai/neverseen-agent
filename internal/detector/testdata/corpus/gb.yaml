@@ -43,6 +43,19 @@ cases:
     expect:
       - {category: NINO, value: "AB123456"}
 
+  # A compact body followed by a one-letter word. The suffix is glued in this
+  # notation, so the "A" is the article and must stay in the model's text.
+  - id: gb-nino-compact-before-a-word
+    text: "ref AB123456 A quick note on the payroll."
+    expect:
+      - {category: NINO, value: "AB123456"}
+
+  # The spaced notation keeps a spaced suffix, which is how HMRC prints it.
+  - id: gb-nino-spaced-suffix-a
+    text: "Letter quotes AB 12 34 56 A as the reference."
+    expect:
+      - {category: NINO, value: "AB 12 34 56 A"}
+
   # --- postcode -------------------------------------------------------------
   #
   # All six layouts a UK postcode takes. The third character is what varies —
