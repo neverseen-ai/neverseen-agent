@@ -350,6 +350,13 @@ doing, and a **separate timer** sends, on the retry ladder. Fused — one timer 
 closed the window and sent it — the window boundaries moved with the backend's health, which
 is the outage bug above (`TestRefusedBucketsKeepTheirOwnWindows`).
 
+**Apart, but in phase while the backend answers**: each collect tick re-arms the send at
+once when the ladder is at zero. Re-armed only after each drain, the send slipped behind the
+tick by the drain's latency every cycle — a few days at 50–200 ms until it fired just before
+the close, found an empty queue, and every bucket then waited a whole interval to leave,
+which a silence alarm tuned near the interval reads as an agent going quiet. The ladder is
+untouched while the backend is down (`TestRunSendsEachBucketAsItCloses`).
+
 **The backlog goes in one batch per request, sixty buckets at a time**
 (`maxBucketsPerRequest`), oldest first, and while any remains the next attempt is a second
 away rather than an interval — a week of buckets delivered one attempt per five minutes

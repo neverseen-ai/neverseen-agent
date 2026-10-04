@@ -275,6 +275,14 @@ func (r *Reporter) Run(ctx context.Context) {
 			if !r.wake() {
 				r.collect()
 			}
+			// Sent now, while the backend is answering. Re-armed only after each
+			// drain, the send drifted behind this tick by the drain's latency every
+			// cycle, until it fired just before the close and found nothing, and every
+			// bucket waited a whole interval to leave. Not while the ladder is
+			// climbing: an outage keeps its own cadence, which is why there are two.
+			if backoff == 0 {
+				send.Reset(0)
+			}
 
 		case <-snapshot.C:
 			r.wake()

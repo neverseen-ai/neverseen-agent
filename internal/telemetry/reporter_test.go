@@ -27,6 +27,7 @@ type backend struct {
 
 	mu         sync.Mutex
 	heartbeats []telemetry.Heartbeat // every bucket, expanded as the real backend does
+	arrived    []time.Time           // when each of those reached it
 	batches    []int                 // how many buckets each accepted request carried
 	signatures []bool                // whether each batch verified against the issued key
 	enrolments int
@@ -39,6 +40,8 @@ type backend struct {
 	// the backend come back on its own between two of the agent's retries rather
 	// than racing a flag against them.
 	refuseFirst int
+	// delay is how long each heartbeat takes to be answered.
+	delay time.Duration
 }
 
 func newBackend(t *testing.T) *backend {
@@ -73,7 +76,9 @@ func newBackend(t *testing.T) *backend {
 		b.mu.Lock()
 		b.attempts++
 		failing := b.failing || b.attempts <= b.refuseFirst
+		delay := b.delay
 		b.mu.Unlock()
+		time.Sleep(delay)
 		if failing {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return
@@ -88,7 +93,11 @@ func newBackend(t *testing.T) *backend {
 		b.mu.Lock()
 		// Expanded through the contract's own function, the one the real backend
 		// uses, so a test cannot agree with an expansion nothing ships.
-		b.heartbeats = append(b.heartbeats, batch.Windows()...)
+		windows := batch.Windows()
+		b.heartbeats = append(b.heartbeats, windows...)
+		for range windows {
+			b.arrived = append(b.arrived, time.Now())
+		}
 		b.batches = append(b.batches, len(batch.Buckets))
 		b.signatures = append(b.signatures,
 			telemetry.VerifySignature(b.key, body, r.Header.Get(telemetry.HeaderSignature)))
@@ -1165,6 +1174,55 @@ func TestRunClosesABucketEveryIntervalWhileTheBackendIsDown(t *testing.T) {
 	}
 	if got := rep.queue.pending(); got < 4 {
 		t.Errorf("Run queued %d buckets over seven intervals with the backend down, want at least 4", got)
+	}
+}
+
+// A healthy agent files each bucket as it closes it. The send used to be re-armed an
+// interval after each drain returned, so it slipped behind the collect tick by the
+// drain's latency every cycle: a bucket waited one latency longer than the last, until
+// the send fired just before the close and every bucket waited a whole interval.
+// Asserted with a backend slow enough to make the drift visible in a few intervals.
+func TestRunSendsEachBucketAsItCloses(t *testing.T) {
+	const (
+		interval = 400 * time.Millisecond
+		latency  = 120 * time.Millisecond
+	)
+	b := newBackend(t)
+	b.mu.Lock()
+	b.delay = latency
+	b.mu.Unlock()
+
+	home := t.TempDir()
+	rep, err := NewReporter(Config{
+		BaseURL:        b.server.URL,
+		EnrolmentToken: "enrol-me",
+		IdentityFile:   filepath.Join(home, "agent.json"),
+		BufferFile:     filepath.Join(home, "buffer.json"),
+		Recorder:       NewRecorder(time.Now()),
+		State:          func() telemetry.State { return telemetry.State{} },
+		Interval:       interval,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	stopped := runInBackground(t, rep, ctx)
+	t.Cleanup(func() { cancel(); stopped() })
+
+	// The bucket closed at start, then four closed by the tick.
+	waitForHeartbeats(t, b, 5)
+	cancel()
+	stopped()
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for i := 1; i < 5; i++ {
+		// Drifting, the lag grows by one latency per cycle: 2, 3, 4, 5 of them.
+		// Sent as it closes, it stays at one latency plus scheduling.
+		if lag := b.arrived[i].Sub(b.heartbeats[i].Window.End); lag > latency+interval/4 {
+			t.Errorf("bucket %d arrived %v after it closed, want about %v: the send is drifting behind the close",
+				i, lag, latency)
+		}
 	}
 }
 
