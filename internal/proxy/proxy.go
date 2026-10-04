@@ -17,6 +17,7 @@ import (
 	"io"
 	"log/slog"
 	"mime"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -113,6 +114,11 @@ type Server struct {
 	// see State.Exposed.
 	exposed bool
 
+	// listenName is the host name the listen address gave, when it gave a name
+	// rather than an address — the one name besides localhost a client has been
+	// told to reach this agent by. See answersFor.
+	listenName string
+
 	// policyMu serialises PUT /policy, which is a read-modify-write of the file
 	// above: apply, read the detector back, store. Two surfaces click at once and
 	// the halves interleave.
@@ -151,6 +157,7 @@ func New(cfg Config, det *detector.Detector, v *vault.Vault) (*Server, error) {
 		controlKey: cfg.ControlKey,
 		policyFile: cfg.PolicyFile,
 		exposed:    cfg.Listen != "" && BeyondLoopback(cfg.Listen),
+		listenName: listenName(cfg.Listen),
 	}
 
 	for _, p := range providers {
@@ -217,7 +224,62 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/mask", s.handleMask)
 	mux.HandleFunc("/unmask", s.handleUnmask)
 	mux.HandleFunc("/", s.forward)
-	return mux
+	return s.guardHost(mux)
+}
+
+// guardHost refuses a request addressed to a name that is not this agent's.
+//
+// The defence against DNS rebinding for every route. A page that rebinds its own
+// domain to 127.0.0.1 is same-origin with the agent: it can post to
+// /anthropic/v1/messages with its own key, ask the model to repeat [EMAIL_1]
+// [SECRET_1], and read the restored answer — credentials included. CORS is no help
+// after a rebind, and the control key guards only the routes that change things.
+// What the page cannot change is the Host its browser sends, which carries the
+// rebound domain.
+//
+// /settings keeps its stricter guard (namesThisMachine): it carries the control key,
+// and loopback only. This one admits any address, because a rebinding attack always
+// arrives under a domain name and never under an IP literal — so an agent bound
+// beyond loopback stays reachable by its LAN address.
+//
+// TODO: a name other than localhost or the one -l gave — host.docker.internal from
+// a container, a hosts-file alias, the machine's .local name — is refused. The
+// upgrade is a configured list of extra names, the day a deployment asks for one.
+func (s *Server) guardHost(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.answersFor(r.Host) {
+			s.log.Warn("refused a request addressed to another host", "host", r.Host, "path", r.URL.Path)
+			http.Error(w, fmt.Sprintf("neverseen: this agent does not answer for %q", r.Host),
+				http.StatusMisdirectedRequest)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// answersFor reports whether a Host header names this agent: localhost, any IP
+// literal, the name the listen address gave, or no name at all — ":9787" is what a
+// local command sends when the listen address carries no host, and no browser can
+// be made to send it.
+func (s *Server) answersFor(host string) bool {
+	name, ok := hostName(host)
+	if !ok {
+		return false
+	}
+	if name == "" || net.ParseIP(name) != nil || strings.EqualFold(name, "localhost") {
+		return true
+	}
+	return s.listenName != "" && strings.EqualFold(name, s.listenName)
+}
+
+// listenName is the host name a listen address carries, or "" when it carries an
+// address or nothing.
+func listenName(listen string) string {
+	host, _, err := net.SplitHostPort(listen)
+	if err != nil || net.ParseIP(host) != nil {
+		return ""
+	}
+	return host
 }
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {

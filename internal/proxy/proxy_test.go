@@ -674,6 +674,62 @@ func TestUnreadableEncodingFailsClosed(t *testing.T) {
 	}
 }
 
+// A page that rebinds its own domain to 127.0.0.1 reaches the loopback socket, but
+// its browser still sends that domain as the Host — and that request must not reach
+// the provider, or the page reads the restored answer.
+func TestARequestForAnotherHostIsRefused(t *testing.T) {
+	up := newUpstream(t, echoJSON)
+	agent := newAgent(t, up, []string{"fr"})
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost,
+		agent.URL+"/anthropic/v1/messages", strings.NewReader(`{"text":"benoit@example.fr"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Host = "rebound.example.com:9787"
+
+	if got := do(t, agent, req); got.status != http.StatusMisdirectedRequest {
+		t.Errorf("status %d, want 421", got.status)
+	}
+	if bodies, _ := up.received(); len(bodies) != 0 {
+		t.Errorf("a request for another host was forwarded: %v", bodies)
+	}
+}
+
+// Which Host values the agent answers for. Any IP literal, because a rebinding
+// attack always arrives under a domain name and an agent bound beyond loopback is
+// reached by its LAN address; any other name, only the one -l gave.
+func TestTheAgentAnswersForItsOwnNamesOnly(t *testing.T) {
+	for _, tt := range []struct {
+		listen, host string
+		want         bool
+	}{
+		{"127.0.0.1:9787", "127.0.0.1:9787", true},
+		{"127.0.0.1:9787", "localhost:9787", true},
+		{"127.0.0.1:9787", "LOCALHOST", true},
+		{"127.0.0.1:9787", "[::1]:9787", true},
+		{":9787", ":9787", true},     // what a local command sends when -l names no host
+		{"127.0.0.1:9787", "", true}, // HTTP/1.0 with no Host, which no browser sends
+		{":9787", "192.168.1.20:9787", true},
+		{"0.0.0.0:9787", "[fe80::1]:9787", true},
+		{"workstation.lan:9787", "workstation.lan:9787", true},
+		{"workstation.lan:9787", "Workstation.LAN", true},
+
+		{"127.0.0.1:9787", "rebound.example.com:9787", false},
+		{"127.0.0.1:9787", "rebound.example.com", false},
+		{"127.0.0.1:9787", "localhost:9787@rebound.example.com", false},
+		{"127.0.0.1:9787", "127.0.0.1.rebound.example.com", false},
+		{"workstation.lan:9787", "other.lan:9787", false},
+		{":9787", "host.docker.internal:9787", false}, // the TODO on guardHost
+	} {
+		srv := &Server{listenName: listenName(tt.listen)}
+		if got := srv.answersFor(tt.host); got != tt.want {
+			t.Errorf("listening on %q, answersFor(%q) = %v, want %v", tt.listen, tt.host, got, tt.want)
+		}
+	}
+}
+
 // A body over the cap is refused, not forwarded and not buffered whole — measured
 // after decompression, so a gzip bomb a few kilobytes long is refused too.
 func TestOversizedBodyIsRefused(t *testing.T) {

@@ -6,7 +6,8 @@ until the same request was masked in one and answered in clear in the other — 
 divergence nothing could notice, because each path had its own tests and both passed.
 
 ```
-request  →  resolve provider from first path segment
+request  →  refuse a Host that is not this agent's ⇒ 421
+         →  resolve provider from first path segment
          →  read body (decompressing if needed) — unreadable ⇒ 415, over 32 MiB ⇒ 413
          →  mask it value by value, seeded from the session vault
          →  save what was minted to the vault
@@ -99,6 +100,18 @@ A body over `requestMaxBytes` (32 MiB, Anthropic's own request limit) is a 413 f
 same reason: refused, never forwarded unread. The cap is measured on what gzip *yields*,
 not on what arrived — a few kilobytes of gzip inflate to gigabytes, and the read is what
 buffers them (`TestOversizedBodyIsRefused`).
+
+**A request addressed to another name is refused before any route sees it**
+(`guardHost`, a 421). A page that rebinds its own domain to `127.0.0.1` is same-origin
+with the agent: it could post a prompt with its own key, ask the model to repeat
+`[EMAIL_1] [SECRET_1]`, and read the *restored* answer — credentials included. CORS is no
+help after a rebind; the `Host` its browser sends is what still carries the rebound domain.
+Accepted: `localhost`, **any IP literal** — a rebinding attack always arrives under a name,
+and an agent bound beyond loopback is reached by its LAN address — the name `-l` gave, and
+no name at all (`:9787` is what a local command sends when `-l` names no host). `/settings`
+keeps its stricter, loopback-only guard. A `TODO:` names the ceiling: `host.docker.internal`,
+a hosts-file alias or a `.local` name is refused until a deployment asks for a list
+(`TestARequestForAnotherHostIsRefused`, `TestTheAgentAnswersForItsOwnNamesOnly`).
 
 ## A pass keeps one identity per value
 

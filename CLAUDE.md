@@ -50,6 +50,9 @@ and it is deliberately not repeated here.
   clears the same bar or it does not ship.
 - **Fail closed**: a body the agent cannot read is a 415, never a pass-through;
   one over 32 MiB *after decompression* is a 413 (`requestMaxBytes`).
+- **Every route refuses a `Host` that is not this agent's** (`guardHost`, 421) — the
+  defence against DNS rebinding reading a *restored* answer. Any IP literal passes,
+  because a rebind always arrives under a name; `/settings` keeps its stricter guard.
 - **A body is a JSON document, masked value by value**, never as raw bytes
   (`internal/proxy/jsonbody.go`).
 - **A decoded body is a `jsonObject`, not a `map[string]any`** — ordered, and a

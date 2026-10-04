@@ -149,20 +149,29 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 // does that" is the argument that ages badly, on one of the two guards standing in
 // front of the only body carrying the control key.
 func namesThisMachine(host string) bool {
-	name := host
-	if h, port, err := net.SplitHostPort(host); err == nil {
-		if !isPort(port) {
-			return false
-		}
-		name = h
+	name, ok := hostName(host)
+	if !ok {
+		return false
 	}
-	name = strings.TrimSuffix(strings.TrimPrefix(name, "["), "]")
-
 	if strings.EqualFold(name, "localhost") {
 		return true
 	}
 	ip := net.ParseIP(name)
 	return ip != nil && ip.IsLoopback()
+}
+
+// hostName is the name half of a Host header, brackets off, or false when the port
+// half is not a port. One parser for both Host guards, so the port check above
+// cannot be fixed in one of them and not the other.
+func hostName(host string) (string, bool) {
+	name := host
+	if h, port, err := net.SplitHostPort(host); err == nil {
+		if !isPort(port) {
+			return "", false
+		}
+		name = h
+	}
+	return strings.TrimSuffix(strings.TrimPrefix(name, "["), "]"), true
 }
 
 // isPort reports whether a Host's port half is one. Empty counts: "127.0.0.1:" is a

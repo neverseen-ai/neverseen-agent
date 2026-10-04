@@ -306,6 +306,9 @@ func TestUnmaskRefusesANonLoopbackCaller(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/unmask",
 				strings.NewReader(body(t, unmaskRequest{Text: "hello", Final: true})))
 			req.RemoteAddr = tc.remote
+			// The agent's own address, not httptest's example.com, which guardHost
+			// refuses before this route's loopback check is reached.
+			req.Host = "127.0.0.1:9787"
 			req.Header.Set(controlHeader, testControlKey)
 
 			rec := httptest.NewRecorder()
