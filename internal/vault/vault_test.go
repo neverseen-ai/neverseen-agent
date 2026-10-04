@@ -530,8 +530,8 @@ func TestNumberingIsPerSession(t *testing.T) {
 // vehicle, and the answer naming that one came back carrying the wrong plate.
 func TestNumberingSurvivesARestart(t *testing.T) {
 	before, _ := newTestVault(t)
-	var stored Numbering
-	before.Persist(nil, func(n Numbering) { stored = n })
+	var stored Book
+	before.Persist(nil, nil, func(n Book) { stored = n })
 
 	entries := map[string]string{}
 	for i := range 3 {
@@ -546,7 +546,7 @@ func TestNumberingSurvivesARestart(t *testing.T) {
 	}
 
 	after, _ := newTestVault(t)
-	after.Persist(stored, func(Numbering) {})
+	after.Persist(stored, nil, func(Book) {})
 	if got := after.Name("s1", "a new plate", "PLATE", token("PLATE")); got != "[PLATE_4]" {
 		t.Errorf("the first plate after the restart = %s, want [PLATE_4]", got)
 	}
@@ -557,7 +557,7 @@ func TestNumberingSurvivesARestart(t *testing.T) {
 func TestNumberingIsWrittenFromSaveAndOnlyWhenItChanged(t *testing.T) {
 	v, _ := newTestVault(t)
 	writes := 0
-	v.Persist(nil, func(Numbering) { writes++ })
+	v.Persist(nil, nil, func(Book) { writes++ })
 
 	name := v.Name("s1", "AB-123-CD", "PLATE", token("PLATE"))
 	if writes != 0 {
@@ -590,11 +590,11 @@ func TestNumberingIsWrittenFromSaveAndOnlyWhenItChanged(t *testing.T) {
 // written, or the file would carry every session it ever held.
 func TestAnIdleSessionsNumberingIsSwept(t *testing.T) {
 	v, _ := newTestVault(t)
-	var stored Numbering
-	v.Persist(Numbering{
+	var stored Book
+	v.Persist(Book{
 		"gone": {Last: time.Now().Add(-namesTTL - time.Hour), Highest: map[string]int64{"PLATE": 9}},
 		"zero": {Highest: map[string]int64{"PLATE": 4}},
-	}, func(n Numbering) { stored = n })
+	}, nil, func(n Book) { stored = n })
 
 	name := v.Name("s1", "claire@example.fr", "EMAIL", token("EMAIL"))
 	if err := v.Save("s1", map[string]string{name: "claire@example.fr"}); err != nil {
@@ -608,5 +608,105 @@ func TestAnIdleSessionsNumberingIsSwept(t *testing.T) {
 	}
 	if got := v.Name("gone", "AB-123-CD", "PLATE", token("PLATE")); got != "[PLATE_1]" {
 		t.Errorf("a swept session resumed at %s, want [PLATE_1]", got)
+	}
+}
+
+// A restart hands a value the name it had before, so a conversation that ran
+// through one reads back the token it remembers. With the numbering alone the name
+// was never reused for another value, but the old one came back unexpanded.
+func TestANameSurvivesARestartWithItsKey(t *testing.T) {
+	mark := testKey(t)
+	before, _ := newTestVault(t)
+	var stored Book
+	before.Persist(nil, mark, func(b Book) { stored = b })
+
+	name := before.Name("s1", "AB-123-CD", "PLATE", token("PLATE"))
+	if err := before.Save("s1", map[string]string{name: "AB-123-CD"}); err != nil {
+		t.Fatal(err)
+	}
+	for fingerprint := range stored["s1"].Names {
+		if strings.Contains(fingerprint, "AB-123-CD") {
+			t.Fatalf("the book holds the value: %v", stored["s1"].Names)
+		}
+	}
+
+	after, _ := newTestVault(t)
+	after.Persist(stored, mark, func(Book) {})
+	if got := after.Name("s1", "AB-123-CD", "PLATE", token("PLATE")); got != name {
+		t.Errorf("after the restart the value was named %s, want %s", got, name)
+	}
+	if got := after.Name("s1", "EF-456-GH", "PLATE", token("PLATE")); got != "[PLATE_2]" {
+		t.Errorf("a new value after the restart = %s, want [PLATE_2]", got)
+	}
+
+	// Under another key the fingerprints match nothing: a book is only as good as
+	// the key kept beside it, and a lost key forgets names rather than misreading them.
+	other, _ := newTestVault(t)
+	other.Persist(stored, testKey(t), func(Book) {})
+	if got := other.Name("s1", "AB-123-CD", "PLATE", token("PLATE")); got == name {
+		t.Errorf("a book read under another key still named the value %s", got)
+	}
+}
+
+// Without a key that outlives the process, the names are neither written nor read:
+// fingerprints under a key the next process cannot know would be bytes on a disk
+// that can never match anything.
+func TestWithoutAKeyTheNamesStayInTheProcess(t *testing.T) {
+	v, _ := newTestVault(t)
+	var stored Book
+	v.Persist(Book{"s1": {Highest: map[string]int64{"PLATE": 1}, Last: time.Now(),
+		Names: map[string]string{"AAAA": "[PLATE_1]"}}}, nil, func(b Book) { stored = b })
+
+	name := v.Name("s1", "AB-123-CD", "PLATE", token("PLATE"))
+	if err := v.Save("s1", map[string]string{name: "AB-123-CD"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(stored["s1"].Names) != 0 {
+		t.Errorf("names were written with no key to read them back: %v", stored["s1"].Names)
+	}
+	v.mu.Lock()
+	restored := len(v.names)
+	v.mu.Unlock()
+	if restored != 1 {
+		t.Errorf("the vault holds %d name(s), want only the one minted here", restored)
+	}
+}
+
+// A mode change drops the names from the book at once, not at the next Save: a
+// restart in between would read them back and hand values the old shape.
+func TestForgetWritesTheBookWithoutItsNames(t *testing.T) {
+	v, _ := newTestVault(t)
+	var stored Book
+	v.Persist(nil, testKey(t), func(b Book) { stored = b })
+
+	name := v.Name("s1", "AB-123-CD", "PLATE", token("PLATE"))
+	if err := v.Save("s1", map[string]string{name: "AB-123-CD"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(stored["s1"].Names) != 1 {
+		t.Fatalf("the book was written with %d name(s), want 1", len(stored["s1"].Names))
+	}
+
+	v.Forget()
+	if len(stored["s1"].Names) != 0 || stored["s1"].Highest["PLATE"] != 1 {
+		t.Errorf("after Forget the book holds %+v, want the numbering and no names", stored["s1"])
+	}
+}
+
+// A fingerprint that does not decode is dropped rather than failing the start: it
+// can only be an edited file, and it could never match a value anyway.
+func TestABookWithABrokenFingerprintStillLoads(t *testing.T) {
+	v, _ := newTestVault(t)
+	v.Persist(Book{"s1": {Highest: map[string]int64{"PLATE": 3}, Last: time.Now(),
+		Names: map[string]string{"not base64!": "[PLATE_1]"}}}, testKey(t), func(Book) {})
+
+	v.mu.Lock()
+	names := len(v.names)
+	v.mu.Unlock()
+	if names != 0 {
+		t.Errorf("a broken fingerprint was loaded: %d name(s)", names)
+	}
+	if got := v.Name("s1", "AB-123-CD", "PLATE", token("PLATE")); got != "[PLATE_4]" {
+		t.Errorf("the numbering beside it was lost: %s, want [PLATE_4]", got)
 	}
 }

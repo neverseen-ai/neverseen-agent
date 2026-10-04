@@ -28,12 +28,12 @@ import (
 // Every failure the vault's naming has had showed up only in combination: a pause
 // expiring the mapping while the model still remembered a token, two requests in
 // flight meeting one value for the first time, a restart under a conversation that
-// went on. So this drives the real Server, vault and numbering file with all of
+// went on. So this drives the real Server, vault and session book with all of
 // them at once: conversations in one session as Claude Code sends them, each
 // replaying its whole history every turn, concurrently; a fake model that
 // remembers every token it was shown and names old ones in its answers, as the
 // thinking signature lets the real one; pauses that expire every mapping; restarts
-// that rebuild the vault and the server from the numbering file.
+// that rebuild the vault and the server from the book on disk.
 //
 // Ground truth comes from correlation. Each request carries its values one per
 // line, in an order the client registers, so the upstream pairs the i-th token it
@@ -122,7 +122,7 @@ func simulate(t *testing.T, cfg simConfig) simReport {
 	model := httptest.NewServer(http.HandlerFunc(w.answer))
 	t.Cleanup(model.Close)
 
-	numbering := filepath.Join(t.TempDir(), "numbering.json")
+	names := filepath.Join(t.TempDir(), "names.json")
 	logger := slog.New(slog.DiscardHandler)
 	var handler atomic.Pointer[http.Handler]
 	var store atomic.Pointer[vault.Memory]
@@ -132,7 +132,7 @@ func simulate(t *testing.T, cfg simConfig) simReport {
 		if err != nil {
 			t.Fatal(err)
 		}
-		keepNumbering(logger, v, numbering)
+		keepNames(logger, v, names)
 		srv, err := New(Config{Providers: []Provider{{Code: "anthropic", BaseURL: model.URL}}},
 			detector.New(detector.Config{Locales: []string{"fr"}}), v)
 		if err != nil {
@@ -321,8 +321,7 @@ func (w *simWorld) answer(rw http.ResponseWriter, r *http.Request) {
 }
 
 // Concurrent conversations in one session, through pauses and restarts, get every
-// name back that the process answering them minted, never a wrong value, and never
-// send a value in clear. Several seeds, because what fails here fails on an
+// name back, never a wrong value, and never send a value in clear. Several seeds, because what fails here fails on an
 // interleaving.
 func TestSimulatedConversationsKeepTheirNames(t *testing.T) {
 	for _, seed := range []uint64{2, 5, 7} {
@@ -346,6 +345,10 @@ func TestSimulatedConversationsKeepTheirNames(t *testing.T) {
 			if r.secondNameSameProcess != 0 || r.unrestoredSameProcess != 0 {
 				t.Errorf("one process gave %d value(s) a second name and left %d token(s) unexpanded",
 					r.secondNameSameProcess, r.unrestoredSameProcess)
+			}
+			if r.secondNameAfterRestart != 0 || r.unrestoredAfterRestart != 0 {
+				t.Errorf("a restart gave %d value(s) a second name and left %d token(s) unexpanded",
+					r.secondNameAfterRestart, r.unrestoredAfterRestart)
 			}
 		})
 	}

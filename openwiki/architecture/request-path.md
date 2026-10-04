@@ -171,7 +171,7 @@ field this exists to protect.
 
 `internal/vault` holds one mapping per session, **masked → original** — the direction the
 response path reads it. The originals are encrypted at rest with AES-256-GCM, and the key
-may be nil, in which case one is generated for the life of the process (`vault.go:129-134`).
+may be nil, in which case one is generated for the life of the process (`vault.go:146-151`).
 There is deliberately no second, plaintext mode that only shows up in a deployment nobody
 tested.
 
@@ -183,8 +183,8 @@ known requirement (Redis, for a mapping surviving a restart) rather than a specu
 
 - The nonce is fresh per value, so two identical originals under two tokens do not produce
   identical ciphertext — which would tell anyone reading the store that they are the same
-  person (`vault.go:397-406`, `TestIdenticalOriginalsSealDifferently`).
-- An entry that cannot be decrypted is **dropped, not reported** (`vault.go:180-182`): it means
+  person (`vault.go:458-467`, `TestIdenticalOriginalsSealDifferently`).
+- An entry that cannot be decrypted is **dropped, not reported** (`vault.go:197-199`): it means
   the process restarted under a new ephemeral key, so the token is simply unknown and the
   response path leaves it alone rather than failing a request over bookkeeping.
 - `DefaultTTL` is three hours (`vault.go:33`) — long enough for a conversation left over
@@ -224,7 +224,7 @@ known requirement (Redis, for a mapping surviving a restart) rather than a specu
   one vehicle, the new process gave `[PLATE_1]` to the first plate it met, and the answer
   naming the first came back restored as the second — plausible, wrong, and silent. So
   each session numbers on its own, per prefix, and the numbering is written to
-  `~/.neverseen/numbering.json` (`DefaultNumberingFile`, `Options.NumberingFile`; 0700 /
+  `~/.neverseen/names.json` (`DefaultNamesFile`, `Options.NamesFile`; 0700 /
   0600, by rename) and resumed at start-up. It holds session names, dates and counts —
   never a value, which is why it can go to disk where the mapping cannot. Written from
   `Save`, never from `Name`: a name leaves the workstation only after the `Save` of the
@@ -236,8 +236,25 @@ known requirement (Redis, for a mapping surviving a restart) rather than a specu
   be read or written is a warning, not a refusal: the agent then counts from 1 again, where
   every restart left it before. `TestARestartDoesNotHandARememberedNameToAnotherValue`
   goes through `FromEnv` twice and fails, without the file, with the wrong plate restored.
-  What a restart still loses is the mapping itself: a token minted before it comes back
-  unexpanded — never as another value.
+- **A restart hands a conversation back the names it remembers** (`vault.Book.Names`). The
+  numbering alone stopped a remembered name being restored as another value, but the
+  replayed value took a new name and the remembered one came back unexpanded — after every
+  night the workstation was shut down and the conversation resumed. So the book on disk
+  also carries the names, keyed by fingerprint, and the fingerprint key is kept beside it
+  in `~/.neverseen/names.key` (the control key's shape and loader: 32 random bytes in hex,
+  0600, created on first start) — beside, never inside, so the book can be read or
+  attached to a report without what makes its fingerprints testable. With no key the
+  names stay in the process and only the numbering is kept. `Forget` writes the book at
+  once, without its names, or a restart before the next `Save` would read the old shape
+  back. **What it costs is stated where it is written** (`vault.Book`): somebody who can
+  read both files can test a guess — a plate, a phone number — and learn whether this
+  agent named it in the last week. The same reader holds `control.key`, which switches
+  masking off, and the client's own transcripts in clear; the book is the one copy only
+  for a value typed into a browser chat. `TestARestartKeepsTheNamesAConversationRemembers`
+  puts the other plate first in the replayed body, so only the book can put `[PLATE_1]`
+  back on the right vehicle; `TestSimulatedConversationsKeepTheirNames` drives concurrent
+  conversations through pauses and restarts and asserts no token left unexpanded, no
+  second name, no wrong value and no leak.
 
 **Sessions scope the mapping.** `sessionOf` (`proxy.go:659`) reads the session a request
 belongs to — `X-Session-Id`, else `X-Request-Id` — falling back to a single name. The

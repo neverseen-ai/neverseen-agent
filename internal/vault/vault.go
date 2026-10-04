@@ -91,20 +91,37 @@ type Vault struct {
 	// See next. written receives it whenever it changes in a way a restart must
 	// not lose, and dirty says one has happened since it was last handed over.
 	highest map[string]map[string]int64
-	written func(Numbering)
+	written func(Book)
 	dirty   bool
+
+	// keepNames says the names go into what written receives: only once Persist
+	// was handed a fingerprint key that outlives the process, because names
+	// fingerprinted under a key the next process cannot know would be bytes on a
+	// disk that can never match anything.
+	keepNames bool
 }
 
-// Numbering is what a restart needs to keep a session from handing out a name it
-// already gave a different value: for each session, when it last made a request
-// and the last index it handed out per token prefix. Counts and prefixes, never a
-// value — which is why it can be written to disk where the mapping cannot.
-type Numbering map[string]SessionNumbering
+// Book is what a restart needs to go on naming a session's values as the
+// conversation remembers them: for each session, when it last made a request, the
+// last index it handed out per token prefix — so a new process never gives a name
+// it already gave a different value — and the names themselves, so a value the
+// conversation replays is handed the name it had before the restart.
+//
+// Never a value. A name is keyed by the value's fingerprint, an HMAC under a key
+// kept beside this file. What that does not protect against has to be said where
+// it is written: somebody who can read both files can test a guess — a plate, a
+// phone number — and learn whether this agent named it in the last week. The same
+// reader holds the control key, which switches masking off, and the client's own
+// transcripts in clear; the book adds nothing for a value that already reached a
+// disk that way, and is the one copy for a value typed into a browser chat.
+type Book map[string]SessionBook
 
-// SessionNumbering is one session's half of Numbering.
-type SessionNumbering struct {
+// SessionBook is one session's half of Book.
+type SessionBook struct {
 	Last    time.Time        `json:"last"`
 	Highest map[string]int64 `json:"highest"`
+	// Names is fingerprint (base64) → the replacement it was given.
+	Names map[string]string `json:"names,omitempty"`
 }
 
 // name is what Name hands back, and the session it belongs to.
@@ -294,35 +311,72 @@ func (v *Vault) next(session, prefix string) int64 {
 	return h[prefix]
 }
 
-// Persist resumes the numbering a previous process wrote, and hands every later
-// change to write.
+// Persist resumes the book a previous process wrote, and hands every later change
+// to write.
+//
+// mark is the fingerprint key, and the names travel only with one: given a key
+// that outlives the process, the names are restored and written; given nil, only
+// the numbering is, and the names last as long as the process — a restart then
+// leaves a token minted before it unexpanded, never restored as another value.
 //
 // Written from Save, never from Name: a name only leaves the workstation after the
 // Save of the request that minted it, so a process killed in between loses names
 // nobody was ever told — and Save is once per request, where Name is once per value.
 // write is called under the vault's lock, so two writes never race to the disk with
 // the older one landing last.
-func (v *Vault) Persist(from Numbering, write func(Numbering)) {
+func (v *Vault) Persist(from Book, mark []byte, write func(Book)) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
+	if mark != nil {
+		v.mark = mark
+		v.keepNames = true
+	}
 	for session, n := range from {
 		v.highest[session] = maps.Clone(n.Highest)
 		// A zero date reads as idle since forever, so a session written without
 		// one is swept at the first write rather than kept with no way to age out.
 		v.active[session] = n.Last
+		if !v.keepNames {
+			continue
+		}
+		for fingerprint, masked := range n.Names {
+			// A fingerprint that does not decode is dropped: it can only be a file
+			// somebody edited, and it could never match a value anyway.
+			if raw, err := base64.RawStdEncoding.DecodeString(fingerprint); err == nil {
+				v.names[string(raw)] = name{masked: masked, session: session}
+			}
+		}
 	}
 	v.written = write
 }
 
-// write hands the numbering over if it changed. Called with mu held.
+// write hands the book over if it changed. Called with mu held.
+//
+// TODO: the whole book is handed over, and rewritten, on every request that mints:
+// ~100 KB for 1,500 names in the simulation, under the lock, which serialised 24
+// concurrent conversations to a 12 ms median. Right for one person at one
+// workstation; the upgrade is an append-only journal of new names, compacted when
+// the sweep runs.
 func (v *Vault) write() {
 	if !v.dirty || v.written == nil {
 		return
 	}
 	v.dirty = false
-	out := make(Numbering, len(v.highest))
+	out := make(Book, len(v.highest))
 	for session, h := range v.highest {
-		out[session] = SessionNumbering{Last: v.active[session], Highest: maps.Clone(h)}
+		out[session] = SessionBook{Last: v.active[session], Highest: maps.Clone(h)}
+	}
+	if v.keepNames {
+		// Every name's session is numbered — Name numbers before it names — so its
+		// entry is already in out.
+		for fingerprint, n := range v.names {
+			b := out[n.session]
+			if b.Names == nil {
+				b.Names = make(map[string]string)
+			}
+			b.Names[base64.RawStdEncoding.EncodeToString([]byte(fingerprint))] = n.masked
+			out[n.session] = b
+		}
 	}
 	v.written(out)
 }
@@ -392,6 +446,13 @@ func (v *Vault) Forget() {
 	defer v.mu.Unlock()
 	v.store.Forget()
 	v.names = make(map[string]name)
+
+	// Written now rather than at the next Save: a restart in between would read
+	// the old names back and hand values the shape the operator switched away from.
+	if v.keepNames {
+		v.dirty = true
+		v.write()
+	}
 }
 
 // seal encrypts one original. The nonce is fresh per value and prefixed to the

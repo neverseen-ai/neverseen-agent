@@ -78,11 +78,16 @@ and it is deliberately not repeated here.
   request; dropped by `Forget` with the mapping.
   `TestATokenTheModelRemembersSurvivesAnExpiredMapping`,
   `TestConcurrentClaimsGiveOneValueOneName`.
-- **A restart never hands a remembered name to another value**. Each session numbers on
-  its own (`vault.next`) and the numbering is resumed from `~/.neverseen/numbering.json` —
-  counts and dates, never a value — written from `Save`, never from `Name`. It survives
-  `Forget`. A file that cannot be read or written is a warning: the fallback is counting
-  from 1, never refusing to mask. `TestARestartDoesNotHandARememberedNameToAnotherValue`.
+- **A restart never hands a remembered name to another value, and gives the remembered
+  ones back.** Each session numbers on its own (`vault.next`), and its book — numbering
+  and names keyed by fingerprint, never a value — is resumed from `~/.neverseen/names.json`,
+  with the fingerprint key beside it in `names.key`, never inside. Written from `Save`,
+  never from `Name`; written at once by `Forget`, without the names. The numbering
+  survives `Forget`. A file that cannot be read or written is a warning: the fallback is
+  counting from 1, never refusing to mask. What a reader of both files can learn is
+  stated on `vault.Book`. `TestARestartDoesNotHandARememberedNameToAnotherValue`,
+  `TestARestartKeepsTheNamesAConversationRemembers`,
+  `TestSimulatedConversationsKeepTheirNames`.
 - **Both shapes of a masked value are expanded** — bracket token and stand-in —
   in one forward walk, not a replacement per entry.
 - **A credential never gets a stand-in** (`Detector.render`); that is what makes

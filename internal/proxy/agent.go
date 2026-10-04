@@ -75,11 +75,11 @@ type Options struct {
 	// policy of whichever workstation ran it.
 	PolicyFile string
 
-	// NumberingFile overrides where each session's numbering is kept, so a restart
+	// NamesFile overrides where each session's numbering is kept, so a restart
 	// does not reuse a name a conversation remembers. Empty means the documented
 	// default; NoFile means none, and the numbering lasts as long as the process. A
 	// test sets one of the two so a run never reads or writes the operator's file.
-	NumberingFile string
+	NamesFile string
 
 	// TraceDir records both bodies of every exchange into this directory, one file
 	// per exchange. Empty — the ordinary case — records nothing at all.
@@ -154,7 +154,7 @@ func FromEnv(logger *slog.Logger, opts Options) (*Agent, error) {
 	if err != nil {
 		return nil, err
 	}
-	keepNumbering(logger, v, resolveFileOption(opts.NumberingFile, DefaultNumberingFile))
+	keepNames(logger, v, resolveFileOption(opts.NamesFile, DefaultNamesFile))
 
 	providers, err := ParseProviders(os.Getenv(EnvProviders))
 	if err != nil {

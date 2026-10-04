@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -382,10 +383,10 @@ func TestARestartDoesNotHandARememberedNameToAnotherValue(t *testing.T) {
 	t.Setenv(EnvProviders, "anthropic="+up.server.URL)
 	t.Setenv("NEVERSEEN_PII_LOCALE", "fr")
 	t.Setenv("NEVERSEEN_BACKEND_URL", "")
-	numbering := filepath.Join(t.TempDir(), "numbering.json")
+	numbering := filepath.Join(t.TempDir(), "names.json")
 
 	start := func() *httptest.Server {
-		agent, err := FromEnv(nil, Options{PolicyFile: NoFile, ControlKeyFile: NoFile, NumberingFile: numbering})
+		agent, err := FromEnv(nil, Options{PolicyFile: NoFile, ControlKeyFile: NoFile, NamesFile: numbering})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -409,20 +410,76 @@ func TestARestartDoesNotHandARememberedNameToAnotherValue(t *testing.T) {
 	}
 }
 
+// A restart hands the conversation back the names it remembers. The numbering alone
+// stopped a remembered name being restored as another value; it still came back
+// unexpanded, because the new process gave the replayed value a new name. With the
+// book kept, the value the history replays takes its old name, and the answer
+// naming it is restored. The other plate comes first in the second body, so a
+// process numbering afresh would give it the next index and the remembered value
+// the one after: only the book can put [PLATE_1] back on the right vehicle.
+func TestARestartKeepsTheNamesAConversationRemembers(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"text": "Le boîtier de [PLATE_1] n'envoie pas de cap."})
+	})
+	t.Setenv(EnvProviders, "anthropic="+up.server.URL)
+	t.Setenv("NEVERSEEN_PII_LOCALE", "fr")
+	t.Setenv("NEVERSEEN_BACKEND_URL", "")
+	dir := t.TempDir()
+	names := filepath.Join(dir, "names.json")
+
+	start := func() *httptest.Server {
+		agent, err := FromEnv(nil, Options{PolicyFile: NoFile, ControlKeyFile: NoFile, NamesFile: names})
+		if err != nil {
+			t.Fatal(err)
+		}
+		server := httptest.NewServer(agent.Server.Handler())
+		t.Cleanup(server.Close)
+		return server
+	}
+
+	post(t, start(), "/anthropic/v1/messages", "s1", `{"messages":[{"content":"Le véhicule AB-123-CD."}]}`)
+	got := post(t, start(), "/anthropic/v1/messages", "s1",
+		`{"messages":[{"content":"Et le véhicule EF-456-GH ?"},{"content":"Le véhicule AB-123-CD."}]}`)
+
+	if !strings.Contains(got.body, "AB-123-CD") {
+		t.Errorf("the name the conversation remembers was not restored after the restart: %s", got.body)
+	}
+	if strings.Contains(got.body, "EF-456-GH") {
+		t.Errorf("the name the conversation remembers came back as the other plate: %s", got.body)
+	}
+
+	// The key that makes the book's fingerprints testable is kept apart from it,
+	// and only its owner can read either.
+	for _, file := range []string{names, filepath.Join(dir, namesKeyFile)} {
+		info, err := os.Stat(file)
+		if err != nil {
+			t.Fatalf("%s was not written: %v", file, err)
+		}
+		if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
+			t.Errorf("%s is %v, want 0600", file, info.Mode().Perm())
+		}
+	}
+	raw, _ := os.ReadFile(names)
+	if strings.Contains(string(raw), "AB-123-CD") || strings.Contains(string(raw), "EF-456-GH") {
+		t.Errorf("the book holds a value: %s", raw)
+	}
+}
+
 // A numbering file that cannot be read leaves the agent counting from 1 — where
 // every restart left it before the file existed — rather than refusing to mask; and
 // the next request writes a file that reads.
-func TestAnUnreadableNumberingFileIsReplacedNotFatal(t *testing.T) {
+func TestAnUnreadableNamesFileIsReplacedNotFatal(t *testing.T) {
 	up := newUpstream(t, echoJSON)
 	t.Setenv(EnvProviders, "anthropic="+up.server.URL)
 	t.Setenv("NEVERSEEN_PII_LOCALE", "fr")
 	t.Setenv("NEVERSEEN_BACKEND_URL", "")
-	numbering := filepath.Join(t.TempDir(), "numbering.json")
+	numbering := filepath.Join(t.TempDir(), "names.json")
 	if err := os.WriteFile(numbering, []byte("{half a document"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	agent, err := FromEnv(nil, Options{PolicyFile: NoFile, ControlKeyFile: NoFile, NumberingFile: numbering})
+	agent, err := FromEnv(nil, Options{PolicyFile: NoFile, ControlKeyFile: NoFile, NamesFile: numbering})
 	if err != nil {
 		t.Fatalf("an unreadable numbering file stopped the agent: %v", err)
 	}
@@ -430,7 +487,7 @@ func TestAnUnreadableNumberingFileIsReplacedNotFatal(t *testing.T) {
 	t.Cleanup(server.Close)
 	post(t, server, "/anthropic/v1/messages", "s1", `{"c":"écrire à claire@example.fr"}`)
 
-	var stored vault.Numbering
+	var stored vault.Book
 	if _, err := readStateFile(numbering, &stored); err != nil || stored["s1"].Highest["EMAIL"] != 1 {
 		t.Errorf("the numbering written after the request = %+v, %v; want s1 at EMAIL 1", stored, err)
 	}
@@ -438,7 +495,7 @@ func TestAnUnreadableNumberingFileIsReplacedNotFatal(t *testing.T) {
 
 // A numbering file nobody can read or write — here a path under a regular file —
 // costs a warning at start-up and one per write, and never the masking.
-func TestANumberingFileThatCannotBeWrittenIsAWarning(t *testing.T) {
+func TestANamesFileThatCannotBeWrittenIsAWarning(t *testing.T) {
 	up := newUpstream(t, echoJSON)
 	t.Setenv(EnvProviders, "anthropic="+up.server.URL)
 	t.Setenv("NEVERSEEN_PII_LOCALE", "fr")
@@ -451,7 +508,7 @@ func TestANumberingFileThatCannotBeWrittenIsAWarning(t *testing.T) {
 	var logged bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logged, nil))
 	agent, err := FromEnv(logger, Options{
-		PolicyFile: NoFile, ControlKeyFile: NoFile, NumberingFile: filepath.Join(notADir, "numbering.json"),
+		PolicyFile: NoFile, ControlKeyFile: NoFile, NamesFile: filepath.Join(notADir, "names.json"),
 	})
 	if err != nil {
 		t.Fatalf("an unwritable numbering file stopped the agent: %v", err)
