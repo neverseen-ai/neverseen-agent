@@ -10,9 +10,9 @@ import (
 // Each of these countries carries only its plate so far, and each plate is a
 // signature and a rule, so they are kept in one file rather than thirty-three
 // that would each hold six lines. A country that gains a national identifier
-// moves to a file of its own. Six have one and still carry the plate alone: de for
-// its 730 districts, and es, be, it, nl and pt because their plates came before
-// this table.
+// moves to a file of its own. Six already have a file and still carry the plate
+// alone: de for its 730 districts, and es, be, it, nl and pt because their plates
+// came before this table.
 //
 // Two kinds, and often both in one country. A shape nothing else writes is read
 // on its own, like the French plate (plateFinder). A shape ordinary text also takes — "ABC 123" is a course

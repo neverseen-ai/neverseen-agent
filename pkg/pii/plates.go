@@ -40,6 +40,10 @@ const plateMaxChunk = 8
 // rather than matching no text, in silence, and sending that country's plates out
 // in clear.
 //
+// A typo only: a signature that is valid and wrong — "LL-DDD-LLL" for
+// "LL-DDD-LL" — expands like any other and still matches nothing. The sample and
+// the corpus, which show every notation, are what catch that one.
+//
 // Each case whole, never mixed: "AB-123-CD" and "ab-123-cd" are both how people
 // type a plate, "Ab-123-cD" is not. upperOnly refuses the lowercase form too, for
 // a notation whose shape is too common in lowercase to carry any evidence.

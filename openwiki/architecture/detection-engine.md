@@ -420,9 +420,9 @@ reference, and spaced, `AB 12 34` is the head of a British National Insurance nu
 **The rest of Europe is one file and a table** (`patterns_eu.go`, `euroPlates`). Each of those
 countries carries its plate alone, and each plate is a set of signatures, a rule and a
 stand-in, so thirty-three countries are thirty-three entries rather than thirty-three files; a
-country that gains a national identifier moves to a file of its own. Six have one and still
-carry the plate alone: `de` for its 730 districts, and `es`, `be`, `it`, `nl` and `pt` because
-their plates came before the table.
+country that gains a national identifier moves to a file of its own. Six already have a file
+and still carry the plate alone: `de` for its 730 districts, and `es`, `be`, `it`, `nl` and
+`pt` because their plates came before the table.
 
 **Two kinds of notation, and the word decides the second.** A shape nothing else writes is
 read on its own — Ireland's `231-D-12345`, Czechia's `1A2 3456`, Romania's county and letters.
