@@ -90,6 +90,10 @@ type Server struct {
 	// nil-safe, so the request path calls them without a branch.
 	audit *auditor
 
+	// said holds back a warning already given, so one that a conversation provokes
+	// every turn is read once.
+	said said
+
 	providers []Provider
 	routes    map[string]*httputil.ReverseProxy
 
@@ -509,6 +513,7 @@ func (s *Server) maskRequest(session, provider string, r *http.Request) (*traceR
 	if decodeErr == nil {
 		pass.Exempt = exemptIdentifiers(s.hosts[provider], doc)
 		conversation = conversationOf(session, s.hosts[provider], doc)
+		s.warnUnread(session, doc)
 	}
 
 	// Collected rather than printed as they are found, so the console can write
@@ -648,7 +653,8 @@ func (s *Server) unmask(resp *http.Response) error {
 	ref := s.recordResponse(resp)
 	s.recorder.Upstream(resp.StatusCode)
 
-	known := s.vault.Load(sessionFromResponse(resp))
+	session := sessionFromResponse(resp)
+	known := s.vault.Load(session)
 	conversation := conversationFromResponse(resp)
 	if !isTextual(resp.Header.Get("Content-Type")) {
 		return nil
@@ -669,6 +675,11 @@ func (s *Server) unmask(resp *http.Response) error {
 		stream := newStreamRehydrator(resp.Body, known, s.usageSink(ref, conversation), s.audit.unmaskedSeen())
 		stream.onTool = s.toolSink(conversation)
 		stream.onDegraded = s.recorder.Degraded
+		// TODO: a session with no mapping is never expanded — streamRehydrator.observe
+		// here, the len(known) guards in unmaskBuffered — so a name in its answer goes
+		// unreported. Reachable only when every name in the history is one the model
+		// made up; the upgrade is a token scan in observe and in unmaskBuffered.
+		stream.expander.Unknown = s.unknownName(session)
 		if ref != nil {
 			stream.onExpanded = func(spent time.Duration) { ref.expanding = spent }
 		}
@@ -682,6 +693,13 @@ func (s *Server) unmask(resp *http.Response) error {
 		return nil
 	}
 
+	return s.unmaskBuffered(resp, ref, conversation, known, session)
+}
+
+// unmaskBuffered is unmask for an answer that arrives whole: the same expansion over
+// a body read in one piece.
+func (s *Server) unmaskBuffered(resp *http.Response, ref *traceRef, conversation string,
+	known map[string]string, session string) error {
 	// Closed at the end rather than straight after the read, because closing is
 	// what files the trace: closed here, the answer would go to disk above a set of
 	// figures none of which had been measured yet. The original is held rather than
@@ -699,8 +717,10 @@ func (s *Server) unmask(resp *http.Response) error {
 	// contain a quote or a newline, and splicing one into raw JSON produces a
 	// document the caller cannot parse. Putting it into a decoded string and
 	// letting the encoder escape it is the only way that is always correct.
+	expander := detector.NewExpander(known)
+	expander.Unknown = s.unknownName(session)
 	expand := func(text string) string {
-		return detector.UnmaskSeen(text, known, s.audit.unmaskedSeen())
+		return expander.Unmask(text, s.audit.unmaskedSeen())
 	}
 
 	expanded := time.Now()
@@ -738,6 +758,31 @@ func (s *Server) unmask(resp *http.Response) error {
 	resp.ContentLength = int64(len(out))
 	resp.Header.Set("Content-Length", strconv.Itoa(len(out)))
 	return nil
+}
+
+// warnUnread says that a request carries a picture or a document. It goes out as it
+// arrived — the catalogue reads text — so whatever is written in it reaches the model
+// in clear. Said when the count changes: a conversation sends its history again each
+// turn, and the same pictures are not news the second time.
+func (s *Server) warnUnread(session string, doc any) {
+	if n := unreadPayloads(doc); n > 0 && s.said.first(fmt.Sprintf("%s\x00unread\x00%d", session, n)) {
+		s.log.Warn("request carries what the agent cannot read", "session", session, "unread", n)
+	}
+}
+
+// unknownName says that an answer carries a name nothing in the session stands for
+// — one the model wrote itself, in the shape it saw, for a value that reached it in
+// clear. The caller reads it as a placeholder left in, and a tool runs it as written.
+// The name only: it is this agent's vocabulary, never a value.
+func (s *Server) unknownName(session string) func(string) {
+	return func(token string) {
+		// Once per session: the model quotes a name it was given as readily as it
+		// invents one, and a conversation says it again every turn.
+		if !s.said.first(session + "\x00" + token) {
+			return
+		}
+		s.log.Warn("answer carries a name the agent never gave", "session", session, "name", token)
+	}
 }
 
 // recordResponse wraps the body so the provider's answer is filed with the trace

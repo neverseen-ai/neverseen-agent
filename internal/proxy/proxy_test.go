@@ -83,6 +83,12 @@ func newAgent(t *testing.T, up *upstream, locales []string) *httptest.Server {
 // has to expire the mapping between two turns without sleeping through a lifetime.
 func newAgentOver(t *testing.T, up *upstream, locales []string, store vault.Store) *httptest.Server {
 	t.Helper()
+	return newAgentWith(t, up, locales, store, nil)
+}
+
+// newAgentWith is newAgentOver with a log the test keeps, nil for none.
+func newAgentWith(t *testing.T, up *upstream, locales []string, store vault.Store, logger *slog.Logger) *httptest.Server {
+	t.Helper()
 
 	det := detector.New(detector.Config{Locales: locales})
 	v, err := vault.New(store, nil, vault.DefaultTTL)
@@ -96,7 +102,7 @@ func newAgentOver(t *testing.T, up *upstream, locales []string, store vault.Stor
 	srv, err := New(Config{Providers: []Provider{
 		{Code: "anthropic", BaseURL: up.server.URL},
 		{Code: "openai", BaseURL: strings.Replace(up.server.URL, "127.0.0.1", "localhost", 1)},
-	}}, det, v)
+	}, Logger: logger}, det, v)
 	if err != nil {
 		t.Fatal(err)
 	}

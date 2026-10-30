@@ -68,7 +68,7 @@ func mapStrings(v any, f func(string) string) any {
 	case jsonObject:
 		binary := declaresBase64(t)
 		for i, m := range t {
-			if binary && m.key == "data" {
+			if isBytes(binary, m.key) {
 				continue
 			}
 			t[i].value = mapStrings(m.value, f)
@@ -106,6 +106,39 @@ func mapStrings(v any, f func(string) string) any {
 func declaresBase64(o jsonObject) bool {
 	kind, ok := o.value("type")
 	return ok && kind == "base64"
+}
+
+// isBytes reports whether a member of an object is a payload rather than text, given
+// whether the object declared base64 — the one test mapStrings skips by and
+// unreadPayloads counts by.
+func isBytes(declaredBase64 bool, key string) bool {
+	return declaredBase64 && key == "data"
+}
+
+// unreadPayloads counts what mapStrings leaves alone because it is not text: the
+// same two shapes, so the count and the masking cannot disagree about what was read.
+func unreadPayloads(v any) int {
+	n := 0
+	switch t := v.(type) {
+	case string:
+		if isDataURI(t) {
+			n++
+		}
+	case []any:
+		for _, item := range t {
+			n += unreadPayloads(item)
+		}
+	case jsonObject:
+		binary := declaresBase64(t)
+		for _, m := range t {
+			if isBytes(binary, m.key) {
+				n++
+				continue
+			}
+			n += unreadPayloads(m.value)
+		}
+	}
+	return n
 }
 
 // isDataURI reports whether a string is a whole data: URI.

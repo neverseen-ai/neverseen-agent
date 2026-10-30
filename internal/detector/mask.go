@@ -284,6 +284,13 @@ type Expander struct {
 	// starts is the set of bytes a stand-in can begin with, so the walk skips a
 	// position without consulting the list at all.
 	starts [256]bool
+
+	// Unknown, when set, receives every token the walk leaves alone because the
+	// mapping holds nothing for it. The model writes names in the shape it sees, and
+	// one it made up — for a value that reached it in clear, inside an image — reads
+	// to the caller exactly like a restored answer with a placeholder left in it.
+	// A token is this agent's vocabulary, never a value, so it may go to the log.
+	Unknown func(token string)
 }
 
 // NewExpander prepares known for repeated expansion.
@@ -297,21 +304,16 @@ func NewExpander(known map[string]string) *Expander {
 
 // Unmask is UnmaskSeen against a prepared mapping.
 func (e *Expander) Unmask(text string, seen func(masked, original string)) string {
-	known, standIns := e.known, e.standIns
-	if len(known) == 0 {
+	if len(e.known) == 0 {
 		return text
 	}
 
-	if len(standIns) == 0 {
+	if len(e.standIns) == 0 {
 		// Token mode, which is every session that has minted nothing but tokens:
 		// one regex scan that answers "is there anything here at all", and the
 		// text is returned untouched when there is not.
 		return pii.ReplaceTokens(text, func(token string) (string, bool) {
-			original, ok := known[token]
-			if ok && seen != nil {
-				seen(token, original)
-			}
-			return original, ok
+			return e.expandToken(token, seen)
 		})
 	}
 
@@ -320,31 +322,19 @@ func (e *Expander) Unmask(text string, seen func(masked, original string)) strin
 	// postcode inside the fake address it belongs to — and replacing them in turn
 	// expands the shorter one inside text that has already been expanded, which
 	// puts a value inside a value.
-	starts := e.starts
-
 	var b strings.Builder
 	b.Grow(len(text))
 	for i := 0; i < len(text); {
-		// Longest first, so the entry that wins at a position is the widest one.
-		if starts[text[i]] {
-			matched := ""
-			for _, standIn := range standIns {
-				if strings.HasPrefix(text[i:], standIn) {
-					matched = standIn
-					break
-				}
-			}
-			if matched != "" {
-				i += len(matched)
-				b.WriteString(report(known, matched, seen))
-				continue
-			}
+		if matched := e.standInAt(text[i:]); matched != "" {
+			i += len(matched)
+			b.WriteString(report(e.known, matched, seen))
+			continue
 		}
 
 		if token := pii.TokenAt(text[i:]); token != "" {
-			if _, ok := known[token]; ok {
+			if original, ok := e.expandToken(token, seen); ok {
 				i += len(token)
-				b.WriteString(report(known, token, seen))
+				b.WriteString(original)
 				continue
 			}
 		}
@@ -353,6 +343,34 @@ func (e *Expander) Unmask(text string, seen func(masked, original string)) strin
 		i++
 	}
 	return b.String()
+}
+
+// standInAt returns the stand-in text begins with, or "". Longest first, so the entry
+// that wins at a position is the widest one; the byte test skips a position without
+// consulting the list at all.
+func (e *Expander) standInAt(text string) string {
+	if !e.starts[text[0]] {
+		return ""
+	}
+	for _, standIn := range e.standIns {
+		if strings.HasPrefix(text, standIn) {
+			return standIn
+		}
+	}
+	return ""
+}
+
+// expandToken is the lookup both walks share: what a token stands for, telling the
+// console when the mapping holds it and Unknown when it does not.
+func (e *Expander) expandToken(token string, seen func(masked, original string)) (string, bool) {
+	original, ok := e.known[token]
+	switch {
+	case ok && seen != nil:
+		seen(token, original)
+	case !ok && e.Unknown != nil:
+		e.Unknown(token)
+	}
+	return original, ok
 }
 
 // report returns what a masked value stands for, telling the console about it.

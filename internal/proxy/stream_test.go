@@ -449,3 +449,43 @@ func TestStreamRehydratorReportsAReadFailureAfterDeliveringWhatArrived(t *testin
 type errorReader struct{ err error }
 
 func (e errorReader) Read([]byte) (int, error) { return 0, e.err }
+
+// A name nothing stands for is told about once per time it is written, however the
+// stream split it. The log behind it says a name once per session, so a proxy test
+// cannot see a name expanded twice — a held tail expanded again, or tool arguments
+// read both as deltas and whole — and a count here is the only place that can.
+func TestStreamRehydratorReportsAnUnknownNameOnce(t *testing.T) {
+	arguments := `{"cmd":"echo [EMAIL_1] [PLATE_553]"}`
+	cut := strings.Index(arguments, "PLATE") + 3
+	tests := map[string][]string{
+		"text": {
+			anthropicDelta("Write to [EMAIL_1] about [PLA"),
+			anthropicDelta("TE_553] today"),
+		},
+		"tool call": {
+			`{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","name":"Bash"}}`,
+			`{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":` + jsonString(arguments[:cut]) + `}}`,
+			`{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":` + jsonString(arguments[cut:]) + `}}`,
+			`{"type":"content_block_stop","index":0}`,
+		},
+	}
+	for name, events := range tests {
+		t.Run(name, func(t *testing.T) {
+			var stream strings.Builder
+			for _, e := range events {
+				stream.WriteString("event: x\ndata: " + e + "\n\n")
+			}
+			r := newStreamRehydrator(io.NopCloser(strings.NewReader(stream.String())),
+				map[string]string{"[EMAIL_1]": "claire@example.fr"}, nil, nil)
+			var unknown []string
+			r.expander.Unknown = func(token string) { unknown = append(unknown, token) }
+
+			if _, err := io.ReadAll(r); err != nil {
+				t.Fatalf("read the stream: %v", err)
+			}
+			if len(unknown) != 1 || unknown[0] != "[PLATE_553]" {
+				t.Errorf("reported %v, want [PLATE_553] once", unknown)
+			}
+		})
+	}
+}

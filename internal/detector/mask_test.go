@@ -430,6 +430,39 @@ func TestUnmaskLeavesUnknownTokensAlone(t *testing.T) {
 	}
 }
 
+// A token left alone is still told about. The model writes a name in the shape it
+// sees when a value reaches it in clear — a plate read off a screenshot came back as
+// "[PLATE_553]", one past the last number in the conversation — and the caller
+// read the placeholder with nothing to say no value stood behind it. Both walks,
+// because a session holding one stand-in takes the other one.
+func TestExpanderReportsANameItCannotExpand(t *testing.T) {
+	tests := map[string]map[string]string{
+		"tokens only":     {"[EMAIL_1]": "claire@example.fr"},
+		"with a stand-in": {"[EMAIL_1]": "claire@example.fr", "Jean Martin": "Pierre Paul"},
+	}
+	for name, known := range tests {
+		t.Run(name, func(t *testing.T) {
+			e := NewExpander(known)
+			var unknown, seen []string
+			e.Unknown = func(token string) { unknown = append(unknown, token) }
+
+			got := e.Unmask("write to [EMAIL_1] about [PLATE_553]", func(masked, _ string) { seen = append(seen, masked) })
+
+			if got != "write to claire@example.fr about [PLATE_553]" {
+				t.Errorf("Unmask = %q", got)
+			}
+			if len(unknown) != 1 || unknown[0] != "[PLATE_553]" {
+				t.Errorf("reported %v, want only [PLATE_553]", unknown)
+			}
+			// The two hooks split the tokens between them: a name restored is never
+			// reported as unknown, and one left alone is never shown as restored.
+			if len(seen) != 1 || seen[0] != "[EMAIL_1]" {
+				t.Errorf("seen %v, want only [EMAIL_1]", seen)
+			}
+		})
+	}
+}
+
 // A secret masked inside a JSON string must not eat the escaping backslash of the
 // quote that closes that string. A tool call's arguments are JSON encoded inside
 // a JSON body, so "PASSWORD=secret\"" runs the value to the \" that ends it. A

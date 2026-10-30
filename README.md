@@ -470,6 +470,12 @@ Written down rather than discovered later.
 - **Mixing locales costs precision** where two countries issue identifiers of the
   same length. Nine bare digits are a French SIREN under one checksum and a US
   routing number under another; the earlier locale in the registry names it.
+- **A picture or a PDF goes out as it arrived.** The catalogue reads text, so a
+  plate on a screenshot reaches the model in clear, and the model may then write
+  it as a placeholder of its own — `[PLATE_553]` — that nothing restores. The
+  agent log says both: `request carries what the agent cannot read` on the way
+  out, `answer carries a name the agent never gave` on the way back — each once per
+  session, the model quoting a name as readily as inventing one.
 - **The browser extension is not released.** It works in the tree and is tested
   end to end, but it is not packaged or published; web chats are unprotected
   until it ships. See the section above for what it will and will not cover.
