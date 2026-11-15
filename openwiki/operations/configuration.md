@@ -386,7 +386,10 @@ count from `GET /today` with the families the menu bar counts — chosen here, a
 agent through `PUT /today` — and the running configuration), *What is masked* (countries, personal
 data, secrets, substitution), *Try it* (over `POST /test` in JSON), *Connect a tool* (the lines
 from `Health.Tools`, which is `shellTools`), and *Service* (the version, the commands, the
-files under `~/.neverseen`). In English or French, light or dark.
+files under `~/.neverseen`). In English or French, light or dark. The overview also draws the
+day by local hour (`hourly`) and by category (`by_category`): the same minted counts, so both
+add up to the figure, and an hour before the agent started, or still to come, is drawn as not
+measured.
 
 **Built into two files and committed.** `make console` writes `console.js` and `console.css`
 into `internal/proxy/console/`, and `settings.go` embeds them and inlines both into the one

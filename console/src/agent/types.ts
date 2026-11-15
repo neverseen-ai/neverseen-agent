@@ -81,6 +81,10 @@ export interface Today {
   count?: number;
   /** The whole day per family code, the uncounted ones included. */
   by_family?: Record<string, number>;
+  /** The same day per category code, every family included: one bar a category. */
+  by_category?: Record<string, number>;
+  /** The same day by local hour, 0 to 23, every family included. */
+  hourly?: number[];
   /** The family codes `count` leaves out: the person's choice, applied by the agent. */
   uncounted?: string[];
   traffic?: Traffic;

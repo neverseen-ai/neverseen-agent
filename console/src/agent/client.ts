@@ -114,7 +114,7 @@ export const agent: AgentClient = {
         if (res.status === 403) forgetKey();
         else if (res.ok) {
           const r = (await res.json()) as { masked: number } & Omit<Snapshot["today"], "count">;
-          today = { count: r.masked, by_family: r.by_family, uncounted: r.uncounted, traffic: r.traffic, agent: r.agent };
+          today = { count: r.masked, by_family: r.by_family, by_category: r.by_category, hourly: r.hourly, uncounted: r.uncounted, traffic: r.traffic, agent: r.agent };
         }
       } catch {
         // The count is optional; the rest of the page is not.

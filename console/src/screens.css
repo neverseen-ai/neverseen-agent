@@ -69,6 +69,18 @@
 .today-missing { color: var(--muted); padding: 4px 0 8px; }
 
 .sub { font-size: 13px; font-weight: 620; margin: 22px 0 8px; }
+.hours { display: grid; grid-template-columns: repeat(24, 1fr); gap: 3px; align-items: end; height: 54px; margin-top: 18px; }
+.hour { background: var(--chart); opacity: 0.55; border-radius: 2px 2px 0 0; min-height: 0; }
+.hour-now { background: var(--accent); opacity: 1; }
+.hour-unmeasured { background: var(--line); opacity: 1; height: 2px; }
+.hours-axis { display: flex; justify-content: space-between; font: 10.5px var(--mono); color: var(--muted); margin-top: 4px; border-top: 1px solid var(--line); padding-top: 3px; }
+.bars { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+.bars li { display: grid; grid-template-columns: minmax(0, 11rem) minmax(0, 1fr) 3.4rem; gap: 10px; align-items: center; font-size: 13px; }
+.bar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-track { height: 8px; background: var(--raised); border-radius: 2px; overflow: hidden; }
+.bar { display: block; height: 100%; background: var(--chart); border-radius: 2px; }
+.bar-count { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+.bars + .btn-link { margin-top: 8px; font-size: 13px; }
 
 .clients { list-style: none; display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0; padding: 0; font-size: 13px; }
 
@@ -243,6 +255,7 @@
   .verdict { flex-direction: column; align-items: flex-start; gap: 16px; }
   .verdict h1 { font-size: 24px; }
   .ext { grid-template-columns: 1fr; }
+  .bars li { grid-template-columns: minmax(0, 8rem) minmax(0, 1fr) 3rem; }
   
   
 }

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Check, Info, OctagonAlert, TriangleAlert } from "lucide-react";
 import { useStore, MARK_FOR } from "../app/store";
 import { agent } from "../agent/client";
@@ -137,7 +137,6 @@ function since(snap: Snapshot): string {
 
 // The day's figure as GET /today serves it, every family in it: the menu bar's own
 // figure is the narrowed one, drawn beside the families it counts (MenuBarCount).
-// TODO: no hours. The upgrade is an hourly tally on /today, behind the same key.
 function MaskedToday({ snap }: { snap: Snapshot }) {
   const byFamily = snap.today.by_family;
   const count = byFamily ? Object.values(byFamily).reduce((a, b) => a + b, 0) : snap.today.count;
@@ -169,11 +168,93 @@ function MaskedToday({ snap }: { snap: Snapshot }) {
             <p className="fine">
               {tr("A value repeated within one conversation counts once.", "Une valeur répétée dans une même conversation ne compte qu'une fois.")}
             </p>
+            {snap.today.hourly && <Hours snap={snap} hourly={snap.today.hourly} />}
             {byFamily && <MenuBarCount snap={snap} />}
+            {snap.today.by_category && <ByCategory snap={snap} byCategory={snap.today.by_category} />}
           </>
         )}
       </div>
     </section>
+  );
+}
+
+/** The day's figure by local hour. An hour still to come, or before the agent started,
+ *  was not measured, so it is drawn as the flat line of one, never as a zero bar: the
+ *  agent counts in memory, and a restart at noon says nothing about the morning. */
+function Hours({ snap, hourly }: { snap: Snapshot; hourly: number[] }) {
+  const now = new Date();
+  const hour = now.getHours();
+  const from = countedSince(snap.today.agent?.started_at, now)?.getHours() ?? 0;
+  const peak = Math.max(1, ...hourly);
+  return (
+    <>
+      <div className="hours" role="img" aria-label={tr("Values masked per hour today", "Valeurs masquées par heure aujourd'hui")}>
+        {hourly.map((n, h) => {
+          const measured = h >= from && h <= hour;
+          return (
+            <span
+              key={h}
+              className={`hour ${h === hour ? "hour-now" : ""} ${measured ? "" : "hour-unmeasured"}`}
+              style={measured ? { height: `${Math.max(2, (n / peak) * 100)}%` } : undefined}
+              title={`${String(h).padStart(2, "0")}:00${measured ? `, ${num(n)}` : ""}`}
+            />
+          );
+        })}
+      </div>
+      <div className="hours-axis" aria-hidden>
+        <span>00</span>
+        <span>06</span>
+        <span>12</span>
+        <span>18</span>
+        <span>24</span>
+      </div>
+    </>
+  );
+}
+
+/** How many bars show before "Show all". */
+const TOP = 8;
+
+/** The day's figure per category, longest first. Minted counts, like the figure above, so
+ *  the bars add up to it: a value quoted again in a conversation's history is not a bar's
+ *  worth more. A category the agent no longer lists (a country since removed) keeps its
+ *  code rather than being dropped from a sum it is part of. */
+function ByCategory({ snap, byCategory }: { snap: Snapshot; byCategory: Record<string, number> }) {
+  const [all, setAll] = useState(false);
+  const labels = new Map((snap.health.groups ?? []).flatMap((g) => g.categories).map((c) => [c.code, c.label]));
+  const entries = Object.entries(byCategory).sort((a, b) => b[1] - a[1]);
+  const max = entries[0]?.[1] ?? 1;
+  const shown = all ? entries : entries.slice(0, TOP);
+
+  return (
+    <>
+      <h3 className="sub">{tr("By category", "Par catégorie")}</h3>
+      {entries.length === 0 ? (
+        <p className="muted">{tr("Nothing has been masked yet today.", "Rien n'a encore été masqué aujourd'hui.")}</p>
+      ) : (
+        <ol className="bars">
+          {shown.map(([code, n]) => {
+            const label = labels.get(code) ?? code;
+            return (
+              <li key={code}>
+                <span className="bar-label" title={label}>
+                  {label}
+                </span>
+                <span className="bar-track" aria-hidden>
+                  <span className="bar" style={{ width: `${(n / max) * 100}%` }} />
+                </span>
+                <span className="bar-count">{num(n)}</span>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+      {entries.length > TOP && (
+        <button type="button" className="btn btn-link" onClick={() => setAll(!all)}>
+          {all ? tr(`Show the top ${TOP}`, `Afficher les ${TOP} premières`) : tr(`Show all ${entries.length}`, `Afficher les ${entries.length}`)}
+        </button>
+      )}
+    </>
   );
 }
 

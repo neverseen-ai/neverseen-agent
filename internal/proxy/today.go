@@ -50,6 +50,10 @@ type tally struct {
 	day    string
 	minted map[pii.Category]int
 
+	// hourly is the same count by the local hour it was minted in, every family
+	// included, for the settings page's histogram.
+	hourly [24]int
+
 	// uncounted are the families the figure leaves out, in registry order. A choice
 	// about what is displayed, never about what is masked.
 	uncounted []pii.Group
@@ -140,6 +144,7 @@ func (t *tally) add(now time.Time, minted map[pii.Category]int) {
 	}
 	for cat, n := range minted {
 		t.minted[cat] += n
+		t.hourly[now.Hour()] += n
 	}
 }
 
@@ -154,12 +159,19 @@ func (t *tally) reply(now time.Time) todayReply {
 	defer t.mu.Unlock()
 	t.roll(now)
 
-	r := todayReply{ByFamily: make(map[string]int), Uncounted: make([]string, 0, len(t.uncounted)), Traffic: t.traffic}
+	r := todayReply{
+		ByFamily:   make(map[string]int),
+		ByCategory: make(map[string]int, len(t.minted)),
+		Hourly:     t.hourly,
+		Uncounted:  make([]string, 0, len(t.uncounted)),
+		Traffic:    t.traffic,
+	}
 	r.Traffic.Clients = maps.Clone(t.traffic.Clients)
 	for _, g := range t.uncounted {
 		r.Uncounted = append(r.Uncounted, string(g))
 	}
 	for cat, n := range t.minted {
+		r.ByCategory[string(cat)] = n
 		family := pii.GroupOf(cat)
 		r.ByFamily[string(family)] += n
 		if !slices.Contains(t.uncounted, family) {
@@ -188,6 +200,7 @@ func (t *tally) roll(now time.Time) {
 	if day := now.Format(time.DateOnly); day != t.day {
 		t.day = day
 		t.minted = nil
+		t.hourly = [24]int{}
 		t.traffic = dayTraffic{}
 	}
 }
@@ -200,6 +213,17 @@ type todayReply struct {
 	// ByFamily is the whole day per family code, the uncounted ones included, so the
 	// settings page can show what a family would add before it is ticked.
 	ByFamily map[string]int `json:"by_family"`
+
+	// ByCategory is the same day per category code, every family included: the settings
+	// page draws one bar a category. Minted counts like the rest, so the bars add up to
+	// the families' sum — every replacement would count the resent history again.
+	ByCategory map[string]int `json:"by_category"`
+
+	// Hourly is the same day by local hour, 0 to 23, every family included: an hour
+	// still to come, or before the agent started, is a zero nobody measured, and the
+	// page draws it as such. On the day a clock changes, two hours share a slot or one
+	// stays empty.
+	Hourly [24]int `json:"hourly"`
 
 	// Uncounted are the family codes Masked leaves out.
 	Uncounted []string `json:"uncounted"`

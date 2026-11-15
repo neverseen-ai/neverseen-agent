@@ -163,6 +163,34 @@ func TestTodayStartsAgainAtMidnight(t *testing.T) {
 	}
 }
 
+// The histogram is the same count by the local hour it was minted in, every family
+// included, so its bars add up to the day — and it starts again at midnight with it.
+func TestTodayCountsByHour(t *testing.T) {
+	var count tally
+	at := func(hour, minute int) time.Time { return time.Date(2026, 11, 14, hour, minute, 0, 0, time.Local) }
+
+	count.add(at(9, 15), map[pii.Category]int{pii.CatEmail: 2})
+	count.add(at(9, 50), map[pii.Category]int{pii.CatMongoID: 1})
+	count.add(at(14, 40), map[pii.Category]int{pii.CatEmail: 1, pii.CatMongoID: 2})
+	count.setUncounted([]pii.Group{pii.GroupOf(pii.CatMongoID)})
+
+	r := count.reply(at(15, 0))
+	if r.Hourly[9] != 3 || r.Hourly[14] != 3 {
+		t.Errorf("hourly = %v, want 3 at 09:00 and 3 at 14:00, the uncounted family included", r.Hourly)
+	}
+	sum := 0
+	for _, n := range r.Hourly {
+		sum += n
+	}
+	if sum != 6 {
+		t.Errorf("the hours add up to %d, want the day's 6", sum)
+	}
+
+	if got := count.reply(at(9, 0).AddDate(0, 0, 1)).Hourly; got != [24]int{} {
+		t.Errorf("after midnight the hours are %v, want none", got)
+	}
+}
+
 // The figure counts the families chosen and the breakdown keeps them all, so the
 // settings page can say what an unticked family would add.
 func TestTodayLeavesOutTheFamiliesNotCounted(t *testing.T) {
@@ -182,6 +210,9 @@ func TestTodayLeavesOutTheFamiliesNotCounted(t *testing.T) {
 	}
 	if r.ByFamily[string(personal)] != 2 || r.ByFamily[string(technical)] != 3 {
 		t.Errorf("by family = %v, want both families whole", r.ByFamily)
+	}
+	if r.ByCategory[string(pii.CatEmail)] != 2 || r.ByCategory[string(pii.CatMongoID)] != 3 {
+		t.Errorf("by category = %v, want each category whole, the uncounted family's included", r.ByCategory)
 	}
 	if !slices.Equal(r.Uncounted, []string{string(technical)}) {
 		t.Errorf("uncounted = %v, want %s", r.Uncounted, technical)
@@ -296,6 +327,9 @@ func TestTodayReplyFitsTheQueryBound(t *testing.T) {
 	count.setUncounted(pii.Groups())
 
 	reply := count.reply(time.Now())
+	for h := range reply.Hourly {
+		reply.Hourly[h] = 100_000_000
+	}
 	reply.Agent = agentState{StartedAt: time.Now(), Rerouted: []string{"anthropic", "openai", "gemini", "mistral"}, Allowlisted: 1_000_000}
 	body, err := json.Marshal(reply)
 	if err != nil {
