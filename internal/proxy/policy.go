@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"bytes"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
@@ -293,27 +292,12 @@ func SetPolicy(ctx context.Context, addr, key string, want Policy, timeout time.
 		return status, err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, "http://"+addr+"/policy", bytes.NewReader(body))
+	// The reply is /healthz's payload, so it is read under the same bound.
+	code, answer, err := askAgent(ctx, timeout, http.MethodPut, "http://"+addr+"/policy", key, body, healthMaxBytes)
 	if err != nil {
 		return status, err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(controlHeader, key)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return status, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	answer, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
-	if err != nil {
-		return status, err
-	}
-	if resp.StatusCode != http.StatusOK {
+	if code != http.StatusOK {
 		// The agent's own words. It says which category it refused and why, and a
 		// caller replacing that with "the request failed" throws away the only part
 		// somebody can act on.

@@ -331,8 +331,20 @@ else can, which is to say without being clicked whether the traffic is masked.
 - `pollEvery` is 5s and `askTimeout` 2s: on the loopback interface the answer takes a
   millisecond or it is not coming, and an icon that took a minute to notice the agent had
   stopped would be worse than no icon — somebody would trust it.
-- `lineCount` is fixed at 5 because a menu bar item is built once and its entries updated in
+- `lineCount` is fixed at 6 because a menu bar item is built once and its entries updated in
   place; the toolkit has no notion of a list that grows.
+- **The day's count is shown in three places, because no single one is drawn everywhere**:
+  beside the icon (`display.title`, `systray.SetTitle` — drawn on macOS, a no-op on Windows,
+  the host's decision on Linux), in the tooltip, and under the verdict. It comes from
+  `GET /today`, behind the control key, which `ask` reads on every poll as "Mask everything
+  again" reads it on every click — never from `/healthz`, which carries no counter (see
+  [`/healthz` and the local callers](../architecture/request-path.md#healthz-and-the-local-callers)).
+  When the agent did not give one, **nothing** is shown rather than a zero nobody measured
+  (`TestTheDaysCountIsShownOnlyWhenTheAgentGaveOne`). **Which families it counts is chosen
+  on the settings page and applied by the agent** — `PUT /today`, stored in
+  `~/.neverseen/menubar.json` beside the policy — so the menu bar reads one number and
+  decides nothing. A day of database identifiers read as a day of exposure. With every
+  family unticked the figure is 0, not absent: the agent did give one.
 - The providers offered are **only what the agent says it is serving**
   (`TestTheProvidersOfferedAreTheOnesTheAgentServes`). A hard-coded list would go on offering a
   provider a deployment had pointed elsewhere, and an agent that is not answering serves

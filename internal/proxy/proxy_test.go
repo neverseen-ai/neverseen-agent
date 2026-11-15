@@ -1103,3 +1103,64 @@ func TestADataMemberThatDeclaresNothingIsStillMasked(t *testing.T) {
 		t.Errorf("a declared payload was masked: %s", out)
 	}
 }
+
+// openRoutes are the reserved routes that answer a caller without the control key,
+// each with the reason it may. Every other reserved route must refuse one.
+var openRoutes = map[string]string{
+	"healthz":  "describes the configuration; carries no content and no counter",
+	"test":     "masks a text the caller sent itself; reads and writes no session",
+	"settings": "serves the page; the key is in it only with a ticket minted with the key",
+	"prove":    "proves the agent holds the key without receiving it; signs a nonce of one shape",
+}
+
+// Authentication is something each handler has to remember to ask for, so this asks
+// it of every route the agent answers itself, through the whole handler: without the
+// key, none hands the key over, and each one not named in openRoutes refuses. A route
+// added to reservedRoutes without being classified fails here, which makes refusal the
+// default — the lesson of NetBird's daemon, whose API every local process could call
+// for three years.
+func TestEveryRouteRefusesACallerWithoutTheKey(t *testing.T) {
+	for code := range openRoutes {
+		if !slices.Contains(reservedRoutes, code) {
+			t.Errorf("openRoutes names %q, which is not a reserved route", code)
+		}
+	}
+
+	// A fresh key rather than testControlKey, which the /test page's own sample text
+	// happens to contain as a hex secret to be masked.
+	key, err := newControlKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := settingsAgent(t, key).Handler()
+	for _, code := range reservedRoutes {
+		t.Run(code, func(t *testing.T) {
+			_, open := openRoutes[code]
+			refused := false
+			for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodPut} {
+				req := httptest.NewRequestWithContext(t.Context(), method, "/"+code, strings.NewReader("{}"))
+				req.RemoteAddr = "127.0.0.1:52341"
+				req.Host = "localhost:9787"
+				req.Header.Set("Content-Type", "application/json")
+
+				rec := httptest.NewRecorder()
+				handler.ServeHTTP(rec, req)
+
+				if strings.Contains(rec.Body.String(), key) {
+					t.Errorf("%s /%s handed the control key to a caller without it", method, code)
+				}
+				if open {
+					continue
+				}
+				if rec.Code < http.StatusMultipleChoices {
+					t.Errorf("%s /%s answered %d to a caller without the key", method, code, rec.Code)
+				}
+				refused = refused || rec.Code == http.StatusForbidden
+			}
+			if !open && !refused {
+				t.Errorf("/%s refused no method with 403, so it never asked for the key; "+
+					"if it needs none, name it in openRoutes with the reason", code)
+			}
+		})
+	}
+}

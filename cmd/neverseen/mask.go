@@ -84,9 +84,14 @@ func runMask(args []string, stdout io.Writer) error {
 	if !status.Answering {
 		// The same answer `status` gives, because it is the same situation: a
 		// stopped agent means unmasked traffic rather than a broken workstation, and
-		// there is nothing here to change.
+		// there is nothing here to change. Whole when another account holds the
+		// address, where "directly" would be wrong: tools pointed there send to it.
+		if status.Foreign != nil {
+			status.Write(stdout)
+			return errQuiet
+		}
 		fmt.Fprintf(stdout, "neverseen is not answering on %s, so there is nothing to change.\n", addr)
-		fmt.Fprint(stdout, "Your tools are reaching their provider directly, unmasked.\n")
+		fmt.Fprint(stdout, "New shells reach their provider directly, unmasked.\n")
 		return errQuiet
 	}
 

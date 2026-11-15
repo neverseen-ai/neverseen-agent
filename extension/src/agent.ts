@@ -107,6 +107,84 @@ export async function health(baseUrl: string, fetchImpl: Fetch): Promise<Health>
   return (await resp.json()) as Health;
 }
 
+/**
+ * prove asks whatever answers at the agent's address to show it holds this extension's
+ * key, before the key or a text is sent to it.
+ *
+ * TCP on loopback carries no identity, and a browser cannot ask the kernel who listens:
+ * on a machine with several accounts, whoever bound the port first answered there, and
+ * received the key and every text this extension sent to be masked. The agent answers
+ * with the HMAC, under the key, of a nonce chosen here and the port it was reached on —
+ * read from its own socket, so a listener relaying the question to the real agent on
+ * another port gets back an answer for that port, and is refused.
+ *
+ * A wrong proof is reported as a refused key, which it may be: the key rotated, or the
+ * address held by something else. Both start with `neverseen key`.
+ *
+ * TODO: a check, then a send. The browser cannot hold the connection it checked, so a
+ * listener that takes the port between the two receives the send. The upgrade is native
+ * messaging, whose host runs as this user and can ask the kernel who listens.
+ */
+export async function prove(cfg: AgentConfig, fetchImpl: Fetch, nonce = freshNonce()): Promise<void> {
+  let resp: Response;
+  try {
+    resp = await fetchImpl(cfg.baseUrl + '/prove', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nonce }),
+    });
+  } catch (err) {
+    throw new AgentError('unreachable', describe(err));
+  }
+
+  if (resp.status === 404) {
+    throw new AgentError(
+      'refused',
+      'the agent at this address cannot prove it holds the key — it is older than this extension; update it',
+    );
+  }
+  if (resp.status === 503) {
+    throw new AgentError('unauthorised', await reason(resp));
+  }
+  if (!resp.ok) {
+    throw new AgentError('refused', await reason(resp));
+  }
+  const answer = (await resp.json().catch(() => null)) as { proof?: unknown } | null;
+  if (answer?.proof !== (await proofOf(cfg.key, nonce, portOf(cfg.baseUrl)))) {
+    throw new AgentError(
+      'unauthorised',
+      `what answers at ${cfg.baseUrl} does not hold the key stored here, so nothing was sent to it: ` +
+        'the key was rotated, or another program holds this address',
+    );
+  }
+}
+
+/** proofOf is internal/proxy/prove.go proofOf; the contract file holds the two to agreeing. */
+export async function proofOf(key: string, nonce: string, port: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const hmac = await crypto.subtle.importKey('raw', encoder.encode(key), { name: 'HMAC', hash: 'SHA-256' }, false, [
+    'sign',
+  ]);
+  const mac = await crypto.subtle.sign('HMAC', hmac, encoder.encode(`neverseen-prove\0${nonce}\0${port}`));
+  return hex(new Uint8Array(mac));
+}
+
+/** portOf is the port a base URL dials, its scheme's default included. */
+function portOf(baseUrl: string): string {
+  const url = new URL(baseUrl);
+  return url.port || (url.protocol === 'https:' ? '443' : '80');
+}
+
+/** freshNonce is the 32 random bytes /prove signs, as hex. */
+function freshNonce(): string {
+  return hex(crypto.getRandomValues(new Uint8Array(32)));
+}
+
+/** hex is lowercase, as Go's hex.EncodeToString writes the proof this one is compared with. */
+function hex(bytes: Uint8Array): string {
+  return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 async function call<T>(
   cfg: AgentConfig,
   path: string,
@@ -117,6 +195,9 @@ async function call<T>(
   if (!cfg.key) {
     throw new AgentError('unconfigured', 'no control key stored — run `neverseen key` and paste it');
   }
+  // Before the key, and before the text: the two things a listener of another account
+  // must never receive.
+  await prove(cfg, fetchImpl);
 
   let resp: Response;
   try {

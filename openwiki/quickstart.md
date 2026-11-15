@@ -90,7 +90,7 @@ These are not style preferences. Each one is a failure that already happened, mo
   detection settings, `internal/proxy/env.go` owns the proxy's. A command in `cmd/`
   reads **no** environment variable (`internal/detector/config.go:18-31`).
 - **Fail closed.** A body the agent cannot read is a 415, never a pass-through
-  (`internal/proxy/proxy.go:327`, `readBody` at `:457`).
+  (`internal/proxy/proxy.go:372`, `readBody` at `:457`).
 - **The layer direction is one-way.** `pkg/pii` is the catalogue; `internal/detector` is
   the engine. The catalogue knows nothing about the engine.
 - **`pkg/telemetry` is public and the backend imports it — never the reverse.**

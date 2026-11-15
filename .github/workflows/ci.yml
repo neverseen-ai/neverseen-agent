@@ -42,12 +42,6 @@ jobs:
       - name: Build
         run: make build
 
-      # The settings page's decisions, which are JavaScript and therefore invisible
-      # to the Go suite and its coverage gate. Node is on the runner already and this
-      # needs no package: one file, no dependency.
-      - name: Test the settings page's decisions
-        run: node --test internal/proxy/settings_decisions.test.mjs
-
       - name: Test with race detector and coverage
         run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
 
@@ -237,6 +231,33 @@ jobs:
         run: |
           npm ci
           npm run check
+
+  # The settings console: a React application built into two files the agent embeds.
+  # They are committed so `go build` needs no Node, which makes them a second copy of
+  # the source — so this job rebuilds them from a clean checkout and fails on any
+  # difference, and runs the decisions the page applies, which the Go suite and its
+  # coverage gate cannot see.
+  console:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: console/package-lock.json
+
+      - name: Build, typecheck and test the console
+        working-directory: console
+        run: |
+          npm ci
+          npm run check
+
+      # Status rather than diff: a file the build adds is untracked, and diff is blind
+      # to it.
+      - name: The committed build is the one these sources make
+        run: test -z "$(git status --porcelain internal/proxy/console/)" || { git status --porcelain internal/proxy/console/; git diff internal/proxy/console/; exit 1; }
 
   # The contract between the extension and the agent, replayed against a real
   # agent on every commit that touches either side.

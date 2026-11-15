@@ -423,6 +423,26 @@ type Upstream struct {
 	Unreachable int `json:"unreachable,omitempty"`
 }
 
+// Add counts one answer by its HTTP status, zero for no answer at all.
+//
+// The one classifier, because the agent counts the same answers twice — for the
+// heartbeat and for the settings page's day — and two copies of the switch would let
+// the fleet view and the person's own page disagree about what a 408 is.
+func (u *Upstream) Add(status int) {
+	switch {
+	case status == 0:
+		u.Unreachable++
+	case status == 429:
+		u.RateLimited++
+	case status >= 500:
+		u.Failed++
+	case status >= 400:
+		u.Rejected++
+	default:
+		u.OK++
+	}
+}
+
 // PolicyChanges counts requests to PUT /policy.
 type PolicyChanges struct {
 	// Applied changed something about what the agent masks.

@@ -1,0 +1,28 @@
+{
+  "name": "neverseen-console",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "test": "node --test --experimental-strip-types src/agent/decisions.test.ts",
+    "check": "npm run build && npm test"
+  },
+  "dependencies": {
+    "lucide-react": "0.460.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "@types/react": "18.3.31",
+    "@types/react-dom": "18.3.7",
+    "@vitejs/plugin-react": "6.2.1",
+    "typescript": "5.9.3",
+    "vite": "8.3.6"
+  }
+}

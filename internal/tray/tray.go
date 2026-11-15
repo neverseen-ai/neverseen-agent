@@ -40,6 +40,8 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -64,7 +66,7 @@ const askTimeout = 2 * time.Second
 // Fixed, because a menu bar item is built once and its entries are then updated in
 // place — the toolkit has no notion of a list that grows. render always returns
 // this many, so the entries and the lines stay one to one.
-const lineCount = 5
+const lineCount = 6
 
 // maxProviderEntries bounds the "copy the command" submenu.
 //
@@ -84,8 +86,15 @@ const maxProviderEntries = 12
 // comparing two of them — and so a fifth thing to show cannot be added without the
 // comparison being updated with it.
 type display struct {
-	icon      []byte
-	tooltip   string
+	icon    []byte
+	tooltip string
+
+	// title is the text beside the icon: the day's count, or nothing when the agent
+	// did not say. Only macOS is sure to draw it — fyne.io/systray's SetTitle does
+	// nothing on Windows, and on Linux the StatusNotifierItem host decides — which
+	// is why the count is in the tooltip and the menu as well.
+	title string
+
 	lines     []string
 	providers []string
 
@@ -146,13 +155,39 @@ func render(s proxy.Status) display {
 	var lines []string
 
 	switch {
+	// Not "start it" when something listens there that this account refused to speak
+	// to: started, this account's agent cannot bind the port. The same two answers as
+	// `neverseen status` (proxy.Status.Write).
+	//
+	// Not "your tools reach their provider directly" either: a tool pointed at this
+	// address sends to whoever holds it, its provider key included. And the icon is
+	// named in the remedy because it reads the address once, when it starts — after
+	// the agent moved, it went on asking the old one and reporting it held.
+	case !s.Answering && s.Foreign != nil && !s.Foreign.Known:
+		lines = []string{
+			verdict,
+			"Which account listens on " + s.Addr + " could not be told",
+			"Nothing was sent to it",
+			"Tools pointed here send to it all the same",
+			"/proc/net/tcp must be readable",
+		}
+	case !s.Answering && s.Foreign != nil:
+		lines = []string{
+			verdict,
+			s.Addr + " is held by another account",
+			"Tools pointed here send to that account",
+			"Set " + proxy.EnvListen + "=127.0.0.1:<port> in ~/.neverseen/.env,",
+			"then restart the agent, and quit and reopen this icon",
+		}
+	// Directly for a new terminal only: one opened while the agent ran exported its
+	// address, and the tools started there fail until it is back.
 	case !s.Answering:
 		lines = []string{
 			verdict,
 			"The agent is not answering on " + s.Addr,
-			"Your tools are reaching their provider directly",
+			"New terminals reach their provider directly",
+			"Ones opened while it ran fail until it is back",
 			"Start it with: neverseen proxy",
-			"",
 		}
 	case len(s.Locales) == 0:
 		lines = []string{
@@ -184,11 +219,28 @@ func render(s proxy.Status) display {
 		}
 	}
 
+	// The count goes under the verdict when the agent gave one. When it did not —
+	// not answering, no key, or a build without the route — the line is left out
+	// rather than drawn as a zero nobody measured, and the blank goes to the end.
+	tooltip := fmt.Sprintf("neverseen — %s (%s)", strings.ToLower(verdict), s.Addr)
+	title := ""
+	if s.Answering && s.MaskedToday != nil {
+		today := fmt.Sprintf("%d value%s masked today", *s.MaskedToday, plural(*s.MaskedToday, "", "s"))
+		lines = slices.Insert(lines, 1, today)
+		tooltip += " — " + today
+		title = strconv.Itoa(*s.MaskedToday)
+	} else {
+		lines = append(lines, "")
+	}
+
 	return display{
 		icon: icon,
 		// The tooltip is the one thing read without clicking, so it carries the
-		// verdict and where it applies, and nothing else.
-		tooltip: fmt.Sprintf("neverseen — %s (%s)", strings.ToLower(verdict), s.Addr),
+		// verdict, where it applies and the day's count, and nothing else. The count
+		// is here because on Windows there is no title beside the icon, and hovering
+		// is the only way to read it there without opening the menu.
+		tooltip: tooltip,
+		title:   title,
 		lines:   lines,
 		// Only what the agent says it is serving. A hard-coded list would go on
 		// offering a provider a deployment had pointed elsewhere, and an agent that
@@ -299,9 +351,30 @@ func orUnknown(value string) string {
 	return value
 }
 
-// ask reports what the agent says about itself right now.
+// ask reports what the agent says about itself right now, and how many values it
+// has hidden today.
+//
+// The count is a second request because it is behind the control key and /healthz
+// is not. The key is read on every poll, as "Mask everything again" reads it on
+// every click, so this process never holds it longer than one question.
+//
+// Each request has its own askTimeout: under one shared deadline a slow /healthz left the
+// count no time, and the figure dropped out of the title for a poll.
 func ask(addr string) proxy.Status {
-	ctx, cancel := context.WithTimeout(context.Background(), askTimeout)
-	defer cancel()
-	return proxy.Query(ctx, addr, askTimeout)
+	return withToday(context.Background(), addr, proxy.Query(context.Background(), addr, askTimeout))
+}
+
+// withToday adds the day's count to what the agent said about itself, when it gives one.
+//
+// Asked after a write as after a poll: SetPolicy answers with /healthz's payload, which
+// carries no count, and redrawn from it alone the count left the title and the menu
+// until the next poll — the agent looking as if it had stopped reporting.
+func withToday(ctx context.Context, addr string, status proxy.Status) proxy.Status {
+	if !status.Answering {
+		return status
+	}
+	if n, ok := proxy.QueryToday(ctx, addr, proxy.ReadControlKey(""), askTimeout); ok {
+		status.MaskedToday = &n
+	}
+	return status
 }

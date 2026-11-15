@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
-import { mask, unmask, type AgentConfig } from '../src/agent.ts';
+import { DEFAULT_BASE_URL, mask, proofOf, prove, unmask, type AgentConfig } from '../src/agent.ts';
 
 // The extension's half of the contract with the agent.
 //
@@ -37,19 +37,29 @@ const contract = JSON.parse(
   readFileSync(fileURLToPath(new URL('../testdata/contract.json', import.meta.url)), 'utf8'),
 ) as Contract;
 
+// DEFAULT_BASE_URL because the recorded proof is bound to the port the client dials, and
+// the agent's half replays /prove as reached on proxy.DefaultListen.
 const cfg: AgentConfig = {
-  baseUrl: 'http://127.0.0.1:9787',
+  baseUrl: DEFAULT_BASE_URL,
   key: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
 };
 
 /** recording is a fetch that answers one recorded exchange and keeps what it was
- * asked, so the request the client actually built can be compared to the file. */
+ * asked, so the request the client actually built can be compared to the file. The
+ * proof every call makes first is answered as the agent would answer it — the /prove
+ * exchange is where the two computations are held to each other. */
 function recording(exchange: Exchange) {
   const seen: { url?: string; init?: RequestInit } = {};
   const fetchImpl = async (url: string, init?: RequestInit): Promise<Response> => {
-    seen.url = url;
-    seen.init = init;
-    return new Response(JSON.stringify(exchange.response), {
+    let response = exchange.response;
+    if (url.endsWith('/prove') && exchange.route !== '/prove') {
+      const { nonce } = JSON.parse(init?.body as string) as { nonce: string };
+      response = { proof: await proofOf(cfg.key, nonce, '9787') };
+    } else {
+      seen.url = url;
+      seen.init = init;
+    }
+    return new Response(JSON.stringify(response), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
@@ -62,7 +72,12 @@ for (const exchange of contract.exchanges) {
     const { seen, fetchImpl } = recording(exchange);
 
     let result: unknown;
-    if (exchange.route === '/mask') {
+    if (exchange.route === '/prove') {
+      // The nonce from the file, so the recorded proof is the answer: accepted only if
+      // this client computes what the agent computed.
+      await prove(cfg, fetchImpl, exchange.request.nonce as string);
+      result = exchange.response;
+    } else if (exchange.route === '/mask') {
       result = await mask(cfg, contract.session, exchange.request.texts as string[], fetchImpl);
     } else if (exchange.route === '/unmask') {
       result = await unmask(
@@ -93,7 +108,7 @@ for (const exchange of contract.exchanges) {
 }
 
 test('contract: every request carries the key and the session', async () => {
-  const exchange = contract.exchanges[0]!;
+  const exchange = contract.exchanges.find((e) => e.route === '/mask')!;
   const { seen, fetchImpl } = recording(exchange);
   await mask(cfg, contract.session, exchange.request.texts as string[], fetchImpl);
 
@@ -112,4 +127,25 @@ test('contract: the session is one name for both routes', () => {
     contract.exchanges.length >= 2,
     'a contract with one exchange cannot show a mapping being carried across calls',
   );
+});
+
+// The listener is asked to prove itself before anything is sent, and one that cannot is
+// sent nothing: not the key, not a text. Asserted on every call it received.
+test('contract: a listener that cannot prove it holds the key is sent nothing', async () => {
+  const exchange = contract.exchanges.find((e) => e.route === '/mask')!;
+  for (const answer of [{ status: 200, body: { proof: 'f'.repeat(64) } }, { status: 200, body: {} }, { status: 404, body: {} }]) {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    const fetchImpl = async (url: string, init?: RequestInit): Promise<Response> => {
+      calls.push({ url, init });
+      return new Response(JSON.stringify(answer.body), { status: answer.status });
+    };
+
+    await assert.rejects(mask(cfg, contract.session, exchange.request.texts as string[], fetchImpl));
+    assert.deepEqual(calls.map((c) => c.url), [cfg.baseUrl + '/prove'], 'something was sent after a failed proof');
+    const sent = JSON.stringify(calls[0]!.init);
+    assert.ok(!sent.includes(cfg.key), 'the key went out with the challenge');
+    for (const text of exchange.request.texts as string[]) {
+      assert.ok(!sent.includes(text), 'a text went out with the challenge');
+    }
+  }
 });

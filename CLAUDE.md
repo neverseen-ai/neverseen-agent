@@ -53,6 +53,19 @@ and it is deliberately not repeated here.
 - **Every route refuses a `Host` that is not this agent's** (`guardHost`, 421) — the
   defence against DNS rebinding reading a *restored* answer. Any IP literal passes,
   because a rebind always arrives under a name; `/settings` keeps its stricter guard.
+- **Every route refuses a caller of another account on this machine** (`guardAccount`, 403,
+  `peer.go`), and **every surface refuses a listener of another account before a byte is
+  written** (`agentClient`, the one client `Query`, `SetPolicy`, `QueryToday` and
+  `SettingsURL` use). Loopback TCP carries no identity: another account's request fell
+  into the owner's `default` session and came back restored, and whoever bound the port
+  first received everybody's control key. The kernel names each socket's owner; own
+  account and root pass, a loopback socket that cannot be found is refused, and **a socket
+  no process holds is never read as root's** — a connection not yet accepted is its
+  listener's (`TestAConnectionNotYetAcceptedBelongsToItsListener`). Asked of every
+  caller, not loopback alone — an agent bound beyond loopback is also reached through the
+  machine's own address (`TestAnotherAccountIsRefusedThroughThisMachinesOwnAddress`). **Linux only**
+  (`/proc/net/tcp`) — a `TODO:` names macOS and Windows.
+  `TestAnotherAccountIsRefusedOnEveryRoute`, `TestASurfaceSendsNothingToAListenerOfAnotherAccount`.
 - **A body is a JSON document, masked value by value**, never as raw bytes
   (`internal/proxy/jsonbody.go`).
 - **A decoded body is a `jsonObject`, not a `map[string]any`** — ordered, and a
@@ -143,10 +156,17 @@ and it is deliberately not repeated here.
 ### The operator surfaces — `openwiki/operations/configuration.md`
 
 - **`/test` is a real tool, not a demo.** It renders one text in both substitution
-  modes, using the deployment's own detector.
+  modes, using the deployment's own detector. Sent JSON, it answers the console's Try it
+  screen with the same two runs (`testjson.go`), replacements as **strings, never
+  offsets** — Go counts bytes and the page UTF-16 units.
 - **`/settings` is where the configuration happens, and the menu bar only says what is
   happening.** The page holds no engine: it draws from `/healthz` and writes through
-  `PUT /policy`, like every other surface. It exists because the toolkit was the wrong
+  `PUT /policy`, like every other surface. **It is the console** — the React application
+  in `console/`, built by `make console` into `internal/proxy/console/` and **committed**,
+  so `go build` needs no Node; CI rebuilds it and fails on any difference. Both files are
+  inlined into one response as data (`TestTheConsoleCannotCloseItsOwnElement`,
+  `TestTheSettingsPageCarriesTheConsoleVerbatim`), and a block the agent serves no data
+  for is left out, never drawn from a mock. It exists because the toolkit was the wrong
   shape — no radio group, no mixed tick, no room for the sentence that says what a
   choice costs, so every one of those absences had been answered by writing the sentence
   into a menu entry's own title.
@@ -182,11 +202,13 @@ and it is deliberately not repeated here.
   reads as a closed list and is wrong in the direction that matters. `TestOnlyTheCredentialFamiliesAreCredentials` pins the split family by family,
   and fails on a family it has never been told about.
 - **What decides is kept out of what draws, in the page too**
-  (`settings_decisions.js`, inlined; `settings_decisions.test.mjs` under `node --test`,
-  in `make test` and in CI). It is `internal/tray`'s split one storey up and it is here
-  for the same reason: a browser cannot be asserted on in CI any more than a menu bar
-  can. `plan.go` held these rules for the menu, and deleting it without this would have
-  moved a hundred tested lines into JavaScript nothing runs.
+  (`console/src/agent/decisions.ts`; `decisions.test.ts` under `node --test
+  --experimental-strip-types`, in `make test` and in CI). It is `internal/tray`'s split
+  one storey up and it is here for the same reason: a browser cannot be asserted on in
+  CI any more than a menu bar can. `plan.go` held these rules for the menu, and deleting
+  it without this would have moved a hundred tested lines into JavaScript nothing runs.
+  **The decisions import types only**, which Node strips — so the test needs no `npm ci`,
+  and a runtime import would pull the browser in with it.
 - **`/settings` is the one response body carrying the control key**, so it is closed
   twice **before the key is read**: loopback only, hard, whatever `-l` bound; and the
   `Host` must name this machine (`namesThisMachine`), which is the only defence against
@@ -198,6 +220,19 @@ and it is deliberately not repeated here.
   `localhost:9787@rebound.example.com` split to the name this guard wanted to see. The
   page is served under `default-src 'none' … connect-src 'self'`, whose clauses the test
   asserts **by name**: a policy that lost one would still look like a policy.
+- **Neither guard tells one account from another, so the key is in `/settings` only for a
+  ticket** — TCP on loopback carries no identity, and another user's
+  `curl -H 'Host: localhost'` was handed the key. `POST /settings` mints a ticket **with
+  the key**, so opening the page with it proves the caller can read `control.key`; the
+  menu bar opens the link and `neverseen settings` prints it, both through
+  `proxy.SettingsURL`. **Once and for a minute**, because the link crosses a command line
+  other accounts can read; the tab keeps the key in `sessionStorage` so a reload works.
+  Without a ticket the page is served keyless and says where to open it from.
+  `TestSettingsPageWithoutATicketCarriesNoKey`, `TestATicketOpensTheSettingsPageWithTheKeyOnce`.
+- **Refusal is the default for every reserved route**
+  (`TestEveryRouteRefusesACallerWithoutTheKey`): none hands the key to a caller without
+  it, and each one not in `openRoutes` — named with its reason — refuses. A new route
+  that is not classified fails there.
 - **`-a` prints every value replaced and restored; `-v` writes every exchange to
   `traces/`.** Two independent flags, and `newAuditor` builds an auditor for either.
   Under the installer's service `-a` files every prompt and every tool call in
@@ -247,6 +282,23 @@ and it is deliberately not repeated here.
 - **`neverseen mask`, the settings page and the menu bar all go through
   `proxy.SetPolicy`/`PUT /policy`** — the one writer, as `proxy.Query` is the one asker.
   Each lists only what the detector can emit (`Detector.Categories`).
+- **The menu bar's day count is behind the control key, never on `/healthz`**
+  (`GET /today`, `proxy.QueryToday`), which carries no counter because it is
+  unauthenticated. It counts what a pass **minted**, not `Pass.Counts()` — the history a
+  conversation resends every turn would be counted again each turn. **Once per session,
+  not per conversation**: the session is what the client names, and Claude Code names none.
+  `TestTodayCountsAValueOncePerSession`. **The figure counts the families the
+  settings page leaves ticked, and the agent applies the choice** (`PUT /today`, stored
+  in `menubar.json` beside the policy), so the menu bar stays a reader of one number. A
+  display choice, never part of `PUT /policy`: every surface resends the policy whole,
+  and a field it carried would be lost by the click that forgot it.
+  `TestTodayLeavesOutTheFamiliesNotCounted`, `TestPutTodayChoosesWhatTheMenuBarCounts`.
+  The same answer carries, for the settings page, **the day's traffic** (`dayTraffic`, kept
+  apart from the heartbeat's recorder, which every report empties) **and how the agent
+  runs** (`agentState`: the heartbeat State's exposure fields, the start, the extension's
+  last call) — behind the key, because whether `-a` or `-v` is on tells any process where
+  to look. `todayMaxBytes` bounds the whole answer, and `TestTodayReplyFitsTheQueryBound`
+  fails at half of it: cut short, the menu bar's figure no longer parses.
 - **The menu bar writes once — "Mask everything again" — and it carries the whole
   state.** The route replaces rather than patches, so a request carrying nothing but the
   empty set would switch off, from an entry that says "mask everything again", the mode,
@@ -290,7 +342,7 @@ and it is deliberately not repeated here.
 ### The browser extension — `openwiki/architecture/browser-extension.md`
 
 - **The extension holds no engine** — no catalogue, no policy, no mappings, no
-  detector. It calls `POST /mask` and `POST /unmask`.
+  detector. It calls `POST /mask` and `POST /unmask`, each after `POST /prove`.
 - **It lives in this repository because the API is a contract.**
   `extension/testdata/contract.json` is replayed by both sides. Regenerate with
   `make contract-update`, never casually.
@@ -298,6 +350,12 @@ and it is deliberately not repeated here.
   banner naming the command that fixes it.
 - **`/mask` takes a list, and that is not batching** — one pass is what gives a
   value repeated across two fields one identity.
+- **Nothing goes to a listener that has not proved it holds the key** (`POST /prove`,
+  open): the extension cannot ask the kernel who listens, so it sends a nonce first and
+  goes on only on the HMAC, under the key, of that nonce and **the port the agent's socket
+  reached — never the `Host`**, which a relay writes. A check then a send: a `TODO:` names
+  native messaging. `TestProveIsBoundToThePortTheRequestReached`, and `contract.test.ts`
+  asserts a failed proof is sent nothing after it.
 - **`/unmask` is stateless: the tail travels with the client**, held back with
   `detector.TailLen`. `final: true` is the protocol's explicit end.
 - **One shared auth helper** (`Server.authorised`), constant-time. **`/unmask` is
@@ -410,7 +468,8 @@ and it is deliberately not repeated here.
   decides, and only the second has a test.
 - **`shellTools` is the one owner of how a tool is pointed at this agent** — the
   variable, the CLI and the caveat together. Only verified pairs go in, and **the
-  caveat travels to every place the line is handed over.**
+  caveat travels to every place the line is handed over** — the settings page included,
+  which draws from `Health.Tools` rather than a copy (`TestHealthServesTheShellTools`).
 - **The icons are generated and committed**
   (`go run ./internal/tray/icons/generate.go`), in **three sets split by one question**:
   does the platform recolour what it is handed. macOS does, so its PNG is a black

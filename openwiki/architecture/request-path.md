@@ -15,7 +15,7 @@ request  →  refuse a Host that is not this agent's ⇒ 421
 response →  expand the masked values back (buffered or streamed)
 ```
 
-`Server.forward` (`proxy.go:417`) is that sequence end to end;
+`Server.forward` (`proxy.go:462`) is that sequence end to end;
 `Server.maskRequest` (`:485`) is the outbound half, `Server.unmask` (`:647`) the inbound.
 
 ## Provider routing
@@ -28,18 +28,19 @@ reaches `api.openai.com` (`provider.go:10-18`). Eight providers ship in
 Routing on an explicit segment rather than sniffing the path is what makes eight
 providers work on one port: six of them speak the same OpenAI-compatible paths, so
 `/v1/chat/completions` names no upstream at all. An unknown code is refused **by name**
-with the list of the ones that exist (`proxy.go:420-428`) — a proxy that silently picked
+with the list of the ones that exist (`proxy.go:465-473`) — a proxy that silently picked
 a provider would send one vendor's key to another vendor.
 
 `NEVERSEEN_PROVIDERS` applies `code=url` **overrides** onto the default set rather than
 replacing it (`ParseProviders`, `provider.go:51`): a deployment pointing one provider at
 its own gateway must not silently lose the other seven.
 
-**Reserved routes.** `reservedRoutes` = `healthz`, `test`, `policy`, `mask`, `unmask`
-(`proxy.go:220`) — every route the agent answers itself. A provider may
+**Reserved routes.** `reservedRoutes` = `healthz`, `test`, `settings`, `policy`, `mask`,
+`unmask`, `prove`, `today`
+(`proxy.go:253`) — every route the agent answers itself. A provider may
 not take one of those codes — `/healthz` would reach the agent while `/healthz/v1/…`
 reached the provider, a routing table nobody could reason about. `New` refuses it
-(`proxy.go:168-172`, asserted by `TestReservedRoutesCannotBeProviders`).
+(`proxy.go:191-195`, asserted by `TestReservedRoutesCannotBeProviders`).
 
 **No API keys.** Whatever credential the caller sent — a bearer token, an `x-api-key`
 header — is forwarded untouched, because the tool making the request already has it. A
@@ -56,7 +57,7 @@ carrying a quote or a newline cannot be spliced into raw JSON.
 
 `mapJSONStrings` (`jsonbody.go:39`) decodes, maps every string value, and re-encodes;
 `mapStrings` (`:54`) walks the tree. A body that is not JSON is masked as flat text
-(`proxy.go:551-555`). Either way it is **one pass over the whole body**, so a value
+(`proxy.go:597-601`). Either way it is **one pass over the whole body**, so a value
 repeated in two fields keeps one identity. A body carrying more than one JSON document is
 an error, not a guess (`errTrailingJSON`, `jsonbody.go:305`).
 
@@ -98,7 +99,7 @@ have lost every token count. What caught it is that `TestDeltaText` and `TestUsa
 build their input from raw JSON through the real decoder — a test constructing a map by
 hand would have gone on passing over dead code.
 
-**Fail closed.** `readBody` (`proxy.go:615`) decompresses a compressed body and returns an
+**Fail closed.** `readBody` (`proxy.go:661`) decompresses a compressed body and returns an
 error for an encoding it cannot read. Forwarding a body the agent could not inspect is the
 one failure mode a data-loss-prevention tool must never have — hence the 415
 (`TestUnreadableEncodingFailsClosed`, `TestGzippedRequestBodyIsMasked`).
@@ -119,6 +120,62 @@ no name at all (`:9787` is what a local command sends when `-l` names no host). 
 keeps its stricter, loopback-only guard. A `TODO:` names the ceiling: `host.docker.internal`,
 a hosts-file alias or a `.local` name is refused until a deployment asks for a list
 (`TestARequestForAnotherHostIsRefused`, `TestTheAgentAnswersForItsOwnNamesOnly`).
+
+**A caller of another account on this machine is refused before that** (`guardAccount`,
+`peer.go`, a 403), on every route. TCP on the loopback interface carries no identity, and
+the agent runs as one user, so on a machine with several accounts every one of them reached
+`127.0.0.1:9787` as its owner does. Another account's request fell into the owner's
+`default` session, and asking the model to repeat `[EMAIL_1] [SECRET_1]` brought the owner's
+values back restored. The kernel names the owner of every socket, so the agent looks the
+caller's socket up — the row whose own end is the caller's address and whose far end is the
+agent's — and refuses any account but its own and root, which can read the vault anyway
+(`TestAnotherAccountIsRefusedOnEveryRoute`). A loopback socket that cannot be found is
+refused rather than waved through (`TestACallerWhoseAccountCannotBeToldIsRefused`). Every
+caller is looked up, not loopback alone: an agent bound with `-l :9787` is also reached
+through the machine's own address, and another account doing so had walked past a guard
+that asked of `127.0.0.1` only (`TestAnotherAccountIsRefusedThroughThisMachinesOwnAddress`).
+A caller off this machine has no socket here and is `-l`'s question, not this guard's
+(`TestTheAccountGuardPassesWhatHasNoSocketHere`).
+
+**The other direction is the surfaces'** (`agentClient`): the first account to bind the port
+used to receive everybody else's traffic, and nothing asked who was listening before
+`neverseen mask`, the menu bar or `neverseen settings` sent it the control key — or before
+`Query` told `neverseen env` to point every tool at it. Every local surface reaches the agent
+through one client whose dialer looks up the listener's end of the connection and refuses
+another account's **before a byte is written** (`TestASurfaceSendsNothingToAListenerOfAnotherAccount`,
+asserted on what the listener received). `Status.Foreign` carries the refusal, and `neverseen status`
+says from it either that the address is held by another account — so this one's agent
+cannot bind there, and `NEVERSEEN_LISTEN` gives it another — or, when the listener's
+account could not be told, exactly that and nothing more (`TestStatusSaysWhoHoldsTheAddress`).
+A browser is a client this one cannot be put in front of, so the menu bar asks first and
+opens neither the settings page nor the test page on an address another account holds: what
+somebody pastes into the test page would reach that account in clear.
+
+**Linux only**, through `/proc/net/tcp` and `/proc/net/tcp6`. The kernel prints each word of
+an address in the machine's byte order, which `procAddr` puts back
+(`TestProcAddrReadsTheKernelsByteOrder`); a link-local address is compared without the zone
+net/http writes and the table never carries — compared with it, another account's socket was
+missing and, not being loopback, passed as another machine's
+(`TestOwnerInFindsTheSocketByBothEnds`). **A socket no process holds is never read for its
+owner**: the table marks it with inode 0 and, before Linux 6.17, uid 0, and read as root's
+it passed everywhere root does. A connection the kernel has completed and its listener not
+yet accepted is one — exactly what a surface asks about the moment it has connected, so
+another account binding the port and accepting late was handed the control key — and it is
+attributed to the listener on its own end, which always names its owner. A socket its
+process has closed, in `TIME_WAIT` or on its way there, has no listener and is not found
+(`TestAConnectionNotYetAcceptedBelongsToItsListener`).
+`TestTheKernelNamesThisAccountAtBothEnds` and `TestTheOwnersOwnRequestsPass` run against the
+real tables, because a lookup that misses refuses the owner too. The account is decided once
+per connection (`Server.ConnContext`, wired in `cmd/neverseen`): keep-alive puts many
+requests on one, and each of them read the tables whole while the guard asked per request
+(`TestTheAccountIsDecidedOncePerConnection`). Decided on the connection's first request,
+not when it is accepted: net/http calls `ConnContext` from its accept loop, and a lookup
+there held every new connection behind the tables being read for the one before
+(`TestTheAccountIsNotAskedOnTheAcceptLoop`). A server built without it is still guarded,
+per request. Two `TODO:`s name the ceilings: the tables are
+still read whole for every new connection (the upgrade is `sock_diag` over netlink), and
+macOS and Windows do not ask at all yet — there, any account on the machine still reaches
+the agent as its owner does.
 
 ## A pass keeps one identity per value
 
@@ -304,7 +361,7 @@ known requirement (Redis, for a mapping surviving a restart) rather than a specu
   conversations through pauses and restarts and asserts no token left unexpanded, no
   second name, no wrong value and no leak.
 
-**Sessions scope the mapping.** `sessionOf` (`proxy.go:873`) reads the session a request
+**Sessions scope the mapping.** `sessionOf` (`proxy.go:958`) reads the session a request
 belongs to — `X-Session-Id`, else `X-Request-Id` — falling back to a single name. The
 *conversation* the heartbeat counts is a separate identity, `conversationOf`
 (`identifiers.go:155`): the same header, else the id Claude Code writes in
@@ -317,16 +374,16 @@ their credentials, and scopes the mapping by a header they control.
 ## Expansion on the way back
 
 Streaming and buffered responses go through the **same** expansion, so a value restored in
-one is restored in the other (`proxy.go:643-646`). They differ only in how much text the
+one is restored in the other (`proxy.go:695-698`). They differ only in how much text the
 expander can see at a time.
 
 Read for three things, rewritten for one. Every textual answer is decoded — for its token
 counts (`usageFrom`) and for the tool calls the model asked for (`reportToolCalls` on the
 buffered path, `stream.onTool` on the streamed one) — but the decode-and-encode round trip
 is not byte-preserving, so the body is re-encoded only when the session has minted something
-(`len(known) > 0`, `proxy.go:743-751`; `streamRehydrator.observe` for a stream). A stream
+(`len(known) > 0`, `proxy.go:795-803`; `streamRehydrator.observe` for a stream). A stream
 also reports a tool call whose arguments never formed a document through `onDegraded`
-(`proxy.go:677`), which is the heartbeat's `degraded` count. The console and the trace file
+(`proxy.go:729`), which is the heartbeat's `degraded` count. The console and the trace file
 that read these same two bodies are the operator's surface, described in
 [configuration](../operations/configuration.md).
 
@@ -342,7 +399,7 @@ model quotes a name it was given as readily as it invents one; the agent cannot 
 two apart, so a repeat carries nothing new. A session with no mapping is never expanded,
 so a name in its answer goes unreported (a `TODO:` at `unmask`).
 
-`isTextual` (`proxy.go:848`) gates it: an image or an audio stream is passed through
+`isTextual` (`proxy.go:933`) gates it: an image or an audio stream is passed through
 untouched (`TestNonTextualResponseIsUntouched`).
 
 **Both shapes of a masked value are expanded.** A bracket token is expanded by
@@ -357,7 +414,7 @@ expand one into a live secret on its way to a caller. `TestFakeMode` asserts bot
 See [Detection engine](detection-engine.md#substitution-modes).
 
 **Expansion is one forward walk, not a replacement per entry** (`UnmaskSeen`,
-`internal/detector/mask.go:242`). One stand-in can contain another — a fake postcode inside
+`internal/detector/mask.go:253`). One stand-in can contain another — a fake postcode inside
 the fake address it belongs to — and replacing them in turn expands the shorter one inside
 text already expanded, putting a value inside a value. A session that minted only tokens
 keeps the single-regex fast path it always had (`standInsOf` is empty), so token mode is
@@ -371,7 +428,7 @@ that could be the start of a masked value and prepends it to the next piece, so 
 emits is always a whole event — occasionally a few characters shorter, with those
 characters moving to the event after it.
 
-The held-back length comes from `detector.TailLen` (`mask.go:367`), **not**
+The held-back length comes from `detector.TailLen` (`mask.go:378`), **not**
 `pii.TokenTailLen` alone: a stand-in the model echoed is split across two events exactly as
 a token is, and answering only for tokens left `fake` mode restoring nothing in a streamed
 answer while a buffered one round-tripped (`TestTailLenCoversBothShapes`).
@@ -434,7 +491,7 @@ that reading is unverified against a real stream.
 
 ## `/healthz` and the local callers
 
-`proxy.Health` (`status.go:27`) is **one type for both sides of the route**: the server
+`proxy.Health` (`status.go:29`) is **one type for both sides of the route**: the server
 marshals it, and every local caller — `neverseen status`, `neverseen env`, the menu bar —
 unmarshals it in the same package, so the two cannot come to disagree about a field name.
 
@@ -442,7 +499,21 @@ It carries what the agent is *applying* and nothing about who is using it: no co
 addresses, no backend URL. The route is unauthenticated on the loopback interface, and
 anything richer would be a local oracle for what a person has been doing.
 
-`proxy.Query` (`status.go:286`) is the only place that asks whether the agent is there. It
+**The one counter a local surface shows is behind the control key**: `GET /today`
+(`today.go`), read by the menu bar through `proxy.QueryToday`, answers how many values the
+agent has hidden since local midnight. It counts what a pass **minted**, never what it
+replaced — a conversation sends its whole history every turn, so `Pass.Counts()` counts an
+address quoted on turn one again on every turn after it, which is right for the heartbeat
+and reads as thousands over a day of thirty on a menu bar
+(`TestTodayCountsAValueOncePerSession`). Once per **session**, not per conversation: the
+session is the mapping the client names (`sessionOf`), so a client that names none — Claude
+Code — files every conversation under `default`, and an address quoted in two of them counts
+once. It is held in memory, so a restart starts the day again, and a value is counted again
+once its session's mapping is gone; these ceilings are `TODO:`s on `tally`. `QueryToday` reports *not told* rather than zero when
+there is no key, no agent, or a refusal, so a surface leaves the count out instead of
+drawing a figure nobody measured (`TestTodayIsBehindTheControlKey`).
+
+`proxy.Query` (`status.go:314`) is the only place that asks whether the agent is there. It
 returns **no error**, because "nothing is listening" is an answer to the question and not a
 failure to answer it. `Status.Masking()` is deliberately not `Answering`: an agent with no
 locale selected is up, healthy, and recognises almost nothing — the state a green light
@@ -497,7 +568,7 @@ bill the same tokens twice, so the OpenAI breakdown is deliberately not read.
 A refused request is not counted, and the test page is not counted
 (`TestARefusedRequestIsNotCounted`, `TestTheTestPageIsNotCounted`). The log line per
 exchange carries **counts and category names only** — the log is the one place a masked
-value could come back into the clear by accident (`proxy.go:586-588`).
+value could come back into the clear by accident (`proxy.go:632-634`).
 
 ## Where to start on a change here
 

@@ -26,6 +26,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/neverseen-ai/neverseen-agent/internal/detector"
@@ -128,6 +129,26 @@ type Server struct {
 	// above: apply, read the detector back, store. Two surfaces click at once and
 	// the halves interleave.
 	policyMu sync.Mutex
+
+	// today counts the values hidden since local midnight, for GET /today.
+	today tally
+
+	// menuBarMu serialises PUT /today, which writes menubar.json beside the policy.
+	menuBarMu sync.Mutex
+
+	// extensionSeen is when the browser extension last called /mask, for the
+	// settings page. Nil until it does.
+	extensionSeen atomic.Pointer[time.Time]
+
+	// tickets are the one-time links that open /settings with the key in it — see
+	// settings.go.
+	tickets tickets
+
+	// ownerOf names the account behind a loopback connection, and account is this
+	// agent's own; guardAccount refuses every other. A nil ownerOf is a platform that
+	// cannot ask yet — see peer.go.
+	ownerOf ownerLookup
+	account uint32
 }
 
 // New builds the server.
@@ -164,6 +185,8 @@ func New(cfg Config, det *detector.Detector, v *vault.Vault) (*Server, error) {
 		exposed:    cfg.Listen != "" && BeyondLoopback(cfg.Listen),
 		listenName: listenName(cfg.Listen),
 	}
+	s.ownerOf, s.account = accountLookup()
+	s.loadMenuBar()
 
 	for _, p := range providers {
 		if slices.Contains(reservedRoutes, p.Code) {
@@ -198,7 +221,12 @@ func (s *Server) reverseProxy(base *url.URL) *httputil.ReverseProxy {
 			// cannot read — which would send the caller its own tokens back.
 			pr.Out.Header.Del("Accept-Encoding")
 		},
-		ModifyResponse: s.unmask,
+		ModifyResponse: func(resp *http.Response) error {
+			if err := s.unmask(resp); err != nil {
+				return answeredError{err}
+			}
+			return nil
+		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			// A caller that hung up before the provider answered is not a
 			// provider that failed: counted as one, every abandoned prompt
@@ -207,7 +235,12 @@ func (s *Server) reverseProxy(base *url.URL) *httputil.ReverseProxy {
 			if errors.Is(err, context.Canceled) {
 				return
 			}
-			s.recorder.Upstream(0)
+			// ReverseProxy hands ModifyResponse's errors here too. That provider
+			// answered, and unmask counted the answer: counted again as no answer,
+			// one exchange read as an OK and an outage.
+			if !errors.As(err, new(answeredError)) {
+				s.countUpstream(0)
+			}
 			s.log.Error("upstream failed", "path", r.URL.Path, "error", err)
 			http.Error(w, "neverseen: the provider could not be reached", http.StatusBadGateway)
 		},
@@ -217,7 +250,7 @@ func (s *Server) reverseProxy(base *url.URL) *httputil.ReverseProxy {
 // reservedRoutes are the paths the agent answers itself. A provider may not take
 // one of these codes: "/healthz" would reach the agent while "/healthz/v1/…"
 // reached the provider, which is a routing table nobody could reason about.
-var reservedRoutes = []string{"healthz", "test", "settings", "policy", "mask", "unmask"}
+var reservedRoutes = []string{"healthz", "test", "settings", "policy", "mask", "unmask", "prove", "today"}
 
 // Handler returns the agent's routes.
 func (s *Server) Handler() http.Handler {
@@ -228,8 +261,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/settings", s.handleSettings)
 	mux.HandleFunc("/mask", s.handleMask)
 	mux.HandleFunc("/unmask", s.handleUnmask)
+	mux.HandleFunc("/prove", s.handleProve)
+	mux.HandleFunc("/today", s.handleToday)
 	mux.HandleFunc("/", s.forward)
-	return s.guardHost(mux)
+	return s.guardAccount(s.guardHost(mux))
 }
 
 // guardHost refuses a request addressed to a name that is not this agent's.
@@ -321,7 +356,18 @@ func (s *Server) healthNow() Health {
 		LocaleCategories: localeCategories(),
 		Groups:           s.catalogue(),
 		Off:              switchedOffCodes(s.det.Disabled()),
+		Tools:            healthTools(),
 	}
+}
+
+// healthTools is shellTools as Health serves it, in ToolCodes order.
+func healthTools() []HealthTool {
+	out := make([]HealthTool, 0, len(shellTools))
+	for _, code := range ToolCodes() {
+		t := shellTools[code]
+		out = append(out, HealthTool{Provider: code, Variable: t.Variable, CLI: t.CLI, Caveat: t.Caveat})
+	}
+	return out
 }
 
 // localeCategories names what each country the build has can find.
@@ -433,7 +479,7 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request) {
 		// Fail closed. Forwarding a body this could not read is exactly the
 		// leak the agent exists to prevent, so an unreadable body is an error
 		// rather than a pass-through.
-		s.recorder.Refused()
+		s.countRefused()
 		s.log.Error("masking failed, refusing to forward", "session", session, "error", err)
 		if errors.Is(err, errBodyTooLarge) {
 			http.Error(w, "neverseen: "+err.Error(), http.StatusRequestEntityTooLarge)
@@ -443,7 +489,8 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.recorder.Request(conversation, telemetry.ClientFamily(r.UserAgent()), code)
+	client := telemetry.ClientFamily(r.UserAgent())
+	s.countRequest(conversation, client, code)
 
 	r.URL.Path = rest
 	r.Host = ""
@@ -581,7 +628,7 @@ func (s *Server) maskRequest(session, provider string, r *http.Request) (*traceR
 	r.Header.Del("Content-Encoding") // readBody has decompressed it
 
 	if count > 0 {
-		s.recorder.Masked(conversation, pass.Counts())
+		s.countMasked(conversation, pass)
 
 		// Counts, never content: the log is the one place a masked value could
 		// come back into the clear by accident.
@@ -638,6 +685,12 @@ func readBody(r *http.Request) ([]byte, error) {
 	return body, nil
 }
 
+// answeredError is unmask failing on an answer the provider did give, which the
+// ErrorHandler must not count as one it did not.
+type answeredError struct{ error }
+
+func (e answeredError) Unwrap() error { return e.error }
+
 // unmask puts the originals back into the response.
 //
 // Streaming and buffered responses go through the same expansion, so a value
@@ -651,7 +704,7 @@ func (s *Server) unmask(resp *http.Response) error {
 	// request the file already holds — and an exchange whose outbound half is on
 	// disk with no inbound half reads as one that never came back.
 	ref := s.recordResponse(resp)
-	s.recorder.Upstream(resp.StatusCode)
+	s.countUpstream(resp.StatusCode)
 
 	session := sessionFromResponse(resp)
 	known := s.vault.Load(session)
@@ -812,6 +865,38 @@ func (s *Server) recordResponse(resp *http.Response) *traceRef {
 	return ref
 }
 
+// The events the heartbeat's recorder and the day's tally both count, each reported to
+// both in one call.
+//
+// They were written side by side at every call site with nothing holding a pair
+// together, and a path that fed one and forgot the other leaves the fleet view and the
+// settings page disagreeing about the same traffic
+// (TestTheDayAndTheHeartbeatCountTheSameTraffic). The tool calls go through toolSink for
+// the same reason; what only the recorder counts — Usage, Policy, Degraded — is called
+// directly.
+
+func (s *Server) countRequest(conversation, client, provider string) {
+	s.recorder.Request(conversation, client, provider)
+	s.today.request(time.Now(), client)
+}
+
+func (s *Server) countRefused() {
+	s.recorder.Refused()
+	s.today.refused(time.Now())
+}
+
+// countMasked counts a pass two ways on purpose: the heartbeat every replacement, the
+// day what was minted — see tally.
+func (s *Server) countMasked(conversation string, pass *detector.Pass) {
+	s.recorder.Masked(conversation, pass.Counts())
+	s.today.add(time.Now(), pass.MintedCounts())
+}
+
+func (s *Server) countUpstream(status int) {
+	s.recorder.Upstream(status)
+	s.today.upstream(time.Now(), status)
+}
+
 // usageSink is where a response reports what it cost.
 //
 // Always the recorder, which is what the heartbeat is built from; also the trace,
@@ -837,6 +922,7 @@ func (s *Server) usageSink(ref *traceRef, conversation string) func(string, pkgt
 func (s *Server) toolSink(conversation string) func(name, arguments string, restored bool) {
 	return func(name, arguments string, restored bool) {
 		s.recorder.Tool(conversation, telemetry.ToolCall{Name: name, Arguments: arguments, Restored: restored})
+		s.today.tool(time.Now(), restored)
 		if s.audit.writes() {
 			s.audit.tool(name, arguments)
 		}

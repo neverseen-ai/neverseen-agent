@@ -75,10 +75,14 @@ export function diagnose(
       return {
         level: 'none',
         headline: 'The key was refused',
+        // The second sentence because a refused key and a listener that is not the
+        // agent look the same from here: neither proves it holds the key (agent.ts prove).
         body:
           'The agent is running and does not accept the key stored here — it was ' +
           'rotated, or it belongs to a different agent. Print the current one and ' +
-          'paste it below.',
+          `paste it below. If that one is refused too, what answers at ${baseUrl} is not ` +
+          'your agent — another program or account on this machine holds the address — ' +
+          'and nothing was sent to it.',
         command: 'neverseen key',
       };
     }
@@ -153,7 +157,8 @@ export function blockedMessage(reason: Reason, detail = ''): string {
     case 'unauthorised':
       return (
         'Neverseen: your message was not sent, because the agent refused this ' +
-        'extension’s key. Run `neverseen key` and paste the current one into its options.'
+        'extension’s key, or what answers at its address is not your agent. Run ' +
+        '`neverseen key` and paste the current one into its options.'
       );
     default:
       // The agent's own words when there are any. There are none when this is

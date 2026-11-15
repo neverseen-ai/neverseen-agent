@@ -122,6 +122,38 @@ that something went wrong.
   `host_permissions`; an `Access-Control-Allow-Origin` would hand the masking oracle to
   every web page.
 - **Both are in `reservedRoutes`**, so a provider cannot take one.
+- **Neither is sent anything before the listener has proved it holds the key**
+  (`POST /prove`, below).
+
+### `POST /prove`: the listener proves itself first
+
+`{"nonce": "<32 bytes of hex>"}` → `{"proof": "<hex>"}`, with no key and no session.
+
+TCP on the loopback interface carries no identity, and a browser cannot ask the kernel who
+listens, as the agent's own surfaces do (`agentClient`). On a machine with several accounts
+— a shared Linux server, two sessions on one Mac — whoever bound the agent's port first
+answered there, and received the control key and every text the extension sent to be
+masked. So before every call that carries either, the extension sends a nonce it chose and
+nothing else, and goes on only if the answer is the HMAC-SHA256, under the key, of
+`neverseen-prove`, the nonce and the port it dialled (`proofOf`, the same in
+`internal/proxy/prove.go` and `extension/src/agent.ts`; the contract file holds the two to
+agreeing byte for byte).
+
+- **The port is the agent's socket's, never the `Host` header.** A listener holding the
+  usual port that relayed the question to the real agent on another port gets back the
+  proof for that other port, and is refused (`TestProveIsBoundToThePortTheRequestReached`).
+- **Open, and harmless so**: an HMAC under a 256-bit key gives nothing of the key away, and
+  the nonce is held to one shape, so the route signs nothing a caller chose beyond 32 bytes
+  (`TestProveRefusesANonceOfAnotherShape`). An agent with no key answers 503.
+- **A wrong proof is reported as a refused key** (`unauthorised`), which it may be: the key
+  rotated, or the address held by something else. Both start with `neverseen key`, and the
+  options page says what to conclude when the current key is refused too. A 404 is an agent
+  older than the extension, and is refused rather than trusted.
+- **Asserted on what the listener received**: one that cannot prove itself is sent the
+  challenge and nothing after it — no key, no text (`contract.test.ts`).
+- `TODO:` a check, then a send. The browser cannot hold the connection it checked, so a
+  listener that takes the port between the two receives the send. The upgrade is native
+  messaging, whose host runs as the user and can ask the kernel who listens.
 - **Neither is captured by `-a` or `-v`.** A trace of `/unmask` would put originals on
   disk through a route that reasoning never covered. It is structural — the handler
   passes `nil` where the proxy passes the audit callback — and

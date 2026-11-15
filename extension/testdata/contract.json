@@ -10,6 +10,17 @@
   "session": "claude:9f1c0d2e-4b6a-4f31-8a5e-2c7d1e0b3a44",
   "exchanges": [
     {
+      "name": "prove the agent holds the key before anything is sent",
+      "why": "The extension cannot ask the kernel who listens, and on a machine with several accounts whoever bound the port first received the key and every text to mask. So it sends a nonce first and nothing else until the answer is the HMAC, under the key, of that nonce and the port it dialled. Both sides compute it, and this is where they must agree byte for byte.",
+      "route": "/prove",
+      "request": {
+        "nonce": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+      },
+      "response": {
+        "proof": "345736cd6c7aef399ed4058d86aa2a0c695e7a91ae73f0ad9c148a1852d32c07"
+      }
+    },
+    {
       "name": "mask two fields of one send",
       "why": "One pass over both texts, so the address repeated across them keeps one identity — masked field by field it would leave as two different people. The credential is tokenized alongside it, and the count includes the repeat, because a value masked twice is two values that did not leave the machine.",
       "route": "/mask",

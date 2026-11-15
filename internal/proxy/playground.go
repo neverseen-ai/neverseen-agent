@@ -52,6 +52,11 @@ func (s *Server) handleTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if r.Method == http.MethodPost && wantsJSON(r) {
+		s.answerTest(w, r)
+		return
+	}
+
 	det := s.det
 	var text string
 	if r.Method == http.MethodPost {

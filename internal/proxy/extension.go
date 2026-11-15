@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/neverseen-ai/neverseen-agent/internal/detector"
 )
@@ -106,9 +107,11 @@ func (s *Server) handleMask(w http.ResponseWriter, r *http.Request) {
 	// Counted like any other masking this agent did. An extension exchange is values
 	// that did not leave the workstation, and leaving it out would show a fleet view
 	// a machine doing nothing while every browser chat on it was being masked.
-	s.recorder.Request(session, "extension", "")
+	s.countRequest(session, "extension", "")
+	now := time.Now()
+	s.extensionSeen.Store(&now)
 	if count > 0 {
-		s.recorder.Masked(session, pass.Counts())
+		s.countMasked(session, pass)
 
 		// Counts, never content — the rule holds on this route as on every other.
 		s.log.Info("text masked", "session", session, "values", count, "minted", len(pass.Minted()))

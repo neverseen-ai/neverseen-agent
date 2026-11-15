@@ -1,8 +1,11 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
+	"net"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -124,7 +127,12 @@ func TestExtensionContract(t *testing.T) {
 			}
 			det.SetSubstitution(mode)
 		}
-		got := postAs(t, agent, exchange.Route, testControlKey, file.Session, string(exchange.Request))
+		var got reply
+		if exchange.Route == "/prove" {
+			got = proveOver(t, srv, DefaultListen, string(exchange.Request))
+		} else {
+			got = postAs(t, agent, exchange.Route, testControlKey, file.Session, string(exchange.Request))
+		}
 		if got.status != 200 {
 			t.Fatalf("%s: status %d: %s", exchange.Name, got.status, got.body)
 		}
@@ -144,6 +152,23 @@ func TestExtensionContract(t *testing.T) {
 	}
 }
 
+// proveOver answers a /prove request as reached on addr. The proof is bound to the port
+// the request reached, and the extension's half checks it against the port it dials —
+// DEFAULT_BASE_URL's, which is this one's — where a test server's would be random.
+func proveOver(t *testing.T, srv *Server, addr, body string) reply {
+	t.Helper()
+
+	here, err := net.ResolveTCPAddr("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/prove", strings.NewReader(body))
+	req = req.WithContext(context.WithValue(req.Context(), http.LocalAddrContextKey, here))
+	rec := httptest.NewRecorder()
+	srv.handleProve(rec, req)
+	return reply{status: rec.Code, header: rec.Header(), body: rec.Body.String()}
+}
+
 // TestContractCoversWhatMatters holds the file itself to a standard.
 //
 // A contract file is only worth what it exercises, and it is the kind of fixture that
@@ -160,7 +185,7 @@ func TestContractCoversWhatMatters(t *testing.T) {
 		}
 		seen[e.Route] = true
 	}
-	for _, route := range []string{"/mask", "/unmask"} {
+	for _, route := range []string{"/mask", "/unmask", "/prove"} {
 		if !seen[route] {
 			t.Errorf("nothing in the contract exercises %s", route)
 		}

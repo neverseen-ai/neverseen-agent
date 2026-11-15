@@ -154,18 +154,7 @@ func (r *Recorder) Upstream(status int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.changes++
-	switch {
-	case status == 0:
-		r.counters.Upstream.Unreachable++
-	case status == 429:
-		r.counters.Upstream.RateLimited++
-	case status >= 500:
-		r.counters.Upstream.Failed++
-	case status >= 400:
-		r.counters.Upstream.Rejected++
-	default:
-		r.counters.Upstream.OK++
-	}
+	r.counters.Upstream.Add(status)
 }
 
 // Policy counts one request to change what the agent masks.

@@ -253,10 +253,10 @@ a real machine.
 
 ### Enrolment and signing
 
-`EnrolRequest` / `EnrolResponse` (`contract.go:495`): the operator's token is presented once
+`EnrolRequest` / `EnrolResponse` (`contract.go:515`): the operator's token is presented once
 and traded for a per-agent id and key, the way Wazuh's enrolment works, so one workstation
 can be revoked without touching the others. Requests carry `X-Neverseen-Agent` and
-`X-Neverseen-Signature`; `Sign` / `VerifySignature` (`contract.go:547`) are the HMAC pair,
+`X-Neverseen-Signature`; `Sign` / `VerifySignature` (`contract.go:567`) are the HMAC pair,
 shared by both repositories so they cannot disagree.
 
 The issued identity is stored by `internal/telemetry/identity.go` at
@@ -397,7 +397,7 @@ the agent from stopping (`TestTheLastWindowIsFiledBeforeTheCommandReturns`,
 configuration it was built with, because the question a security officer is asking is not
 "what was it told to do" but "what is it doing" — an agent running with no locale selected
 masks almost nothing while looking perfectly healthy. `proxy.Version` is a package variable
-stamped by the command at start-up (`agent.go:28`, `cmd/neverseen/main.go:243`), because a dashboard showing "dev" for
+stamped by the command at start-up (`agent.go:28`, `cmd/neverseen/main.go:246`), because a dashboard showing "dev" for
 every workstation is a fleet nobody can audit.
 
 ## Where to start on a change here

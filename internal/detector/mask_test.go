@@ -104,6 +104,22 @@ func TestMaskGivesOneValueOneToken(t *testing.T) {
 	}
 }
 
+// The menu bar's day is counted by family from this, so a value the conversation
+// already named must not count again, and a repeat in one body counts once.
+func TestMintedCountsCountFirstSightingsPerCategory(t *testing.T) {
+	d := New(Config{})
+
+	pass := d.NewPass(map[string]string{"[EMAIL_1]": "known@x.fr"})
+	d.Mask("write to known@x.fr, to ab@x.fr, to ab@x.fr again, and to cd@y.fr", pass)
+
+	if got := pass.MintedCounts(); len(got) != 1 || got[pii.CatEmail] != 2 {
+		t.Errorf("minted counts = %v, want two new addresses and nothing for the known one", got)
+	}
+	if pass.MintedCounts()[pii.CatEmail] != len(pass.Minted()) {
+		t.Errorf("the counts (%v) disagree with what was minted (%v)", pass.MintedCounts(), pass.Minted())
+	}
+}
+
 // A conversation is several requests. A value seen on an earlier turn has to keep
 // the token it had, which is what seeding a pass from the session's mapping does.
 func TestMaskReusesASessionsExistingTokens(t *testing.T) {

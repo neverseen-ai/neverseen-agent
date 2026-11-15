@@ -1,0 +1,178 @@
+// The shapes the console draws, named after the agent's own types.
+//
+// Health, HealthGroup and HealthCategory mirror internal/proxy/status.go field for
+// field — the JSON names are the ones /healthz serves. The day's count is not on
+// /healthz, deliberately: that route is unauthenticated and carries what the agent
+// applies, never what somebody did with it, so it comes from GET /today behind the
+// control key.
+
+export type MaskingLevel = "full" | "partial" | "none";
+
+/** internal/proxy/status.go HealthCategory: one switch. */
+export interface HealthCategory {
+  code: string;
+  label: string;
+  /** Currently not masked. */
+  off?: boolean;
+  /** May not be switched off at all (a credential, or a declared value). */
+  locked?: boolean;
+  /** What the loaded patterns recognise it by — what it looks like, not what it is. */
+  notations?: string[];
+}
+
+/** internal/proxy/status.go HealthGroup: one family. */
+export interface HealthGroup {
+  code: string;
+  label: string;
+  categories: HealthCategory[];
+  /** Filed under Credentials rather than Personal data — the agent's answer, never the surface's. */
+  credentials?: boolean;
+}
+
+/** How a tool is pointed at this agent for one provider — shellenv.go shellTools. */
+export interface HealthTool {
+  provider: string;
+  /** The variable that provider's SDKs read. */
+  variable: string;
+  /** The command people run against that variable, where there is one everybody means. */
+  cli?: string;
+  /** What somebody has to know before trusting the line. Travels with it everywhere. */
+  caveat?: string;
+}
+
+/** internal/proxy/status.go Health: what /healthz answers. */
+export interface Health {
+  status: string;
+  version: string;
+  locales: string[];
+  substitution: string;
+  secret_level: string;
+  providers: string[];
+  masking: MaskingLevel;
+  substitutions?: string[];
+  secret_levels?: string[];
+  available_locales?: string[];
+  /** Labels for a reader, never codes to send back. The lists overlap: never sum them. */
+  locale_categories?: Record<string, string[]>;
+  /** The catalogue's families and their categories, as the agent files them. */
+  groups?: HealthGroup[];
+  /** The whole switched-off intent as codes, including what no loaded locale can emit. */
+  off?: string[];
+  /** How a tool is pointed at this agent, for the providers that have a variable. */
+  tools?: HealthTool[];
+}
+
+/** What PUT /policy carries: the whole state, never a patch. */
+export interface Policy {
+  off: string[];
+  locales: string[];
+  substitution: string;
+  secret_level: string;
+}
+
+/** Today's tallies, from GET /today behind the control key. */
+export interface Today {
+  /**
+   * Values hidden since local midnight, counted once per session — what was minted,
+   * not every replacement. The figure the menu bar shows. Undefined when the
+   * agent did not say (no key, an older build): a surface leaves it out rather than
+   * drawing a zero nobody measured.
+   */
+  count?: number;
+  /** The whole day per family code, the uncounted ones included. */
+  by_family?: Record<string, number>;
+  /** The family codes `count` leaves out: the person's choice, applied by the agent. */
+  uncounted?: string[];
+  traffic?: Traffic;
+  agent?: AgentState;
+}
+
+/** What crossed the agent today (internal/proxy/today.go dayTraffic). */
+export interface Traffic {
+  requests: number;
+  refused: number;
+  upstream: { ok?: number; rate_limited?: number; rejected?: number; failed?: number; unreachable?: number };
+  tools: { calls: number; restored: number };
+  /** Requests per client family, from a closed vocabulary. */
+  clients?: Record<string, number>;
+}
+
+/** How the agent runs and how it is exposed — the heartbeat State's own fields. */
+export interface AgentState {
+  started_at: string;
+  /** `-a`: every value masked or put back is printed as it is. */
+  console: boolean;
+  /** `-v`: every exchange is written to traces/. */
+  tracing: boolean;
+  /** Listening beyond the loopback interface. */
+  exposed: boolean;
+  /** Provider codes routed somewhere other than the vendor's own host. */
+  rerouted?: string[];
+  /** How many values this deployment never masks. A count, never the values. */
+  allowlisted?: number;
+  /** The extension's last call to /mask, absent when none came since the start. */
+  extension_seen_at?: string;
+}
+
+export interface Snapshot {
+  /** Whether anything answered at all — Status.Answering. */
+  answering: boolean;
+  /** Where this agent listens: the page is served by it, so its own host. */
+  addr: string;
+  health: Health;
+  today: Today;
+  /**
+   * The page was opened without its one-time link and holds no control key: it
+   * draws, and nothing on it can change the agent (settings.go says why).
+   */
+  locked: boolean;
+}
+
+/** One value the detector found — POST /test's findings (internal/proxy/testjson.go). */
+export interface Finding {
+  code: string;
+  /** The category's name. */
+  label: string;
+  /** The pattern's name: what the value looked like. */
+  notation: string;
+  value: string;
+  confidence: number;
+  credential: boolean;
+  /** Keeps a bracket token under stand-ins too: a credential, or no stand-in for it. */
+  token_in_fake_mode: boolean;
+}
+
+export interface Rendering {
+  text: string;
+  /** Spans in `text` that are replacements, for highlighting. */
+  marks: { start: number; end: number; credential: boolean }[];
+  count: number;
+}
+
+export interface TestResult {
+  findings: Finding[];
+  token: Rendering;
+  fake: Rendering;
+  roundTrips: boolean;
+}
+
+/** A change the agent refused. The screens redraw from the agent after one, never from
+ * the request that failed. */
+export class Refusal extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
+/** Everything the console asks the agent, over the routes it already serves. */
+export interface AgentClient {
+  snapshot(): Promise<Snapshot>;
+  /** PUT /policy. Replaces the whole state. Resolves with what the agent applied. */
+  setPolicy(policy: Policy): Promise<Health>;
+  test(text: string): Promise<TestResult>;
+  /** PUT /today: which families the menu bar's figure leaves out. Masking is not affected. */
+  setUncounted(families: string[]): Promise<void>;
+}

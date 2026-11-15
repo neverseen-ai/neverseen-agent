@@ -35,3 +35,9 @@ __pycache__/
 # history to get them back out — on a machine where the exclude did not exist, that
 # happens again.
 plans/
+
+# Mock-ups: the HTML pages and the prototype the settings console was designed from.
+# Local to the working copy by rule — the console in console/ is the real thing, and a
+# mock-up committed is a second, stale copy of it for a reader to mistake for the product.
+maquette/
+docs/

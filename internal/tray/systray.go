@@ -119,14 +119,14 @@ func (m *menuBar) build() {
 		for {
 			select {
 			case <-settings.ClickedCh:
-				openInBrowser("http://" + m.addr + "/settings")
+				m.openSettings()
 			case <-restore.ClickedCh:
 				m.mu.Lock()
 				shown := m.shown
 				m.mu.Unlock()
 				m.apply(shown.maskEverything())
 			case <-test.ClickedCh:
-				openInBrowser("http://" + m.addr + "/test")
+				m.openTestPage()
 			case <-quit.ClickedCh:
 				systray.Quit()
 				return
@@ -151,7 +151,51 @@ func (m *menuBar) apply(want proxy.Policy) {
 		log.Printf("neverseen-tray: %v", err)
 		return
 	}
-	m.show(render(status))
+	m.show(render(withToday(context.Background(), m.addr, status)))
+}
+
+// openSettings opens the settings page with a one-time link, the only way it is served
+// with the key in it.
+//
+// On a refusal the page is opened without one rather than not at all: it reads the
+// agent's state either way and says itself how to open it with the key, where a click
+// that did nothing would say nothing.
+//
+// But not at all when another account holds the address: the browser would load that
+// account's page where this user expects their own agent's, and the menu already says
+// who holds it. Asked again before the fallback, because SettingsURL refuses some
+// requests before it reaches the listener — no key to send, an address it will not
+// send one to — and those say nothing about who holds the port.
+func (m *menuBar) openSettings() {
+	link, err := proxy.SettingsURL(context.Background(), m.addr, proxy.ReadControlKey(""), askTimeout)
+	if err != nil {
+		log.Printf("neverseen-tray: %v", err)
+		var foreign *proxy.ForeignListenerError
+		if errors.As(err, &foreign) || m.heldByAnother() {
+			return
+		}
+		link = "http://" + m.addr + "/settings"
+	}
+	openInBrowser(link)
+}
+
+// openTestPage opens /test, unless another account holds the address: what somebody
+// pastes into that page to see how it is masked would go to that account in clear.
+func (m *menuBar) openTestPage() {
+	if m.heldByAnother() {
+		return
+	}
+	openInBrowser("http://" + m.addr + "/test")
+}
+
+// heldByAnother reports whether another account holds the agent's address, which is
+// where a page must not be opened.
+func (m *menuBar) heldByAnother() bool {
+	foreign := proxy.Query(context.Background(), m.addr, askTimeout).Foreign
+	if foreign != nil {
+		log.Printf("neverseen-tray: %v", foreign)
+	}
+	return foreign != nil
 }
 
 // buildProviders creates the submenu and its pool of slots, all hidden.
@@ -216,12 +260,21 @@ func (m *menuBar) show(d display) {
 	// on the two platforms that draw exactly what they are handed.
 	systray.SetTemplateIcon(d.icon, d.icon)
 	systray.SetTooltip(d.tooltip)
+	systray.SetTitle(d.title)
 
 	for i, line := range d.lines {
 		if i >= len(m.entries) {
 			break
 		}
 		m.entries[i].SetTitle(line)
+		// Hidden when blank: render pads to lineCount because the entries are built
+		// once, and a padding line drawn is an empty row that reads as the menu having
+		// lost something — two of them while the agent is stopped.
+		if line == "" {
+			m.entries[i].Hide()
+		} else {
+			m.entries[i].Show()
+		}
 	}
 
 	// Kept under the provider lock, because "Mask everything again" reads it on the

@@ -1,8 +1,10 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -109,6 +111,22 @@ type Health struct {
 	// found SSN on, which is the regression the stored intent exists to prevent.
 	// Displayed from Groups, resent from here.
 	Off []string `json:"off,omitempty"`
+
+	// Tools is how a tool is pointed at this agent, for the providers that have a
+	// variable everybody reads — shellTools, served so the settings page draws the
+	// lines from the table `neverseen env` prints from rather than from a copy. A
+	// copy goes on handing over a pair the table dropped as wrong, and the caveat is
+	// the half a copy loses first.
+	Tools []HealthTool `json:"tools,omitempty"`
+}
+
+// HealthTool is one shellTools entry: the variable, the command and the caveat that
+// travels with them.
+type HealthTool struct {
+	Provider string `json:"provider"`
+	Variable string `json:"variable"`
+	CLI      string `json:"cli,omitempty"`
+	Caveat   string `json:"caveat,omitempty"`
 }
 
 // HealthGroup is one family of categories, as a surface needs to draw it.
@@ -185,6 +203,16 @@ type Status struct {
 
 	// Answering is whether anything replied.
 	Answering bool
+
+	// Foreign is why nothing was sent, when the listener was refused for its account
+	// — another account's, or one that could not be told (Known false). Nil when the
+	// address answered or nothing was listening. See peer.go.
+	Foreign *ForeignListenerError
+
+	// MaskedToday is how many values the agent has hidden since local midnight, or
+	// nil when it was not asked or did not say. Query leaves it nil: the count is
+	// behind the control key and /healthz is not — see QueryToday.
+	MaskedToday *int
 
 	Health
 }
@@ -289,19 +317,6 @@ func Query(ctx context.Context, addr string, timeout time.Duration) Status {
 	}
 	status := Status{Addr: addr}
 
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+addr+"/healthz", nil)
-	if err != nil {
-		return status
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return status
-	}
-	defer func() { _ = resp.Body.Close() }()
-
 	// Bounded, and read to the end either way: this runs on every new shell when
 	// `neverseen env` is wired into a profile, and a connection left half open on
 	// a machine that opens a shell every few seconds is a socket nobody reclaims.
@@ -313,8 +328,12 @@ func Query(ctx context.Context, addr string, timeout time.Duration) Status {
 	// `neverseen status` printed nothing, the menu bar drew nothing and the exit
 	// code said something was wrong, over an agent that was answering perfectly.
 	// TestHealthPayloadFitsTheQueryBound is what makes the next overrun loud.
-	body, err := io.ReadAll(io.LimitReader(resp.Body, healthMaxBytes))
-	if err != nil || resp.StatusCode != http.StatusOK {
+	code, body, err := askAgent(ctx, timeout, http.MethodGet, "http://"+addr+"/healthz", "", nil, healthMaxBytes)
+	if err != nil {
+		errors.As(err, &status.Foreign)
+		return status
+	}
+	if code != http.StatusOK {
 		return status
 	}
 
@@ -324,6 +343,41 @@ func Query(ctx context.Context, addr string, timeout time.Duration) Status {
 	// and the fields simply stay empty.
 	_ = json.Unmarshal(body, &status.Health)
 	return status
+}
+
+// askAgent sends one request to the agent and returns its status code and its answer,
+// read under bound.
+//
+// The one shape Query, SetPolicy, SettingsURL and QueryToday share — the timeout, the
+// control header, agentClient and the bounded read — so a change to one of them cannot
+// reach three and miss the fourth. An empty key sends no header; a body is JSON.
+func askAgent(ctx context.Context, timeout time.Duration, method, url, key string, body []byte, bound int64) (int, []byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	var payload io.Reader
+	if body != nil {
+		payload = bytes.NewReader(body)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, url, payload)
+	if err != nil {
+		return 0, nil, err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if key != "" {
+		req.Header.Set(controlHeader, key)
+	}
+
+	resp, err := agentClient.Do(req)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	answer, err := io.ReadAll(io.LimitReader(resp.Body, bound))
+	return resp.StatusCode, answer, err
 }
 
 // Headline is the one sentence that says what this agent is doing, for whichever
@@ -371,9 +425,26 @@ func (s Status) Write(w io.Writer) {
 	fmt.Fprintf(w, "%s\n\n", s.Headline())
 
 	switch {
+	case !s.Answering && s.Foreign != nil && !s.Foreign.Known:
+		// Not "another account": nobody knows whose it is, and saying so would send
+		// somebody to look for a colleague's agent that may not exist.
+		fmt.Fprintf(w, "Which account is listening on %s could not be told, so nothing was sent\n", s.Addr)
+		fmt.Fprintf(w, "to it. The agent reads that from /proc/net/tcp, which must be readable.\n")
+		return
+
+	case !s.Answering && s.Foreign != nil:
+		fmt.Fprintf(w, "%s is held by another account on this machine, so this account's agent\n", s.Addr)
+		fmt.Fprintf(w, "cannot listen there and nothing was sent to it. Give yours another address:\n")
+		fmt.Fprintf(w, "set %s=127.0.0.1:<port> in ~/.neverseen/.env, then restart it.\n", EnvListen)
+		return
+
+	// Directly for a new shell only: one opened while the agent ran exported its
+	// address, and so does a tool started with a one-run line, and both fail.
 	case !s.Answering:
-		fmt.Fprintf(w, "Your tools are reaching their provider directly, unmasked — which is\n")
-		fmt.Fprintf(w, "deliberate: a stopped agent leaves them working rather than broken.\n")
+		fmt.Fprintf(w, "New shells reach their provider directly, unmasked — which is deliberate:\n")
+		fmt.Fprintf(w, "a stopped agent leaves them working rather than broken. A shell opened\n")
+		fmt.Fprintf(w, "while it was running, and a tool started with a one-run line, still point\n")
+		fmt.Fprintf(w, "here and fail until it is back.\n")
 		fmt.Fprintf(w, "Start it with `neverseen proxy`, or `./install.sh --restart`.\n")
 		return
 

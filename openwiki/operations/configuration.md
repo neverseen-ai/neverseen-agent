@@ -67,18 +67,19 @@ neverseen scan [file]   report the sensitive values in a file, or in stdin
 neverseen status        report whether the agent is masking, and what
 neverseen mask          list what is masked, and switch a category or family off
 neverseen key           print the control key, for the browser extension
+neverseen settings      print a one-time link to the settings page
 neverseen env [--force] print the shell exports that point a tool at the agent
 neverseen replay <dir>  rebuild the heartbeat batch from the traces in a
                          directory and print it; nothing is sent or queued
 neverseen version       print the version
 ```
 
-`run` (`main.go:115`) is `main`'s body with its inputs and output passed in, so every command
+`run` (`main.go:116`) is `main`'s body with its inputs and output passed in, so every command
 is testable without a subprocess.
 
 ### `proxy`
 
-`runProxy` (`main.go:211`) → `proxy.FromEnv(logger, opts)` → `serveAgent`. The graceful stop is not politeness:
+`runProxy` (`main.go:214`) → `proxy.FromEnv(logger, opts)` → `serveAgent`. The graceful stop is not politeness:
 a request cut off mid-flight has been masked and stored but never answered, so the caller
 loses the turn and the mapping keeps values nothing will ask for again. `serveAgent` is
 a function of its own because it was once shared with the `audit` command, so the two could
@@ -133,7 +134,7 @@ ordinary start is one nobody reads by the time it matters.
 
 ### `status` — what is being *applied*, not that the process is up
 
-`runStatus` (`main.go:163`) calls `proxy.Query` and exits non-zero unless
+`runStatus` (`main.go:164`) calls `proxy.Query` and exits non-zero unless
 `Status.Level()` is `LevelFull`. **Answering is not enough, and neither is masking:** an agent with no locale selected is
 up, healthy and recognises almost nothing, and a check that called that healthy would be the
 check somebody trusted while their traffic went out in clear
@@ -141,9 +142,9 @@ check somebody trusted while their traffic went out in clear
 masking everything except the thing somebody switched off, which zero must not mean either.
 That state's headline carries the count ("with 2 categories in clear") and the lines under
 it the names: a name is what tells somebody whether the category they care about is among
-them (`Status.Write`, `status.go:277-311`).
+them (`Status.Write`, `status.go:424-465`).
 
-The non-zero exit uses `errQuiet` (`main.go:98`) — exit 1 with no extra message — because the
+The non-zero exit uses `errQuiet` (`main.go:99`) — exit 1 with no extra message — because the
 command's whole job is to report a state, and printing the same diagnosis again on stderr
 prefixed as an error would make the ordinary case of a stopped agent read like a malfunction.
 
@@ -347,12 +348,22 @@ whole input, and a page accepting a POST should not accept a megabyte of adversa
 
 It is also how the two body-shape bugs and the locale stand-in bug were found.
 
+**Sent JSON, the same route answers the console's Try it screen** (`testjson.go`): the same
+two runs over the same detector, as data — each column's text, its count, the replacements
+it carries, the round trip, and the findings. The replacements travel as **strings, never
+offsets**: Go counts bytes and the page counts UTF-16 units, so one accent ahead of a
+replacement put every highlight after it out of place. It leaves out the form's simulation —
+the console shows what this agent does, not what another configuration would — and holds the
+text to the same 32 KiB (`TestTestAnswersJSONInBothModes`, `TestTestJSONRefusesWhatTheFormWould`).
+
 ## `/settings` — where the configuration actually happens
 
 While the agent runs, `http://127.0.0.1:9787/settings` is where the four things that can
 change under a running agent are changed: which categories are masked, which countries are
 loaded, the substitution mode and the secret level. It is what the menu bar opens, and what
-the menu bar stopped being.
+the menu bar stopped being. It is opened with a one-time link — from the menu bar's
+*Settings…*, or printed by `neverseen settings` — because typed by hand it carries no key and
+changes nothing (below).
 
 **It exists because the menu bar was the wrong shape for the job.** `fyne.io/systray` gives
 titles and ticks and nothing else: no radio group, no mixed tick, no room for the sentence
@@ -367,6 +378,35 @@ else can.
 holds none: no catalogue, no policy, no mappings. It draws itself from `/healthz` and writes
 through `PUT /policy` — the one route that changes what the agent does, and the one writer
 every surface goes through.
+
+### It is the console
+
+The page is a React application, `console/`: an overview (what the agent is doing, the day's
+count from `GET /today` with the families the menu bar counts — chosen here, applied by the
+agent through `PUT /today` — and the running configuration), *What is masked* (countries, personal
+data, secrets, substitution), *Try it* (over `POST /test` in JSON), *Connect a tool* (the lines
+from `Health.Tools`, which is `shellTools`), and *Service* (the version, the commands, the
+files under `~/.neverseen`). In English or French, light or dark.
+
+**Built into two files and committed.** `make console` writes `console.js` and `console.css`
+into `internal/proxy/console/`, and `settings.go` embeds them and inlines both into the one
+response the page always was — still no second route and nothing to exempt from the policy
+below. Committed so `go build` needs no Node; that makes them a second copy of the source, so
+the `console` CI job rebuilds them from a clean checkout and fails on any difference. Inlined
+*as data* through `template.JS` and `template.CSS`, which is safe because both are build-time
+assets of the binary — and a file carrying its own closing tag would still break out of its
+element, which `TestTheConsoleCannotCloseItsOwnElement` holds;
+`TestTheSettingsPageCarriesTheConsoleVerbatim` holds that `html/template` inserts them byte for
+byte.
+
+**A block the agent serves no data for is left out, never drawn from a mock.** The overview's
+day — the count by family, the traffic, the warnings about how the agent runs — and the
+extension's last call come from `GET /today`, behind the key, so a page opened without it
+draws none of them. What the design the console came from also had and the agent does not
+serve — the hours, whether the login service and the icon are installed, a team policy — is
+left out, with a `TODO` where it would go. The countries are one list rather than one section
+per continent: forty-one of the forty-two are European. Without
+a ticket the page draws everything and changes nothing, and says so above every screen.
 
 ### The control key is in the page, and that is what shapes the route
 
@@ -390,9 +430,53 @@ Every one of those tests asserts the refusal **carries no key**, not merely that
 403. A guard that ran after the template did would still answer 403 with the secret in the
 body, and a test reading the status alone would pass over it.
 
-What this does *not* widen: a local process of this user could already read
-`~/.neverseen/control.key`, which is 0600 and theirs. Against that reader the route gives away
-nothing new. Against every other reader the two guards above are the whole answer.
+### Neither guard tells one account from another, so the key needs a ticket
+
+Both guards ask where a request came from and what name it used, and **another account on
+the same machine passes both**: TCP on the loopback interface carries no identity, so
+`curl -H 'Host: localhost' http://127.0.0.1:9787/settings` from somebody else's shell was
+handed the key — and with it `PUT /policy` to switch masking off for good, and `/unmask` to
+read the owner's session back. This is the defect NetBird's daemon carried for three years
+(GHSA-qcpp-8vwj-hhwr), in a smaller room: the agent holds no more rights than its user, so it
+is a leak between accounts rather than an escalation.
+
+So **the key is in the page only when the request carries a ticket**, and a ticket is minted
+by `POST /settings`, which needs the key. Whoever opens the page with the key in it has proved
+they can read `~/.neverseen/control.key` — 0600 and the owner's. The menu bar mints one and
+opens the link; `neverseen settings` mints one and prints it. `proxy.SettingsURL` is the one
+asker, as `SetPolicy` is the one writer. Without a ticket the page is served all the same,
+reads `/healthz` like any surface, and says where to open it from; its controls are greyed
+(`TestSettingsPageWithoutATicketCarriesNoKey`).
+
+- **A ticket works once, and for a minute** (`ticketTTL`). The menu bar hands the link to
+  `open` or `xdg-open`, and another account can read a command line. Spent on first use, a
+  copy read off the process list is worthless once the owner's browser has loaded it — and if
+  it is read first, the owner's own page is the one refused, which they see
+  (`TestATicketOpensTheSettingsPageWithTheKeyOnce`, `TestAnExpiredTicketCarriesNoKey`).
+- **A reload keeps working.** The page keeps the key in its tab's `sessionStorage`, which
+  belongs to this origin and this tab alone, and strips the spent ticket from the address bar.
+  A key the agent serves wins over the one the tab kept (`keyFrom` in
+  `console/src/agent/decisions.ts`): the agent may have been given a new key since.
+- **`neverseen settings` prints the link rather than opening it**: nobody else reads that
+  terminal, and it is the way to the page wherever there is no menu bar — a GNOME desktop
+  without the extension, a server reached through an SSH tunnel.
+- The ticket is compared in constant time, for the reason the key is.
+
+On Linux that copy is worthless whoever reads it first: it is presented by another account,
+and `guardAccount` refuses the account before the ticket is looked at
+([request path](../architecture/request-path.md)). `TODO` on `settings.go` names the ceiling
+on macOS and Windows: another account polling the process list can still race the browser
+to a ticket. The upgrade is the one Jupyter made — write the link into
+a 0600 file and open the file, so no command line carries it — and it was not taken because
+Ubuntu's snap Firefox cannot read a hidden directory under `$HOME`.
+
+**What every route must do without the key** is asked of all of them at once
+(`TestEveryRouteRefusesACallerWithoutTheKey`): none hands the key over, and each one not named
+in `openRoutes`, with its reason, refuses. Authentication is something each handler has to
+remember to ask for; a route added to `reservedRoutes` without being classified fails there.
+
+What none of this changes: a local process of *this* user can read the key file, and the
+route gives it nothing new.
 
 An agent with no key **refuses the page** rather than serving one whose every control fails on
 submission with nothing saying why — the same direction `PUT /policy` takes with no key. The
@@ -410,26 +494,26 @@ decision: the countries settle which switches the rest of the panel has to offer
 and a category no loaded locale can emit is not drawn. Splitting them made a reader
 choose a country on one tab and discover what it had done on another.
 
-**The secret level lives with the credentials**, above the list, because it grades
-**exactly one of its entries** — `SECRET_GENERIC`, "Secret in an assignment", the
-catch-all for a value with no known prefix — and nothing else. On a tab of its own the
-setting read as a dial over all hundred and thirty-one; beside the list it can point at
-the line it moves. The examples of prefixes in its lede are checked against what the
-list actually shows (`dp.pt.`, `A3-`, `AKCp`): the big vendors' patterns carry no prefix
-in their notation, so citing `ghp_` would have sent a reader to a find that returns
-nothing.
+**The secret level lives with the credentials**, because it grades **exactly one of
+their categories** — `SECRET_GENERIC`, "Secret in an assignment", the catch-all for a value
+with no known prefix — and nothing else. On a tab of its own the setting read as a dial over
+all hundred and thirty-one. The tab opens on how a secret is found, in two ways side by
+side: **by its shape**, a vendor's prefix such as `ghp_` or `sk-ant-`, always masked; **by
+its name**, `password = …`, graded by the level below. Each level shows the same three
+lines and which of them it replaces, and the five notations the level grades are listed
+under it — not in *Always masked*, where they were drawn in another colour and contradicted
+the heading. The prefixes in that explanation are the ones a reader knows, not ones the
+list shows: the big vendors' notations carry no prefix, so the search finds them by name
+(`GitHub`), not by `ghp_`.
 
 Blocks inside a panel carry sub-headings — that is the seam inside one tab, not the
 heading the tab strip already carries.
 
-The **hash still selects a panel** (`#credentials`), because the page answered to those
-anchors when the sections were a column and a bookmark outlives a layout — `#countries` and
-`#secrets`, which were panels before their merges, are aliased to the ones holding them
-rather than falling back to the first tab. A click
-*writes* the hash rather than navigating to it, so the panel does not scroll itself
-under the sticky header and a reload stays where the reader was. A redraw rewrites the
-inside of each panel and never the panels, so the selected tab survives every poll and
-every change.
+The **hash selects the screen and the tab** (`#/masked?tab=credentials`), so a reload
+stays where the reader was and a link lands where it points. The page before the console
+answered to a panel in its hash (`#credentials`), and a bookmark outlives a layout: each of
+those names — `#countries` and `#secrets` too, panels before their merges — is rewritten to
+the tab holding it now (`routeForPanel`) rather than falling back to the overview.
 
 ### Countries come first, and say what they find
 
@@ -532,35 +616,36 @@ category no loaded locale can emit keeps whatever intent it had.
 
 ### What decides is kept out of what draws
 
-`internal/proxy/settings_decisions.js` holds the page's decisions — the whole-state
-rule (`policyFrom`), the set arithmetic behind a switch and behind the whole-section
-control (`toggledSet`, `bulkSet`, `switchableOf`, `masterState`), the two headings
-(`splitGroups`) and the panel a hash asks for (`panelFor`). `settings.html` keeps only
-what draws.
+`console/src/agent/decisions.ts` holds the page's decisions — the whole-state rule
+(`policyFrom`), the set arithmetic behind a switch and behind the whole-section control
+(`toggledSet`, `bulkSet`, `switchableOf`, `masterState`), the two headings (`splitGroups`),
+the key a tab writes with (`keyFrom`) and the tab an old panel link names (`routeForPanel`).
+The screens keep only what draws, and the sentence a decision is worded with is theirs:
+`masterState` returns counts, not a label.
 
 It is `internal/tray`'s split one storey up, and it is here for the reason that one
 exists: **a browser cannot be asserted on in CI any more than a menu bar can**. `plan.go`
 held exactly these rules for the menu, and deleting it without this file would have moved
-a hundred tested lines into JavaScript nothing runs.
-`internal/proxy/settings_decisions.test.mjs` holds them to twelve cases under
-`node --test` — no npm project, no dependency — wired into `make test` and into the Go CI
-job, because a test in no target is a test nobody runs.
+a hundred tested lines into JavaScript nothing runs. `decisions.test.ts` holds them to
+fifteen cases under `node --test --experimental-strip-types`, wired into `make test` and
+into the `console` CI job, because a test in no target is a test nobody runs.
 
-**Inlined rather than served at a path of its own**, so the page stays one response with
-one inline script: no second reserved route, and nothing to exempt from the policy below.
-The guarded `if (typeof module !== "undefined")` at its foot is inert in a browser and is
-what lets the test load the same file the page is handed.
+**The decisions import types only**, which Node strips, so the test runs on a clean
+checkout with no `npm ci` — and a runtime import would pull the browser in with it.
 
 ### The page is served under a policy of its own
 
 `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; script-src
-'unsafe-inline'; connect-src 'self'; form-action 'none'; base-uri 'none'`, plus
+'unsafe-inline'; connect-src 'self'; form-action 'none'; base-uri 'none'; frame-ancestors
+'none'`, plus
 `X-Content-Type-Options: nosniff`. `connect-src 'self'` is the load-bearing clause: it
 makes the control key unsendable anywhere but back to this agent. There is no injection
-point today — every agent-supplied string reaches the DOM through `textContent` and the
-key is escaped by `html/template` — and this is what keeps that true of a string somebody
-adds later. The test asserts the two clauses **by name**, since a policy that lost either
-would still look like one.
+point today — every agent-supplied string reaches the DOM as text through React, which
+writes no markup from a string, and the key is escaped by `html/template` — and this is
+what keeps that true of a string somebody adds later. `frame-ancestors 'none'` is there
+because `default-src` does not cover it: framed by a site opened later in the same tab,
+the page's switches could be clicked through a decoy. The test asserts the three clauses
+**by name**, since a policy that lost one would still look like one.
 
 ### What the page must get right
 
@@ -587,7 +672,8 @@ would still look like one.
   category somebody had switched off, and the stored file would make the loss permanent. This
   is the same rule every surface follows, and the reason `Off` is served beside `Groups`.
 - **Every change carries the whole state**, because the route replaces rather than patches.
-- `/settings` is a reserved route, so a provider cannot take it.
+- `/settings` is a reserved route, so a provider cannot take it. `POST /settings` mints a
+  ticket, with the key; `GET` serves the page, with the key in it only for a live ticket.
 
 ## `-a` and `-v`: the one place a real value is printed or kept
 

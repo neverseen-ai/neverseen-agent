@@ -72,6 +72,11 @@ type Pass struct {
 	// security officer is looking at. It is counted here rather than derived
 	// from minted, which only ever holds first sightings.
 	counts map[pii.Category]int
+
+	// mintedCounts is minted counted per category: first sightings, so a value the
+	// session already named is not counted again. It is what the menu bar's
+	// day counts by family (internal/proxy/today.go).
+	mintedCounts map[pii.Category]int
 }
 
 // NewPass starts a pass seeded with what a session already holds.
@@ -82,6 +87,8 @@ func (d *Detector) NewPass(known map[string]string) *Pass {
 		byValue: make(map[string]string, len(known)),
 		minted:  make(map[string]string),
 		counts:  make(map[pii.Category]int),
+
+		mintedCounts: make(map[pii.Category]int),
 	}
 	for masked, original := range known {
 		p.byValue[original] = masked
@@ -91,6 +98,9 @@ func (d *Detector) NewPass(known map[string]string) *Pass {
 
 // Minted returns what this pass added to the mapping.
 func (p *Pass) Minted() map[string]string { return p.minted }
+
+// MintedCounts returns how many values this pass added to the mapping, per category.
+func (p *Pass) MintedCounts() map[pii.Category]int { return p.mintedCounts }
 
 // Counts returns how many values this pass replaced, per category.
 func (p *Pass) Counts() map[pii.Category]int { return p.counts }
@@ -117,6 +127,7 @@ func (p *Pass) mask(cat pii.Category, locale, original string) string {
 
 	p.byValue[original] = masked
 	p.minted[masked] = original
+	p.mintedCounts[cat]++
 	if p.Reveal != nil {
 		p.Reveal(original, masked)
 	}

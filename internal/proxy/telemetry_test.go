@@ -474,6 +474,30 @@ func TestHowTheProviderAnsweredIsCounted(t *testing.T) {
 	}
 }
 
+// An answer whose body breaks off is still an answer. ReverseProxy hands unmask's
+// error to the ErrorHandler, which counted the exchange a second time, as no answer
+// at all: one request, an OK and an outage on the fleet view.
+func TestAnAnswerThatBreaksOffIsCountedOnce(t *testing.T) {
+	up := newUpstream(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Length", "100")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, `{"c":`)
+		w.(http.Flusher).Flush()
+		panic(http.ErrAbortHandler)
+	})
+	agent, recorder := newCountingAgent(t, up, nil)
+
+	if got := post(t, agent, "/anthropic/v1/messages", "s", `{"c":"hi"}`); got.status != http.StatusBadGateway {
+		t.Fatalf("status %d, want 502", got.status)
+	}
+
+	c, _ := recorder.Take(time.Now())
+	if want := (contract.Upstream{OK: 1}); c.Upstream != want {
+		t.Errorf("upstream = %+v, want %+v", c.Upstream, want)
+	}
+}
+
 // A tool call is counted with what it is a call to, what it runs, and whether a
 // value the agent masked on the way out was put back into it — the number of times
 // personal data reached an action on the workstation. Streamed and buffered both,

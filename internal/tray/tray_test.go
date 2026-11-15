@@ -115,6 +115,80 @@ func TestTheMenuSaysWhatIsHappeningToTheTraffic(t *testing.T) {
 	}
 }
 
+// A port held by another account is not an agent to start: started, it cannot bind.
+// The menu said "Start it with: neverseen proxy" while `neverseen status` named the
+// account and the way out.
+func TestTheMenuSaysWhenAnotherAccountHoldsThePort(t *testing.T) {
+	cases := []struct {
+		name    string
+		foreign *proxy.ForeignListenerError
+		says    string
+	}{
+		{"another account", &proxy.ForeignListenerError{Known: true, UID: 1001}, proxy.EnvListen},
+		{"an account that cannot be told", &proxy.ForeignListenerError{}, "could not be told"},
+	}
+	for _, c := range cases {
+		got := render(proxy.Status{Addr: "127.0.0.1:9787", Foreign: c.foreign})
+		joined := strings.Join(got.lines, "\n")
+		if !strings.Contains(joined, c.says) || strings.Contains(joined, "neverseen proxy") {
+			t.Errorf("%s: the menu should say %q and not to start the agent:\n%s", c.name, c.says, joined)
+		}
+		if len(got.lines) != lineCount {
+			t.Errorf("%s: %d lines, want %d", c.name, len(got.lines), lineCount)
+		}
+		if !bytes.Equal(got.icon, absentIcon) {
+			t.Errorf("%s: this account's agent is not there, and the icon says otherwise", c.name)
+		}
+	}
+}
+
+// The day's count is shown in all three places a platform may draw it — beside the
+// icon, in the tooltip, under the verdict — and nowhere when the agent did not give
+// one: a zero there would be a figure nobody measured.
+func TestTheDaysCountIsShownOnlyWhenTheAgentGaveOne(t *testing.T) {
+	health := proxy.Health{Version: "1.4.2", Locales: []string{"fr"}, Substitution: "token"}
+	n, one := 37, 1
+
+	told := render(proxy.Status{Addr: "127.0.0.1:9787", Answering: true, MaskedToday: &n, Health: health})
+	if told.title != "37" {
+		t.Errorf("the title beside the icon is %q, want 37", told.title)
+	}
+	if told.lines[1] != "37 values masked today" {
+		t.Errorf("the line under the verdict is %q", told.lines[1])
+	}
+	if !strings.Contains(told.tooltip, "37 values masked today") {
+		t.Errorf("the tooltip, the only place Windows shows it, has no count: %q", told.tooltip)
+	}
+	if len(told.lines) != lineCount {
+		t.Fatalf("%d lines, want %d", len(told.lines), lineCount)
+	}
+
+	single := render(proxy.Status{Addr: "127.0.0.1:9787", Answering: true, MaskedToday: &one, Health: health})
+	if single.lines[1] != "1 value masked today" {
+		t.Errorf("one value reads %q", single.lines[1])
+	}
+
+	for name, s := range map[string]proxy.Status{
+		"the agent did not say": {Addr: "127.0.0.1:9787", Answering: true, Health: health},
+		// A count left over from before the agent stopped is not today's count.
+		"the agent is not answering": {Addr: "127.0.0.1:9787", MaskedToday: &n},
+	} {
+		t.Run(name, func(t *testing.T) {
+			d := render(s)
+			if d.title != "" {
+				t.Errorf("the title is %q, want nothing", d.title)
+			}
+			if strings.Contains(strings.Join(d.lines, "\n")+d.tooltip, "today") {
+				t.Errorf("a count is shown that the agent did not give:\n%s\n%s",
+					strings.Join(d.lines, "\n"), d.tooltip)
+			}
+			if len(d.lines) != lineCount {
+				t.Fatalf("%d lines, want %d", len(d.lines), lineCount)
+			}
+		})
+	}
+}
+
 // The generated assets are what they claim to be, and they are two pictures.
 // Committed assets are the kind of thing a copy-and-paste leaves identical, and
 // two identical icons would be an indicator that never changes.
