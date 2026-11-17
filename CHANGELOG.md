@@ -5,6 +5,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); eac
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-17
+
 ### Security
 
 - On Linux, another account on the same machine can no longer send requests through the agent and read a restored answer, and no surface hands the control key to an agent another account started (563650d, 4bb4da5)
@@ -22,12 +24,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); eac
 - `neverseen settings` prints the link that opens the settings page (563650d)
 - The settings page enrols a running agent with a supervision backend, with no edit of `~/.neverseen/.env` and no restart, and says why when the token is refused (4bb4da5)
 - The settings page shows the tokens each model was sent and answered, for the day and by hour (4bb4da5)
+- The console has an rtk savings screen: what rtk cut from the output of the commands your coding agents ran, day by day, read from rtk's daily totals and never from its history of command lines; on a workstation without rtk it says what rtk is for and how to install it (9b83446)
+- The console has a Neverseen Cloud screen: where the agent reports, as whom and since when, how many reports wait and when the next attempt is made, the next report shown exactly as it would be sent, and a button to send the waiting ones now (9b83446)
 
 ### Changed
 
 - The settings page is a new console, with a screen to try a text in both substitution modes and the day's replacements drawn by hour and by category (563650d, 2f5f079)
 - The day's count is no longer on `/healthz`: it is served behind the control key, counts a value once per session rather than on every turn, and the settings page chooses which families the menu bar counts (563650d)
 - A conversation keeps its placeholders for three hours of silence rather than thirty minutes (da231dc)
+- The command that prints the link to the settings page is `neverseen console`, and the menu bar's entry is "Open the console…"; `neverseen settings` still works (9b83446)
+- Enrolling a running agent is done from the console's Neverseen Cloud screen, no longer from Service (9b83446)
+
+### Removed
+
+- The menu bar no longer has "Mask everything again": the console and `neverseen mask --reset` do it (9b83446)
 
 ### Fixed
 
