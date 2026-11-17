@@ -92,12 +92,15 @@ and it is deliberately not repeated here.
   name is looked up **and claimed in one step** under the vault's lock — two steps let two
   requests in flight give one value two names. Keyed by an HMAC, never the value; swept a
   week after its session's last request (`namesTTL`), because a session can be one
-  request; dropped by `Forget` with the mapping.
+  request, **but never while a request is between its `Name` and its `Save`** (`claimed`)
+  — swept from under it, its next value was minted at 1 again, on a name it held for
+  another; dropped by `Forget` with the mapping.
   `TestATokenTheModelRemembersSurvivesAnExpiredMapping`,
-  `TestConcurrentClaimsGiveOneValueOneName`.
+  `TestConcurrentClaimsGiveOneValueOneName`, `TestASweepDoesNotTakeASessionFromUnderARequest`.
 - **A name the body already carries as text is never minted** (`Pass.Carried`, set by
-  `Server.newPass` for both routes; skipped in `vault.Name` and on the detector's own
-  counter). The model writes placeholders in the shape it sees, ahead of the
+  `Server.newPass` for both routes through `carriedIn`, which collects a body's tokens
+  once rather than searching it per name under the vault's lock; skipped by one loop in
+  `Pass.mask`, over the session's numbering or the detector's own). The model writes placeholders in the shape it sees, ahead of the
   numbering, and the history sends them back: minted, one string stands for two
   things and the placeholder is restored as the value.
   `TestAMintedNameIsNeverOneTheBodyAlreadyCarries`.
@@ -294,11 +297,15 @@ and it is deliberately not repeated here.
   and a field it carried would be lost by the click that forgot it.
   `TestTodayLeavesOutTheFamiliesNotCounted`, `TestPutTodayChoosesWhatTheMenuBarCounts`.
   The same answer carries, for the settings page, **the day's traffic** (`dayTraffic`, kept
-  apart from the heartbeat's recorder, which every report empties) **and how the agent
-  runs** (`agentState`: the heartbeat State's exposure fields, the start, the extension's
-  last call) — behind the key, because whether `-a` or `-v` is on tells any process where
-  to look. `todayMaxBytes` bounds the whole answer, and `TestTodayReplyFitsTheQueryBound`
-  fails at half of it: cut short, the menu bar's figure no longer parses.
+  apart from the heartbeat's recorder, which every report empties), **each model's tokens**
+  (`modelTokens`, fed by `usageSink` beside the recorder: raw counts, never a cost; listed
+  in the order first seen, so a model keeps its colour, and past `maxTokenModels` summed
+  under Other, because the model id is the provider's and the set is open) **and how the
+  agent runs** (`agentState`: the heartbeat State's exposure fields, the start, the
+  extension's last call) — behind the key, because whether `-a` or `-v` is on tells any
+  process where to look. `todayMaxBytes` bounds the whole answer, and
+  `TestTodayReplyFitsTheQueryBound` fails at half of it: cut short, the menu bar's figure
+  no longer parses.
 - **The menu bar writes once — "Mask everything again" — and it carries the whole
   state.** The route replaces rather than patches, so a request carrying nothing but the
   empty set would switch off, from an entry that says "mask everything again", the mode,
@@ -342,7 +349,8 @@ and it is deliberately not repeated here.
 ### The browser extension — `openwiki/architecture/browser-extension.md`
 
 - **The extension holds no engine** — no catalogue, no policy, no mappings, no
-  detector. It calls `POST /mask` and `POST /unmask`, each after `POST /prove`.
+  detector. It calls `POST /mask` and `POST /unmask`, each after a `POST /prove` at most
+  two seconds old.
 - **It lives in this repository because the API is a contract.**
   `extension/testdata/contract.json` is replayed by both sides. Regenerate with
   `make contract-update`, never casually.
@@ -353,9 +361,11 @@ and it is deliberately not repeated here.
 - **Nothing goes to a listener that has not proved it holds the key** (`POST /prove`,
   open): the extension cannot ask the kernel who listens, so it sends a nonce first and
   goes on only on the HMAC, under the key, of that nonce and **the port the agent's socket
-  reached — never the `Host`**, which a relay writes. A check then a send: a `TODO:` names
-  native messaging. `TestProveIsBoundToThePortTheRequestReached`, and `contract.test.ts`
-  asserts a failed proof is sent nothing after it.
+  reached — never the `Host`**, which a relay writes. A proof stands two seconds
+  (`PROOF_STANDS_MS`), so a streamed answer is not a second round trip per event, and any
+  failure drops it. A check then a send: a `TODO:` names native messaging.
+  `TestProveIsBoundToThePortTheRequestReached`, and `contract.test.ts` asserts a failed
+  proof is sent nothing after it.
 - **`/unmask` is stateless: the tail travels with the client**, held back with
   `detector.TailLen`. `final: true` is the protocol's explicit end.
 - **One shared auth helper** (`Server.authorised`), constant-time. **`/unmask` is
@@ -409,7 +419,7 @@ and it is deliberately not repeated here.
   (`rtkTally`): the summary falls when rtk purges past ninety days, and the history
   is command lines. Spawned from `collect` before the window is dated — never on the
   snapshot or the way out — with a stripped environment, and wired in
-  `reporterFromEnv` only. **`State.RTK` is a `*bool`: nil is "not checked", never
+  `superviseFromEnv` only. **`State.RTK` is a `*bool`: nil is "not checked", never
   "absent"**, and `true` means rtk *answered*, not that a file called rtk exists.
 - **A map keyed on something the agent observes is keyed on a closed vocabulary, and
   the rest is `Other`** (`pkg/telemetry/vocabulary.go`). The recorder re-checks every
@@ -425,6 +435,20 @@ and it is deliberately not repeated here.
   `Rerouted`, `Allowlisted`.
 - **`neverseen replay` is read-only**, and the mapping it decides `Restored` against
   is the trace's own (`recoverMapping`).
+- **The settings page enrols a running agent, and it is the only thing that gives one a
+  reporter after start-up** (`POST /enrol`, behind the control key; `supervision`,
+  `internal/proxy/supervision.go`). Two edits of `.env` and a restart had a refused token
+  as a line in a log; here it is a sentence in front of whoever holds the token. The
+  reporter is stored **only once the trade succeeded**, so a refusal leaves no reporter
+  at all. **The token is presented once and dropped** — never stored, never logged — and
+  not under the request's context: a tab closed mid-trade would leave a spent token and
+  no identity. Where the agent reports is kept in `supervision.json` beside the policy
+  file and read **after** the environment, which goes on deciding for an install it
+  configured. **What was counted before the enrolment is not reported** (`fresh`). An
+  enrolled agent is shown its state and no form: leaving a backend is not a button.
+  `TestTheSettingsPageEnrolsARunningAgent`,
+  `TestAnEnrolmentElsewhereThanTheConfiguredBackendIsRefused`,
+  `TestEnrolFromOutsideTheLoopReportsAtOnce`.
 
 ### Distribution — `openwiki/operations/distribution.md`
 

@@ -6,7 +6,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"slices"
 	"strings"
 	"time"
 
@@ -82,9 +81,8 @@ func (s *Server) handleMask(w http.ResponseWriter, r *http.Request) {
 	// to be: /mask and /unmask for one conversation must name the same session, or
 	// the expansion finds nothing.
 	session := sessionOf(r)
-	pass := s.newPass(session, func(name string) bool {
-		return slices.ContainsFunc(req.Texts, func(text string) bool { return strings.Contains(text, name) })
-	})
+	// Joined on a byte no name holds, so a name is never found across two fields.
+	pass := s.newPass(session, carriedIn([]byte(strings.Join(req.Texts, "\x00"))))
 
 	out := make([]string, len(req.Texts))
 	count := 0

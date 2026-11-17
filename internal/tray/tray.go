@@ -287,7 +287,13 @@ func plural(n int, one, many string) string {
 //
 // ask is passed in rather than called directly so the loop can be driven in a test
 // without a listening agent.
-func watch(ctx context.Context, v view, ask func() proxy.Status, every time.Duration) {
+//
+// now asks for a poll at once, and is how a click's answer reaches the screen: through
+// this loop, never straight to the view, so what is drawn and what the loop compares
+// with stay one value. A click drawn beside it left the loop comparing with a display
+// no longer shown, and a later change back to that one was never drawn — the menu said
+// "Masking" while two categories went out in clear.
+func watch(ctx context.Context, v view, ask func() proxy.Status, every time.Duration, now <-chan struct{}) {
 	var shown display
 
 	apply := func() {
@@ -310,6 +316,8 @@ func watch(ctx context.Context, v view, ask func() proxy.Status, every time.Dura
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			apply()
+		case <-now:
 			apply()
 		}
 	}

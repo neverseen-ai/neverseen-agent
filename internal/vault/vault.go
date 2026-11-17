@@ -87,6 +87,14 @@ type Vault struct {
 	active map[string]time.Time
 	swept  time.Time
 
+	// claimed is when each session last asked Name, kept until its Save dates it in
+	// active: a request runs from its first claim to its Save, and a sweep run in
+	// between by another session's Save took this one's numbering and names from under
+	// it. The request's next mint then started again at 1, on the name it had just been
+	// handed back for another value, and the answer naming one was restored as the
+	// other.
+	claimed map[string]time.Time
+
 	// highest is each session's numbering: prefix → the last index it handed out.
 	// See next. written receives it whenever it changes in a way a restart must
 	// not lose, and dirty says one has happened since it was last handed over.
@@ -179,7 +187,7 @@ func New(store Store, key []byte, ttl time.Duration) (*Vault, error) {
 	return &Vault{
 		store: store, aead: aead, ttl: ttl, mark: mark,
 		names: make(map[string]name), active: make(map[string]time.Time),
-		highest: make(map[string]map[string]int64),
+		claimed: make(map[string]time.Time), highest: make(map[string]map[string]int64),
 	}, nil
 }
 
@@ -236,6 +244,7 @@ func (v *Vault) Save(session string, entries map[string]string) error {
 		v.dirty = true
 	}
 	v.active[session] = now
+	delete(v.claimed, session)
 	v.sweep(now)
 	v.write()
 	return nil
@@ -266,13 +275,14 @@ func (v *Vault) Save(session string, entries map[string]string) error {
 // model is still using. It also keeps the prefix a provider caches the same across
 // a pause, which a renumbering broke from the first value it renamed.
 //
-// render runs under the lock; it is the substitution mode applied to an index, and
-// takes no lock of its own. It reports false for a name the text being masked already
-// carries (detector.Pass.Carried), and that index is skipped for good: the numbering
-// only moves forward, so the session never comes back to it.
-func (v *Vault) Name(session, original, prefix string, render func(index int64) (string, bool)) string {
+// mint runs under the lock and takes no lock of its own: handed the session's indices
+// for prefix, it renders the first one that names nothing the text being masked
+// already carries (detector.Pass.mask). An index it passes over is spent for good:
+// the numbering only moves forward, so the session never comes back to it.
+func (v *Vault) Name(session, original, prefix string, mint func(next func() int64) string) string {
 	v.mu.Lock()
 	defer v.mu.Unlock()
+	v.claimed[session] = time.Now()
 	fingerprint := v.fingerprint(session, original)
 	if n, ok := v.names[fingerprint]; ok {
 		return n.masked
@@ -285,10 +295,7 @@ func (v *Vault) Name(session, original, prefix string, render func(index int64) 
 	if _, ok := v.active[session]; !ok {
 		v.active[session] = time.Now()
 	}
-	var masked string
-	for ok := false; !ok; {
-		masked, ok = render(v.next(session, prefix))
-	}
+	masked := mint(func() int64 { return v.next(session, prefix) })
 	v.names[fingerprint] = name{masked: masked, session: session}
 	return masked
 }
@@ -394,8 +401,8 @@ func (v *Vault) write() {
 //
 // The numbering goes with the names because both answer one question — what has
 // this conversation been told — and a session idle for a week is taken to have
-// ended. Driven by active, which Name dates on a session's first claim, so a session
-// whose first request is still between Name and Save is not swept mid-request.
+// ended. Driven by active, and never for a session in claimed: a request still between
+// its Name and its Save is not swept from under, whatever its session's last date.
 //
 // On a write rather than on a timer, as Memory.Merge purges its sessions: a process
 // that keeps writing keeps the map bounded, and one that has stopped has nothing to
@@ -406,7 +413,17 @@ func (v *Vault) sweep(now time.Time) {
 		return
 	}
 	v.swept = now
+	// A claim with no Save after it for an hour is a request that failed: no request
+	// takes that long, and kept, it would protect its session for ever.
+	for session, at := range v.claimed {
+		if now.Sub(at) > time.Hour {
+			delete(v.claimed, session)
+		}
+	}
 	for session, last := range v.active {
+		if _, inFlight := v.claimed[session]; inFlight {
+			continue
+		}
 		if now.Sub(last) > namesTTL {
 			delete(v.active, session)
 			if _, numbered := v.highest[session]; numbered {
@@ -416,7 +433,8 @@ func (v *Vault) sweep(now time.Time) {
 		}
 	}
 	for fingerprint, n := range v.names {
-		if _, ok := v.active[n.session]; !ok {
+		_, live := v.active[n.session]
+		if _, inFlight := v.claimed[n.session]; !live && !inFlight {
 			delete(v.names, fingerprint)
 		}
 	}

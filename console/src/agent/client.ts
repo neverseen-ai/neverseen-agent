@@ -114,7 +114,7 @@ export const agent: AgentClient = {
         if (res.status === 403) forgetKey();
         else if (res.ok) {
           const r = (await res.json()) as { masked: number } & Omit<Snapshot["today"], "count">;
-          today = { count: r.masked, by_family: r.by_family, by_category: r.by_category, hourly: r.hourly, uncounted: r.uncounted, traffic: r.traffic, agent: r.agent };
+          today = { count: r.masked, by_family: r.by_family, by_category: r.by_category, hourly: r.hourly, uncounted: r.uncounted, traffic: r.traffic, agent: r.agent, tokens: r.tokens };
         }
       } catch {
         // The count is optional; the rest of the page is not.
@@ -133,6 +133,12 @@ export const agent: AgentClient = {
   async setUncounted(families: string[]): Promise<void> {
     if (!KEY) throw new Refusal(lockedSentence(), 403);
     const res = await fetch("/today", withKey({ method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ uncounted: families }) }));
+    if (!res.ok) throw await refusal(res);
+  },
+
+  async enrol(backend: string, token: string): Promise<void> {
+    if (!KEY) throw new Refusal(lockedSentence(), 403);
+    const res = await fetch("/enrol", withKey({ method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ backend, token }) }));
     if (!res.ok) throw await refusal(res);
   },
 

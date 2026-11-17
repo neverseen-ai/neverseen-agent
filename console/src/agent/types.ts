@@ -89,6 +89,16 @@ export interface Today {
   uncounted?: string[];
   traffic?: Traffic;
   agent?: AgentState;
+  /** Each model's day, in the order the models were first seen; the last may be "other". */
+  tokens?: ModelTokens[];
+}
+
+/** One model's day (internal/proxy/today.go modelTokens): the four counts a provider
+ * reports, summed, and their sum by local hour. Raw counts, never a cost. */
+export interface ModelTokens {
+  model: string;
+  day: { input: number; output: number; cache_write?: number; cache_read?: number };
+  hourly: number[];
 }
 
 /** What crossed the agent today (internal/proxy/today.go dayTraffic). */
@@ -116,6 +126,22 @@ export interface AgentState {
   allowlisted?: number;
   /** The extension's last call to /mask, absent when none came since the start. */
   extension_seen_at?: string;
+  /** Absent from an agent built before the page could enrol it. */
+  supervision?: Supervision;
+}
+
+/** Where this agent reports and how that goes (internal/proxy/supervision.go supervisionState). */
+export interface Supervision {
+  /** Where the agent reports, absent while it reports nowhere. */
+  backend?: string;
+  /** The address the enrolment form starts from: the agent's, never the page's. */
+  offered: string;
+  /** The identity a backend issued. Absent means not enrolled. */
+  agent_id?: string;
+  /** The last report the backend took. */
+  delivered_at?: string;
+  /** Why the last attempt failed, absent once one succeeds. */
+  problem?: string;
 }
 
 export interface Snapshot {
@@ -179,4 +205,6 @@ export interface AgentClient {
   test(text: string): Promise<TestResult>;
   /** PUT /today: which families the menu bar's figure leaves out. Masking is not affected. */
   setUncounted(families: string[]): Promise<void>;
+  /** POST /enrol: trades a single-use token for this agent's identity at a backend. */
+  enrol(backend: string, token: string): Promise<void>;
 }

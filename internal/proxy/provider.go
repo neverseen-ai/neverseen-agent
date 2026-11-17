@@ -3,6 +3,7 @@ package proxy
 import (
 	"fmt"
 	"net/url"
+	"os"
 	"sort"
 	"strings"
 )
@@ -40,6 +41,13 @@ var DefaultProviders = []Provider{
 	{Code: "together", BaseURL: "https://api.together.xyz"},
 	{Code: "deepinfra", BaseURL: "https://api.deepinfra.com"},
 	{Code: "xai", BaseURL: "https://api.x.ai"},
+}
+
+// ProvidersFromEnv is the provider set the environment configures (EnvProviders): the
+// one reading of that setting, for the agent and for anything replaying its traffic,
+// which otherwise drifts from the agent the day the reading changes.
+func ProvidersFromEnv() ([]Provider, error) {
+	return ParseProviders(os.Getenv(EnvProviders))
 }
 
 // ParseProviders reads provider overrides in "code=url" form, separated by

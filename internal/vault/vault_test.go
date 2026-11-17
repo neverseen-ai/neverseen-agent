@@ -339,8 +339,8 @@ func TestForgetDropsEveryMapping(t *testing.T) {
 }
 
 // token renders an index as the bracket token the detector would, for a prefix.
-func token(prefix string) func(int64) (string, bool) {
-	return func(index int64) (string, bool) { return fmt.Sprintf("[%s_%d]", prefix, index), true }
+func token(prefix string) func(func() int64) string {
+	return func(next func() int64) string { return fmt.Sprintf("[%s_%d]", prefix, next()) }
 }
 
 // A value keeps its name after its session's mapping has expired.
@@ -464,10 +464,11 @@ func TestTheNamesOfAnIdleSessionAreSwept(t *testing.T) {
 	busy := v.Name("busy", "EF-456-GH", "PLATE", token("PLATE"))
 	v.Name("busy", "JK-789-LM", "PLATE", token("PLATE"))
 
-	// Both sessions last seen past namesTTL, and the sweep due.
+	// Both sessions last seen past namesTTL, their claims as old, and the sweep due.
 	v.mu.Lock()
 	for session := range v.active {
 		v.active[session] = time.Now().Add(-namesTTL - time.Hour)
+		v.claimed[session] = time.Now().Add(-namesTTL - time.Hour)
 	}
 	v.swept = time.Time{}
 	v.mu.Unlock()
@@ -488,6 +489,37 @@ func TestTheNamesOfAnIdleSessionAreSwept(t *testing.T) {
 	}
 	if got := v.Name("busy", "EF-456-GH", "PLATE", token("PLATE")); got != busy {
 		t.Errorf("a session still in use lost its name: %s, want %s", got, busy)
+	}
+}
+
+// A request runs from its first Name to its Save, and another session's Save can sweep
+// in between. A session last dated past namesTTL — resumed from the book after a week —
+// lost its numbering and names mid-request: its next value was minted at 1 again, the
+// name the request had just been handed back for another, and the answer naming one
+// was restored as the other.
+func TestASweepDoesNotTakeASessionFromUnderARequest(t *testing.T) {
+	v, _ := newTestVault(t)
+	recalled := v.Name("s1", "claire@example.fr", "EMAIL", token("EMAIL"))
+	if err := v.Save("s1", map[string]string{recalled: "claire@example.fr"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// A week later: the session's date is past namesTTL and the sweep is due.
+	v.mu.Lock()
+	v.active["s1"] = time.Now().Add(-namesTTL - time.Hour)
+	v.swept = time.Time{}
+	v.mu.Unlock()
+
+	// The session's request is handed its remembered name back; another session's Save
+	// sweeps; the same request then meets a new value.
+	if got := v.Name("s1", "claire@example.fr", "EMAIL", token("EMAIL")); got != recalled {
+		t.Fatalf("the remembered name came back as %s, want %s", got, recalled)
+	}
+	if err := v.Save("s2", nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := v.Name("s1", "paul@example.fr", "EMAIL", token("EMAIL")); got == recalled {
+		t.Errorf("a new value was handed %s, the name the same request holds for another", got)
 	}
 }
 

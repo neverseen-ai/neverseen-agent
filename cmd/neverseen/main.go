@@ -464,16 +464,17 @@ func serveAgent(logger *slog.Logger, agent *proxy.Agent) error {
 	// on it, the process exits as soon as the server has shut down and the final
 	// heartbeat is cut off mid-flight — the window is lost, and the dashboard's
 	// last few minutes before a restart are simply missing.
+	//
+	// Started whether or not a backend is configured: an agent with none runs no
+	// reporter, and this is then only what lets the settings page enrol it later.
 	reported := make(chan struct{})
 	if agent.Reporter != nil {
 		logger.Info("supervision enabled, reporting every " + telemetry.DefaultInterval.String())
-		go func() {
-			defer close(reported)
-			agent.Reporter.Run(ctx)
-		}()
-	} else {
-		close(reported)
 	}
+	go func() {
+		defer close(reported)
+		agent.Supervise(ctx)
+	}()
 
 	errs := make(chan error, 1)
 	go func() {

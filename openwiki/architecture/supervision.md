@@ -18,8 +18,8 @@ change touches the shared contract; never add it as a dependency.
 
 **Nothing in `internal/telemetry` may reach the request path.** The reporter runs on its own
 goroutine, returns no errors to anybody, and an agent with no backend has **no reporter at
-all** rather than one that quietly does nothing (`reporterFromEnv`,
-`internal/proxy/agent.go:288`, `TestNoBackendMeansNoReporter`). A supervision backend that
+all** rather than one that quietly does nothing (`superviseFromEnv`,
+`internal/proxy/agent.go`, `TestNoBackendMeansNoReporter`). A supervision backend that
 cannot be reached must never stop the masking, or the security control is taken down by the
 tool that watches it.
 
@@ -149,7 +149,7 @@ landed in a window that had already closed. The bound is a timeout **and** a
 `WaitDelay` (a wrapper script's child otherwise holds stdout past the kill), and a cap
 on what rtk may print. rtk gets none of the agent's environment but what locates its
 history, and `RTK_TELEMETRY_DISABLED=1`: an agent reading it every five minutes would
-otherwise report the workstation active to rtk every day. Wired in `reporterFromEnv` alone, so a
+otherwise report the workstation active to rtk every day. Wired in `superviseFromEnv` alone, so a
 reporter built by a test reads nothing and no rtk on the machine running it can reach
 an assertion.
 
@@ -270,6 +270,46 @@ every attempt, was refused every time, and once restarted never enrolled again. 
 reports for the life of the process, retries the save on every send, and logs that a disk
 needs looking at; it never enrols twice, because the kept identity is returned before the
 token is reached (`TestAnIdentityTheDiskRefusesIsKeptAndSavedLater`).
+
+### Enrolling from the settings page (`internal/proxy/supervision.go`)
+
+The environment was the only way in: a backend address and a token in `~/.neverseen/.env`,
+then a restart. A token typed wrong, a line left commented, an address nobody remembered —
+each was a second edit and a second restart, and a refusal was a line in a log.
+`POST /enrol` makes the same trade from the Service screen, while the agent runs.
+
+- **Behind the control key**, like everything that changes what the agent does: it decides
+  where a description of this workstation goes every five minutes. Classified by
+  `TestEveryRouteRefusesACallerWithoutTheKey` like every reserved route.
+- **Still no reporter without a backend.** `supervision.reporter` is nil until a token has
+  actually bought an identity; a reporter built for an attempt the backend refused is
+  dropped with it. `Agent.Supervise` runs whichever reporter there is — the one start-up
+  configured, or one enrolled later — and is what the command waits on at shutdown.
+- **The trade is the reporter's own** (`Reporter.Enrol`), under the lock `Run` takes for it
+  (`enrolling`): the token is single-use, and two trades in flight spend it once. Then a
+  **nudge** — `Run` sends at once rather than at the next rung of a ladder it had been
+  climbing on "no identity" (`TestEnrolFromOutsideTheLoopReportsAtOnce`).
+- **The token is presented once and dropped.** Never stored, never logged, and sent under a
+  context that outlives the request: a tab closed while the backend answered would leave a
+  spent token and no identity.
+- **A refusal is typed** (`RefusedError`), so the route can tell a token the backend will
+  not take (422 — the person's to fix) from a backend that is down (502).
+- **Where the agent reports survives the restart in `supervision.json`**, beside the policy
+  file and stored only where that one is. Read **after** `NEVERSEEN_BACKEND_URL`: an identity
+  carries no record of who issued it, so an install its environment configured goes on
+  reporting where it always did. For the same reason an enrolment asked of another backend
+  than the configured one is refused (409) rather than followed.
+- **What the agent counted before it was enrolled is not reported** (`supervision.fresh`):
+  the recorder's window has been open since the process started, and the first bucket
+  would otherwise hand a backend the days before anybody agreed to one.
+- **The form starts from an address the agent serves** (`supervisionState.Offered`,
+  `DefaultBackendURL` or the configured backend) — never one the page spells out.
+- **An enrolled agent shows its state and no form** — backend, identity, last report,
+  the last failure (`Reporter.Status`, in `GET /today`). Leaving a backend is not a
+  button: the seat is the backend's to free, and a workstation enrolled twice counts twice.
+
+`TestTheSettingsPageEnrolsARunningAgent` walks it whole: the refusals, the enrolment, the
+first report, the restart with nothing in the environment.
 
 ## The recorder (`internal/telemetry/recorder.go`)
 

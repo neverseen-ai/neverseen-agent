@@ -54,7 +54,7 @@ func main() {
 	if err != nil {
 		fatal(err)
 	}
-	providers, err := proxy.ParseProviders(os.Getenv(proxy.EnvProviders))
+	providers, err := proxy.ProvidersFromEnv()
 	if err != nil {
 		fatal(err)
 	}

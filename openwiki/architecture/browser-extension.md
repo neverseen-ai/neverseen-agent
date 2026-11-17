@@ -133,7 +133,7 @@ TCP on the loopback interface carries no identity, and a browser cannot ask the 
 listens, as the agent's own surfaces do (`agentClient`). On a machine with several accounts
 — a shared Linux server, two sessions on one Mac — whoever bound the agent's port first
 answered there, and received the control key and every text the extension sent to be
-masked. So before every call that carries either, the extension sends a nonce it chose and
+masked. So before a call that carries either, the extension sends a nonce it chose and
 nothing else, and goes on only if the answer is the HMAC-SHA256, under the key, of
 `neverseen-prove`, the nonce and the port it dialled (`proofOf`, the same in
 `internal/proxy/prove.go` and `extension/src/agent.ts`; the contract file holds the two to
@@ -151,8 +151,14 @@ agreeing byte for byte).
   older than the extension, and is refused rather than trusted.
 - **Asserted on what the listener received**: one that cannot prove itself is sent the
   challenge and nothing after it — no key, no text (`contract.test.ts`).
+- **A proof stands two seconds** (`PROOF_STANDS_MS`, `proven`), per address and key: a
+  streamed answer is restored an event at a time, the calls serialised, and a proof before
+  each doubled the latency of the restoration. Any failed call drops it, and the next one
+  proves the listener again. The cost is in the `TODO` below: the window a listener has to
+  take the port grows from the moment between a check and a send to those two seconds.
 - `TODO:` a check, then a send. The browser cannot hold the connection it checked, so a
-  listener that takes the port between the two receives the send. The upgrade is native
+  listener that takes the port between the two — or while a proof stands — receives the
+  send. The upgrade is native
   messaging, whose host runs as the user and can ask the kernel who listens.
 - **Neither is captured by `-a` or `-v`.** A trace of `/unmask` would put originals on
   disk through a route that reasoning never covered. It is structural — the handler

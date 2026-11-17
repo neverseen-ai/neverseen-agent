@@ -53,9 +53,9 @@ type Pass struct {
 	// passes that store nothing — the test page, scan, replay — which keep the
 	// detector's process-wide counters.
 	//
-	// render reports false for a name that may not be handed out — one Carried
-	// says the text already holds — and the caller moves on to the next index.
-	Name func(original, prefix string, render func(index int64) (string, bool)) string
+	// mint is handed the session's indices and renders the first that names nothing
+	// Carried says the text already holds; Name passes it the source of indices.
+	Name func(original, prefix string, mint func(next func() int64) string) string
 
 	// Carried, when set, reports whether the text being masked already holds a
 	// replacement as text, so no value is given that name. The model writes
@@ -111,18 +111,22 @@ func (p *Pass) mask(cat pii.Category, locale, original string) string {
 		return masked
 	}
 
-	render := func(index int64) (string, bool) {
-		masked := p.d.render(cat, locale, index)
-		return masked, p.Carried == nil || !p.Carried(masked)
+	// The first index whose name the text does not already carry, from whichever
+	// numbering is in use: the session's under the vault's lock, or this detector's.
+	// One loop for both, so the request path and the passes that store nothing skip
+	// alike. Ends: a text carries finitely many names.
+	mint := func(next func() int64) string {
+		for {
+			if masked := p.d.render(cat, locale, next()); p.Carried == nil || !p.Carried(masked) {
+				return masked
+			}
+		}
 	}
 	var masked string
 	if p.Name != nil {
-		masked = p.Name(original, pii.Prefix(cat), render)
+		masked = p.Name(original, pii.Prefix(cat), mint)
 	} else {
-		// Ends: a text carries finitely many names.
-		for ok := false; !ok; {
-			masked, ok = render(p.d.nextIndex(cat))
-		}
+		masked = mint(func() int64 { return p.d.nextIndex(cat) })
 	}
 
 	p.byValue[original] = masked

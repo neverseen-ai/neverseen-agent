@@ -39,10 +39,10 @@ func Run(ctx context.Context, addr string) error {
 	}
 
 	systray.Run(func() {
-		bar := &menuBar{addr: addr}
+		bar := &menuBar{addr: addr, redraw: make(chan struct{}, 1)}
 		bar.build()
 
-		go watch(ctx, bar, func() proxy.Status { return ask(addr) }, pollEvery)
+		go watch(ctx, bar, func() proxy.Status { return ask(addr) }, pollEvery, bar.redraw)
 		go func() {
 			// The icon goes when the process is asked to stop, so a logout does not
 			// leave a dead item in the bar until the session ends.
@@ -76,6 +76,9 @@ type menuBar struct {
 	// than one change: the route replaces rather than patches, and a request built
 	// from anything staler would revert what another surface has just set.
 	shown display
+
+	// redraw asks watch to poll at once, which is how a click is drawn (watch).
+	redraw chan struct{}
 }
 
 // providerSlot is one entry in the provider submenu and the provider it currently
@@ -105,14 +108,14 @@ func (m *menuBar) build() {
 	// rather than restating the label: the page is served by the agent this icon is
 	// watching, and which agent that is on a machine with a non-default listen
 	// address is the one thing the label cannot say.
-	settings := systray.AddMenuItem("Settings…", "http://"+m.addr+"/settings")
+	settings := systray.AddMenuItem("Settings…", "http://"+proxy.BrowsableAddr(m.addr)+"/settings")
 	restore := systray.AddMenuItem("Mask everything again", "Switch every category back on")
 
 	systray.AddSeparator()
 	m.buildProviders()
 
 	systray.AddSeparator()
-	test := systray.AddMenuItem("Open the test page", "http://"+m.addr+"/test")
+	test := systray.AddMenuItem("Open the test page", "http://"+proxy.BrowsableAddr(m.addr)+"/test")
 	quit := systray.AddMenuItem("Quit the icon", "Leave the agent running")
 
 	go func() {
@@ -135,23 +138,26 @@ func (m *menuBar) build() {
 	}()
 }
 
-// apply sends the new set to the agent and redraws from its answer.
+// apply sends the new set to the agent and has watch redraw at once.
 //
-// Redrawn from what the agent said rather than from what was asked for, because the
+// Redrawn from what the agent says rather than from what was asked for, because the
 // agent is the one that refuses: a click on something it will not switch off would
 // otherwise leave the menu showing it unticked while the value went on being
-// masked, and somebody would believe the wrong thing about a live key.
+// masked, and somebody would believe the wrong thing about a live key. Through watch
+// rather than straight to the screen, so the loop compares with what is drawn.
 func (m *menuBar) apply(want proxy.Policy) {
-	status, err := proxy.SetPolicy(context.Background(), m.addr,
-		proxy.ReadControlKey(""), want, askTimeout)
-	if err != nil {
+	if _, err := proxy.SetPolicy(context.Background(), m.addr,
+		proxy.ReadControlKey(""), want, askTimeout); err != nil {
 		// Nothing to do but leave the menu as it is: the next poll redraws it from
 		// the agent, so a refused click corrects itself within pollEvery rather than
 		// leaving a tick that lies.
 		log.Printf("neverseen-tray: %v", err)
 		return
 	}
-	m.show(render(withToday(context.Background(), m.addr, status)))
+	select {
+	case m.redraw <- struct{}{}:
+	default: // a redraw already asked for will read the same answer
+	}
 }
 
 // openSettings opens the settings page with a one-time link, the only way it is served
@@ -174,7 +180,7 @@ func (m *menuBar) openSettings() {
 		if errors.As(err, &foreign) || m.heldByAnother() {
 			return
 		}
-		link = "http://" + m.addr + "/settings"
+		link = "http://" + proxy.BrowsableAddr(m.addr) + "/settings"
 	}
 	openInBrowser(link)
 }
@@ -185,7 +191,7 @@ func (m *menuBar) openTestPage() {
 	if m.heldByAnother() {
 		return
 	}
-	openInBrowser("http://" + m.addr + "/test")
+	openInBrowser("http://" + proxy.BrowsableAddr(m.addr) + "/test")
 }
 
 // heldByAnother reports whether another account holds the agent's address, which is

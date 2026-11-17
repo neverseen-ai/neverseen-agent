@@ -71,6 +71,11 @@ export function num(n: number): string {
   return n.toLocaleString(locale());
 }
 
+/** A large count in a few characters, as the language in use writes it: 1.2M, 1,2 M. */
+export function compact(n: number): string {
+  return new Intl.NumberFormat(locale(), { notation: "compact", maximumFractionDigits: 1 }).format(n);
+}
+
 // ---------------------------------------------------------------- what the agent serves
 
 // The catalogue's labels and notations are the agent's answer, not the console's:

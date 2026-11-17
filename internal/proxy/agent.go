@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"os"
@@ -33,9 +34,15 @@ type Agent struct {
 	Addr   string
 
 	// Reporter is nil when no backend is configured, which is the ordinary case
-	// and not a degraded one.
+	// and not a degraded one. It is what start-up configured: an agent enrolled
+	// later from the settings page gains a reporter this field does not name.
 	Reporter *telemetry.Reporter
 }
+
+// Supervise runs the reporter — the one configured at start-up, or one the settings
+// page enrols while the agent runs — and returns once ctx is cancelled and the last
+// report has been attempted. Called once, by the command that serves.
+func (a *Agent) Supervise(ctx context.Context) { a.Server.supervision.run(ctx) }
 
 // Options are what the command decides about an agent, as opposed to what the
 // environment does.
@@ -156,7 +163,7 @@ func FromEnv(logger *slog.Logger, opts Options) (*Agent, error) {
 	}
 	keepNames(logger, v, det, resolveFileOption(opts.NamesFile, DefaultNamesFile))
 
-	providers, err := ParseProviders(os.Getenv(EnvProviders))
+	providers, err := ProvidersFromEnv()
 	if err != nil {
 		return nil, err
 	}
@@ -215,7 +222,7 @@ func FromEnv(logger *slog.Logger, opts Options) (*Agent, error) {
 	}
 
 	agent := &Agent{Server: srv, Addr: addr}
-	if agent.Reporter, err = reporterFromEnv(logger, recorder, srv); err != nil {
+	if err := agent.superviseFromEnv(logger, recorder, policyFile); err != nil {
 		return nil, err
 	}
 	return agent, nil
@@ -286,37 +293,63 @@ func DetectorFromEnv(logger *slog.Logger, policyFile string) (*detector.Detector
 	return det, nil
 }
 
-// reporterFromEnv builds the reporter, or reports nil when no backend is
-// configured.
+// superviseFromEnv gives the agent its reporter, or none when no backend is
+// configured — and the means to gain one from the settings page either way.
 //
-// Nil rather than a reporter that does nothing: an agent with no backend then has
-// no reporting code path at all, so "it works standalone" is a fact about what
-// runs rather than about what was switched off.
-func reporterFromEnv(logger *slog.Logger, recorder *telemetry.Recorder, srv *Server) (*telemetry.Reporter, error) {
-	backend := strings.TrimSpace(os.Getenv(EnvBackendURL))
-	if backend == "" {
-		return nil, nil
-	}
-
+// No reporter at all with no backend, rather than one that does nothing. An agent
+// with no backend is the free half of the product, and it has to be a whole
+// feature rather than a disabled one: there is then no code path to get wrong.
+//
+// The backend is the environment's, then the one an enrolment from the page stored.
+// In that order because an identity carries no record of who issued it: an install
+// configured by its environment must go on reporting where it always did.
+func (a *Agent) superviseFromEnv(logger *slog.Logger, recorder *telemetry.Recorder, policyFile string) error {
 	identity, err := expandHome(envOr(EnvIdentityFile, DefaultIdentityFile))
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return telemetry.NewReporter(telemetry.Config{
-		BaseURL:        strings.TrimRight(backend, "/"),
-		EnrolmentToken: strings.TrimSpace(os.Getenv(EnvEnrolmentToken)),
-		IdentityFile:   identity,
-		// Beside the identity rather than behind a setting of its own: it is agent
-		// state an operator never edits, it belongs in the directory the installer
-		// already leaves alone on uninstall, and a variable nobody would set is one
-		// more line of documentation to keep true.
-		BufferFile: filepath.Join(filepath.Dir(identity), "buffer.json"),
-		Recorder:   recorder,
-		State:      srv.State,
-		Logger:     logger,
-		// Found rather than configured: a setting would leave the fleet view's
-		// count of workstations running rtk counting only those somebody set up.
-		Gain: telemetry.Gain,
-	})
+	sup := a.Server.supervision
+	sup.log = logger
+	sup.file = supervisionFile(policyFile)
+	sup.fresh = func() { recorder.Take(time.Now()) }
+	token := strings.TrimSpace(os.Getenv(EnvEnrolmentToken))
+	sup.build = func(backend string) (*telemetry.Reporter, error) {
+		return telemetry.NewReporter(telemetry.Config{
+			BaseURL:        backend,
+			EnrolmentToken: token,
+			IdentityFile:   identity,
+			// Beside the identity rather than behind a setting of its own: it is agent
+			// state an operator never edits, it belongs in the directory the installer
+			// already leaves alone on uninstall, and a variable nobody would set is one
+			// more line of documentation to keep true.
+			BufferFile: filepath.Join(filepath.Dir(identity), "buffer.json"),
+			Recorder:   recorder,
+			State:      a.Server.State,
+			Logger:     logger,
+			// Found rather than configured: a setting would leave the fleet view's
+			// count of workstations running rtk counting only those somebody set up.
+			Gain: telemetry.Gain,
+		})
+	}
+
+	backend := strings.TrimRight(strings.TrimSpace(os.Getenv(EnvBackendURL)), "/")
+	if backend == "" && sup.file != "" {
+		var stored storedSupervision
+		if _, err := readStateFile(sup.file, &stored); err != nil {
+			// A warning, as for every state file: supervision never stops the masking.
+			logger.Warn("not supervised: where this agent reports could not be read",
+				"file", sup.file, "error", err)
+		}
+		backend = stored.Backend
+	}
+	if backend == "" {
+		return nil
+	}
+
+	if a.Reporter, err = sup.build(backend); err != nil {
+		return err
+	}
+	sup.reporter, sup.backend = a.Reporter, backend
+	return nil
 }

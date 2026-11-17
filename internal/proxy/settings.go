@@ -280,20 +280,13 @@ func (t *tickets) redeem(value string) bool {
 // The one place a surface asks for it, as SetPolicy is the one place a surface writes:
 // the menu bar opens what this returns and `neverseen settings` prints it.
 func SettingsURL(ctx context.Context, addr, key string, timeout time.Duration) (string, error) {
-	if addr == "" {
-		addr = DefaultListen
-	}
-	// The page is served on loopback, under a loopback name, whatever -l bound. An
-	// agent listening on 0.0.0.0:9787 or :9787 is reached there too, and a link naming
-	// the bound address would be refused by namesThisMachine. One bound to a single
-	// other address does not listen on loopback at all: dialled there, it answered
-	// "connection refused", which says nothing about why.
-	if host, port, err := net.SplitHostPort(addr); err == nil && !namesThisMachine(addr) {
-		if ip := net.ParseIP(host); host != "" && (ip == nil || !ip.IsUnspecified()) {
-			return "", fmt.Errorf("the settings page is served on loopback alone, and an agent "+
-				"bound to %s does not listen there: bind it to 127.0.0.1 or 0.0.0.0", addr)
-		}
-		addr = net.JoinHostPort("127.0.0.1", port)
+	// The page is served on loopback, under a loopback name, whatever -l bound. One
+	// bound to a single other address does not listen on loopback at all: dialled there,
+	// it answered "connection refused", which says nothing about why.
+	bound := addr
+	if addr = BrowsableAddr(addr); !namesThisMachine(addr) {
+		return "", fmt.Errorf("the settings page is served on loopback alone, and an agent "+
+			"bound to %s does not listen there: bind it to 127.0.0.1 or 0.0.0.0", bound)
 	}
 	if key == "" {
 		return "", fmt.Errorf("no control key in %s, so the settings page cannot be opened with one",
@@ -313,6 +306,24 @@ func SettingsURL(ctx context.Context, addr, key string, timeout time.Duration) (
 		return "", errors.New("the agent answered something that is not a ticket")
 	}
 	return "http://" + addr + "/settings?" + ticketParam + "=" + url.QueryEscape(reply.Ticket), nil
+}
+
+// BrowsableAddr is the address a browser on this machine reaches an agent listening on
+// addr at: addr itself, but for an agent bound to every address (":9787", "0.0.0.0:9787",
+// "[::]:9787"), which is reached on 127.0.0.1. A link naming the bound address is no URL
+// at all (http://:9787/settings) or one namesThisMachine refuses.
+func BrowsableAddr(addr string) string {
+	if addr == "" {
+		return DefaultListen
+	}
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return addr
+	}
+	if ip := net.ParseIP(host); host == "" || (ip != nil && ip.IsUnspecified()) {
+		return net.JoinHostPort("127.0.0.1", port)
+	}
+	return addr
 }
 
 // namesThisMachine reports whether a Host header names the loopback interface.

@@ -115,6 +115,13 @@ export function countedSince(startedAt: string | undefined, now: Date): Date | u
   return start.toDateString() === now.toDateString() ? start : undefined;
 }
 
+/** What POST /enrol is sent, or undefined while the form holds nothing to send. Both
+ * trimmed: a token is pasted, and a paste carries the newline that followed it. */
+export function enrolmentFrom(backend: string, token: string): { backend: string; token: string } | undefined {
+  const sent = { backend: backend.trim(), token: token.trim() };
+  return sent.backend && sent.token ? sent : undefined;
+}
+
 /** What Undo sends: the state now, with this one change reversed. Never the state from
  * before the change sent whole — another change may have landed since, a second toast's,
  * the menu bar's or `neverseen mask`'s, and the route replaces rather than patches, so

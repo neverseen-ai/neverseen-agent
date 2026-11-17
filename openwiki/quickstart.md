@@ -97,7 +97,7 @@ These are not style preferences. Each one is a failure that already happened, mo
 - **Nothing in `internal/telemetry` may reach the request path.** A supervision backend
   that is down must never stop the masking.
 - **The agent holds no API keys.** The caller's credential is forwarded untouched
-  (`internal/proxy/provider.go:20-24`).
+  (`internal/proxy/provider.go:21-25`).
 - **Counts, never content**, everywhere except `neverseen proxy -a` (a screen) and
   `-v` (a file under `traces/`) — the two deliberate exceptions, for one operator at
   their own keyboard on their own data. Neither belongs in a service definition.

@@ -66,7 +66,7 @@ on `localeRegistry` records it).
 
 ## Adding a provider
 
-1. **An entry in `DefaultProviders`** (`internal/proxy/provider.go:34`) — a code and a base
+1. **An entry in `DefaultProviders`** (`internal/proxy/provider.go:35`) — a code and a base
    URL. The code must not collide with `reservedRoutes` (`healthz`, `test`, `settings`, `policy`,
    `mask`, `unmask`, `prove`, `today`); `New` refuses it if it does (`TestReservedRoutesCannotBeProviders`). The
    block in `.env.example` names every known code and counts them, so it changes in the

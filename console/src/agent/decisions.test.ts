@@ -11,7 +11,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bulkSet, countedSince, keyFrom, masterState, policyFrom, routeForPanel, splitGroups, switchableOf, toggledSet, undone } from "./decisions.ts";
+import { bulkSet, countedSince, enrolmentFrom, keyFrom, masterState, policyFrom, routeForPanel, splitGroups, switchableOf, toggledSet, undone } from "./decisions.ts";
 import type { Health, HealthGroup, Policy } from "./types.ts";
 
 // A catalogue shaped like the one the agent serves: two switchable families, one of
@@ -220,4 +220,11 @@ test("a count restarted today does not claim to run from midnight", () => {
   assert.equal(countedSince("0001-01-01T00:00:00Z", now), undefined);
   assert.equal(countedSince(undefined, now), undefined);
   assert.equal(countedSince("not a date", now), undefined);
+});
+
+test("an enrolment is sent trimmed, and not at all while a field is empty", () => {
+  // Pasted from a dashboard: the newline after the token is part of the paste.
+  assert.deepEqual(enrolmentFrom(" https://backend.example ", "nse_abc\n"), { backend: "https://backend.example", token: "nse_abc" });
+  assert.equal(enrolmentFrom("https://backend.example", "  "), undefined);
+  assert.equal(enrolmentFrom("", "nse_abc"), undefined);
 });

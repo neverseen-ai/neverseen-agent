@@ -136,6 +136,10 @@ type Server struct {
 	// menuBarMu serialises PUT /today, which writes menubar.json beside the policy.
 	menuBarMu sync.Mutex
 
+	// supervision is the reporter this agent runs, if any, and POST /enrol's way to
+	// gain one. Never nil; FromEnv is what makes it able to enrol.
+	supervision *supervision
+
 	// extensionSeen is when the browser extension last called /mask, for the
 	// settings page. Nil until it does.
 	extensionSeen atomic.Pointer[time.Time]
@@ -171,19 +175,20 @@ func New(cfg Config, det *detector.Detector, v *vault.Vault) (*Server, error) {
 	}
 
 	s := &Server{
-		det:        det,
-		vault:      v,
-		log:        logger,
-		recorder:   recorder,
-		audit:      newAuditor(cfg.Audit, cfg.Traces),
-		providers:  providers,
-		routes:     make(map[string]*httputil.ReverseProxy, len(providers)),
-		hosts:      make(map[string]string, len(providers)),
-		startedAt:  time.Now(),
-		controlKey: cfg.ControlKey,
-		policyFile: cfg.PolicyFile,
-		exposed:    cfg.Listen != "" && BeyondLoopback(cfg.Listen),
-		listenName: listenName(cfg.Listen),
+		det:         det,
+		vault:       v,
+		log:         logger,
+		recorder:    recorder,
+		audit:       newAuditor(cfg.Audit, cfg.Traces),
+		providers:   providers,
+		routes:      make(map[string]*httputil.ReverseProxy, len(providers)),
+		hosts:       make(map[string]string, len(providers)),
+		startedAt:   time.Now(),
+		controlKey:  cfg.ControlKey,
+		policyFile:  cfg.PolicyFile,
+		exposed:     cfg.Listen != "" && BeyondLoopback(cfg.Listen),
+		listenName:  listenName(cfg.Listen),
+		supervision: &supervision{log: logger},
 	}
 	s.ownerOf, s.account = accountLookup()
 	s.loadMenuBar()
@@ -250,7 +255,7 @@ func (s *Server) reverseProxy(base *url.URL) *httputil.ReverseProxy {
 // reservedRoutes are the paths the agent answers itself. A provider may not take
 // one of these codes: "/healthz" would reach the agent while "/healthz/v1/…"
 // reached the provider, which is a routing table nobody could reason about.
-var reservedRoutes = []string{"healthz", "test", "settings", "policy", "mask", "unmask", "prove", "today"}
+var reservedRoutes = []string{"healthz", "test", "settings", "policy", "mask", "unmask", "prove", "today", "enrol"}
 
 // Handler returns the agent's routes.
 func (s *Server) Handler() http.Handler {
@@ -263,6 +268,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/unmask", s.handleUnmask)
 	mux.HandleFunc("/prove", s.handleProve)
 	mux.HandleFunc("/today", s.handleToday)
+	mux.HandleFunc("/enrol", s.handleEnrol)
 	mux.HandleFunc("/", s.forward)
 	return s.guardAccount(s.guardHost(mux))
 }
@@ -513,10 +519,37 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request) {
 func (s *Server) newPass(session string, carried func(string) bool) *detector.Pass {
 	pass := s.det.NewPass(s.vault.Load(session))
 	pass.Carried = carried
-	pass.Name = func(original, prefix string, render func(int64) (string, bool)) string {
-		return s.vault.Name(session, original, prefix, render)
+	pass.Name = func(original, prefix string, mint func(func() int64) string) string {
+		return s.vault.Name(session, original, prefix, mint)
 	}
 	return pass
+}
+
+// carriedIn reports whether text already holds a name as text: detector.Pass.Carried
+// for a pass over it.
+//
+// Asked once per name minted, under the vault's lock, of a body up to 32 MiB: a search
+// of the whole body per name was names × body with every other conversation waiting on
+// the lock, and a history masked afresh after its mapping expired mints hundreds. So
+// the tokens the text holds are collected on the first question, in one scan, and each
+// question after it is a lookup.
+//
+// TODO: a stand-in (fake mode) has no shape to collect, so each is still searched for.
+// The upgrade is to collect the decoded strings once, outside the lock, and ask them.
+func carriedIn(text []byte) func(string) bool {
+	var tokens map[string]bool
+	return func(name string) bool {
+		if !pii.IsToken(name) {
+			return bytes.Contains(text, []byte(name))
+		}
+		if tokens == nil {
+			tokens = make(map[string]bool)
+			for _, token := range pii.FindTokens(string(text)) {
+				tokens[token] = true
+			}
+		}
+		return tokens[name]
+	}
 }
 
 // maskRequest replaces the sensitive values in the body and records what it
@@ -540,12 +573,11 @@ func (s *Server) maskRequest(session, provider string, r *http.Request) (*traceR
 	}
 
 	// Searched in the raw body, where a token is written as it reads: none of its
-	// characters is one JSON escapes. Once per name minted, under the vault's lock
-	// (render runs there), so each first sighting costs one scan of the body.
+	// characters is one JSON escapes.
 	// TODO: a stand-in a client wrote escaped (`\u00e9`) is not found, so fake mode can
 	// still hand out a name the body carries. The upgrade is to search the decoded
 	// strings, once a fake-mode collision is seen.
-	pass := s.newPass(session, func(name string) bool { return bytes.Contains(body, []byte(name)) })
+	pass := s.newPass(session, carriedIn(body))
 
 	// Decoded once, here, because two things read the document: the exemption
 	// below, from one member of it, and the masking, over every string in it.
@@ -899,15 +931,16 @@ func (s *Server) countUpstream(status int) {
 
 // usageSink is where a response reports what it cost.
 //
-// Always the recorder, which is what the heartbeat is built from; also the trace,
-// when there is one. Handed over as one function so neither caller has to remember
-// both.
+// Always the recorder, which is what the heartbeat is built from, and the day the
+// settings page draws; also the trace, when there is one. Handed over as one function
+// so neither caller has to remember all three.
 func (s *Server) usageSink(ref *traceRef, conversation string) func(string, pkgtelemetry.TokenUsage) {
 	return func(model string, usage pkgtelemetry.TokenUsage) {
 		if ref != nil {
 			ref.model, ref.usage = model, usage
 		}
 		s.recorder.Usage(conversation, model, usage)
+		s.today.usage(time.Now(), model, usage)
 	}
 }
 

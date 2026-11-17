@@ -389,7 +389,11 @@ from `Health.Tools`, which is `shellTools`), and *Service* (the version, the com
 files under `~/.neverseen`). In English or French, light or dark. The overview also draws the
 day by local hour (`hourly`) and by category (`by_category`): the same minted counts, so both
 add up to the figure, and an hour before the agent started, or still to come, is drawn as not
-measured.
+measured. Under them, the day's tokens: one stacked column an hour and a segment per model
+(`tokens`, as each provider reported them in its answer — raw counts, never a cost), and a
+table of each model's input, cache write, cache read and output, which carries every value
+the chart draws. A model keeps its colour all day, in the order the agent first saw it; past
+seven, the rest share one grey under *Other models*.
 
 **Built into two files and committed.** `make console` writes `console.js` and `console.css`
 into `internal/proxy/console/`, and `settings.go` embeds them and inlines both into the one
@@ -405,7 +409,10 @@ byte.
 **A block the agent serves no data for is left out, never drawn from a mock.** The overview's
 day — the count by family, the traffic, the warnings about how the agent runs — and the
 extension's last call come from `GET /today`, behind the key, so a page opened without it
-draws none of them. What the design the console came from also had and the agent does not
+draws none of them. The Service screen's Supervision panel is drawn from the same answer
+(`agent.supervision`): an enrolment form while no backend has issued this workstation an
+identity, sent to `POST /enrol`, and the state alone once one has — see
+[supervision](../architecture/supervision.md). What the design the console came from also had and the agent does not
 serve — the hours, whether the login service and the icon are installed, a team policy — is
 left out, with a `TODO` where it would go. The countries are one list rather than one section
 per continent: forty-one of the forty-two are European. Without

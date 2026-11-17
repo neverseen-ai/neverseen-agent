@@ -172,7 +172,7 @@ func TestAPassNamesThroughItsCaller(t *testing.T) {
 
 	pass := d.NewPass(nil)
 	asked := map[string]int{}
-	pass.Name = func(original, prefix string, render func(int64) (string, bool)) string {
+	pass.Name = func(original, prefix string, mint func(func() int64) string) string {
 		asked[original]++
 		if prefix != "EMAIL" {
 			t.Errorf("asked for prefix %q, want EMAIL", prefix)
@@ -180,8 +180,7 @@ func TestAPassNamesThroughItsCaller(t *testing.T) {
 		if original == "claire@example.fr" {
 			return "[EMAIL_381]" // named before the mapping expired
 		}
-		masked, _ := render(12)
-		return masked
+		return mint(func() int64 { return 12 })
 	}
 	got, _ := d.Mask("écrire à claire@example.fr et à paul@example.fr, copie claire@example.fr", pass)
 

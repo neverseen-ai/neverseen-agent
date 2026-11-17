@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/neverseen-ai/neverseen-agent/pkg/telemetry"
@@ -94,8 +95,25 @@ type Reporter struct {
 	identity string // path to the identity file
 
 	// issued is an identity the backend issued and the disk refused, kept for the
-	// life of the process — see ensureEnrolled. Touched only by Run's goroutine.
+	// life of the process — see enrolWith, whose lock it is read and written under.
 	issued *Identity
+
+	// enrolling serialises the trade of a token for an identity. Run's goroutine is
+	// no longer the only one to make it — Enrol is called from the settings page's
+	// route — and the token is single-use: two trades in flight spend it once and
+	// leave the loser holding a refusal for an agent that is in fact enrolled.
+	enrolling sync.Mutex
+
+	// nudge has Run send now rather than at the next rung of its ladder. Buffered
+	// by one and never blocked on: a second nudge before the first is read asks for
+	// nothing the first did not.
+	nudge chan struct{}
+
+	// status is what Status answers. A lock of its own rather than enrolling, which
+	// is held across a request to the backend: a surface asking how the reporting
+	// goes must not wait thirty seconds on a backend that is not answering.
+	statusMu sync.Mutex
+	status   Status
 
 	queue    *buffer // buckets not yet delivered, mirrored to disk
 	recorder *Recorder
@@ -202,6 +220,7 @@ func NewReporter(cfg Config) (*Reporter, error) {
 		log:      cfg.Logger,
 		now:      cfg.Now,
 		gain:     cfg.Gain,
+		nudge:    make(chan struct{}, 1),
 	}
 	if r.client == nil {
 		r.client = &http.Client{Timeout: 30 * time.Second}
@@ -298,6 +317,13 @@ func (r *Reporter) Run(ctx context.Context) {
 		case <-snapshot.C:
 			r.wake()
 			r.snapshot()
+
+		case <-r.nudge:
+			// An identity has just been issued through Enrol. Off the ladder at once:
+			// what it was climbing for — no identity — is no longer true, and the
+			// person who enrolled is looking at a page waiting for the first report.
+			backoff = 0
+			send.Reset(0)
 
 		case <-send.C:
 			r.wake()
@@ -529,6 +555,7 @@ func (r *Reporter) drain(ctx context.Context) bool {
 		// the same ladder instead of retrying the enrolment every second for as long
 		// as the backend is down.
 		r.log.Warn("not enrolled with the backend, keeping the queued buckets", "error", err)
+		r.failed(err)
 		return false
 	}
 
@@ -537,6 +564,7 @@ func (r *Reporter) drain(ctx context.Context) bool {
 		// Nothing to file. Reaching enrolment was still worth it — that is what puts
 		// a freshly installed agent in the fleet view — so this counts as a success
 		// and the ladder resets.
+		r.failed(nil)
 		return true
 	}
 
@@ -567,6 +595,7 @@ func (r *Reporter) drain(ctx context.Context) bool {
 	if err := r.send(ctx, id, batch); err != nil {
 		r.log.Warn("the batch was refused, its buckets stay queued",
 			"buckets", len(sending), "queued", r.queue.pending(), "error", err)
+		r.failed(err)
 		return false
 	}
 
@@ -587,7 +616,58 @@ func (r *Reporter) drain(ctx context.Context) bool {
 		"masked", masked,
 		"through", r.baseURL,
 		"queued", r.queue.pending())
+	r.statusMu.Lock()
+	r.status.DeliveredAt, r.status.Problem = batch.SentAt, ""
+	r.statusMu.Unlock()
 	return true
+}
+
+// Status is what a surface on this workstation may be told about the reporting:
+// whether the agent is enrolled, and whether its reports arrive. Nothing a
+// heartbeat does not already carry to the backend it names.
+type Status struct {
+	// AgentID is the identity the backend issued, empty until one is in hand.
+	AgentID string
+	// DeliveredAt is the last batch the backend took, zero before the first.
+	DeliveredAt time.Time
+	// Problem is why the last attempt failed, empty once one succeeds.
+	Problem string
+}
+
+// Status reports how the reporting goes. Safe from any goroutine.
+func (r *Reporter) Status() Status {
+	r.statusMu.Lock()
+	defer r.statusMu.Unlock()
+	return r.status
+}
+
+// failed records why the last attempt failed, or with nil that it did not.
+func (r *Reporter) failed(err error) {
+	r.statusMu.Lock()
+	defer r.statusMu.Unlock()
+	r.status.Problem = ""
+	if err != nil {
+		r.status.Problem = err.Error()
+	}
+}
+
+// Enrol trades token for an identity now, on the caller's goroutine, and has Run
+// report at once.
+//
+// For the settings page, which has a person waiting on the answer: left to Run the
+// trade happens at the next rung of a ladder that climbs to the interval, and a
+// refused token is a line in a log. An agent that already holds an identity returns
+// it and presents nothing — the token is single-use, and the one in hand is working.
+func (r *Reporter) Enrol(ctx context.Context, token string) (Identity, error) {
+	id, err := r.enrolWith(ctx, token)
+	if err != nil {
+		return Identity{}, err
+	}
+	select {
+	case r.nudge <- struct{}{}:
+	default:
+	}
+	return id, nil
 }
 
 // persist mirrors the queue to disk. Failing to write it is logged and no more:
@@ -598,9 +678,31 @@ func (r *Reporter) persist() {
 	}
 }
 
-// ensureEnrolled returns this agent's identity, exchanging the enrolment token
-// for one the first time.
+// ensureEnrolled returns this agent's identity, exchanging the configured
+// enrolment token for one the first time.
 func (r *Reporter) ensureEnrolled(ctx context.Context) (Identity, error) {
+	return r.enrolWith(ctx, r.token)
+}
+
+// enrolWith returns this agent's identity, exchanging token for one when it has
+// none, and records whose it is for Status.
+func (r *Reporter) enrolWith(ctx context.Context, token string) (Identity, error) {
+	r.enrolling.Lock()
+	defer r.enrolling.Unlock()
+
+	id, err := r.identityOr(ctx, token)
+	if err != nil {
+		return Identity{}, err
+	}
+	r.statusMu.Lock()
+	r.status.AgentID = id.AgentID
+	r.statusMu.Unlock()
+	return id, nil
+}
+
+// identityOr is enrolWith under its lock: the identity on disk, the one the disk
+// refused, or the one token buys.
+func (r *Reporter) identityOr(ctx context.Context, token string) (Identity, error) {
 	if id, found, err := LoadIdentity(r.identity); err != nil {
 		return Identity{}, err
 	} else if found {
@@ -615,13 +717,13 @@ func (r *Reporter) ensureEnrolled(ctx context.Context) (Identity, error) {
 		return *r.issued, nil
 	}
 
-	if r.token == "" {
+	if token == "" {
 		return Identity{}, fmt.Errorf("no identity yet and no enrolment token configured")
 	}
 
 	body, err := json.Marshal(telemetry.EnrolRequest{
 		Schema: telemetry.SchemaVersion,
-		Token:  r.token,
+		Token:  token,
 		State:  r.currentState(),
 	})
 	if err != nil {
@@ -701,7 +803,21 @@ func (r *Reporter) post(ctx context.Context, path string, body []byte, headers m
 		return nil, fmt.Errorf("read the backend's answer: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, fmt.Errorf("the backend answered %d to %s", resp.StatusCode, path)
+		return nil, &RefusedError{Status: resp.StatusCode, Path: path}
 	}
 	return answer, nil
+}
+
+// RefusedError is the backend answering anything but success.
+//
+// A type rather than a sentence, because the settings page's enrolment has to tell
+// a token the backend will not take from a backend that is down: the first is the
+// person's to fix and the second is not.
+type RefusedError struct {
+	Status int
+	Path   string
+}
+
+func (e *RefusedError) Error() string {
+	return fmt.Sprintf("the backend answered %d to %s", e.Status, e.Path)
 }

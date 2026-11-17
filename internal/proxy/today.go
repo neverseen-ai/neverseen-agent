@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -60,6 +61,30 @@ type tally struct {
 
 	// traffic is what crossed the agent today, for the settings page's overview.
 	traffic dayTraffic
+
+	// tokens is what each model was sent and answered today, in the order the models
+	// were first seen: the order the settings page colours them in, so a model keeps
+	// its colour all day rather than taking another when its rank changes.
+	tokens []*modelTokens
+}
+
+// maxTokenModels is how many entries the day's tokens hold: the models first seen,
+// and past them contract.Other for every later one. Eight, the colours a chart can
+// tell apart, and a bound on the answer the menu bar reads (todayMaxBytes) — the
+// model id is whatever the provider reported, so the set is open.
+const maxTokenModels = 8
+
+// maxModelLen bounds a model id kept for the day, for the same answer's sake.
+const maxModelLen = 80
+
+// modelTokens is one model's day: the four counts a provider reports, summed, and
+// their sum by local hour. Raw counts, never a cost — the heartbeat's rule
+// (Recorder.Usage): prices change, and an agent that computed them would be wrong
+// the day one did.
+type modelTokens struct {
+	Model  string              `json:"model"`
+	Day    contract.TokenUsage `json:"day"`
+	Hourly [24]int             `json:"hourly"`
 }
 
 // dayTraffic is the day's traffic as the settings page shows it.
@@ -148,6 +173,41 @@ func (t *tally) add(now time.Time, minted map[pii.Category]int) {
 	}
 }
 
+// usage counts what a model was sent and answered, at now.
+func (t *tally) usage(now time.Time, model string, u contract.TokenUsage) {
+	if model == "" || u == (contract.TokenUsage{}) {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.roll(now)
+	m := t.model(model)
+	m.Day.Input += u.Input
+	m.Day.Output += u.Output
+	m.Day.CacheWrite += u.CacheWrite
+	m.Day.CacheRead += u.CacheRead
+	m.Hourly[now.Hour()] += u.Input + u.Output + u.CacheWrite + u.CacheRead
+}
+
+// model is the day's entry for a model id, made on its first sighting: under
+// contract.Other once maxTokenModels-1 others hold their own. Called with mu held.
+func (t *tally) model(id string) *modelTokens {
+	if len(id) > maxModelLen {
+		id = strings.ToValidUTF8(id[:maxModelLen], "")
+	}
+	for _, m := range t.tokens {
+		if m.Model == id {
+			return m
+		}
+	}
+	if len(t.tokens) >= maxTokenModels-1 && id != contract.Other {
+		return t.model(contract.Other)
+	}
+	m := &modelTokens{Model: id}
+	t.tokens = append(t.tokens, m)
+	return m
+}
+
 // reply is what GET /today answers about now's day, read under one lock so the
 // figure and its breakdown describe the same moment.
 //
@@ -165,6 +225,10 @@ func (t *tally) reply(now time.Time) todayReply {
 		Hourly:     t.hourly,
 		Uncounted:  make([]string, 0, len(t.uncounted)),
 		Traffic:    t.traffic,
+		Tokens:     make([]modelTokens, 0, len(t.tokens)),
+	}
+	for _, m := range t.tokens {
+		r.Tokens = append(r.Tokens, *m)
 	}
 	r.Traffic.Clients = maps.Clone(t.traffic.Clients)
 	for _, g := range t.uncounted {
@@ -202,6 +266,7 @@ func (t *tally) roll(now time.Time) {
 		t.minted = nil
 		t.hourly = [24]int{}
 		t.traffic = dayTraffic{}
+		t.tokens = nil
 	}
 }
 
@@ -230,6 +295,10 @@ type todayReply struct {
 
 	Traffic dayTraffic `json:"traffic"`
 
+	// Tokens is each model's day, in the order the models were first seen, at most
+	// maxTokenModels of them (tally.model).
+	Tokens []modelTokens `json:"tokens"`
+
 	// Agent is how this agent runs: not the day's, but behind the same key for the
 	// same reason — whether the console prints values in clear or traces sit on disk
 	// tells any process on the machine where to look.
@@ -250,6 +319,10 @@ type agentState struct {
 
 	// ExtensionSeenAt is the last /mask call, zero when none came since the start.
 	ExtensionSeenAt *time.Time `json:"extension_seen_at,omitempty"`
+
+	// Supervision is where this agent reports and how that goes, and what the
+	// page's enrolment form starts from when it reports nowhere.
+	Supervision supervisionState `json:"supervision"`
 }
 
 // agentNow reads agentState from the server.
@@ -262,6 +335,7 @@ func (s *Server) agentNow() agentState {
 		Rerouted:        s.rerouted(),
 		Allowlisted:     s.det.Allowlisted(),
 		ExtensionSeenAt: s.extensionSeen.Load(),
+		Supervision:     s.supervision.state(),
 	}
 }
 
@@ -402,10 +476,11 @@ func (s *Server) chooseUncounted(w http.ResponseWriter, r *http.Request) bool {
 }
 
 // todayMaxBytes bounds the answer to QueryToday. The menu bar reads one number from
-// it, and the settings page the rest — the breakdown, the day's traffic, how the agent
-// runs — so the bound covers the whole answer: cut short, it no longer parses, and the
-// menu bar loses its figure without a word (TestTodayReplyFitsTheQueryBound).
-const todayMaxBytes = 16 << 10
+// it, and the settings page the rest — the breakdown, the day's traffic and tokens, how
+// the agent runs — so the bound covers the whole answer: cut short, it no longer parses,
+// and the menu bar loses its figure without a word (TestTodayReplyFitsTheQueryBound).
+// 32 KiB since the tokens: a day of eight models fills 9 KiB at worst, over half of 16.
+const todayMaxBytes = 32 << 10
 
 // QueryToday asks the agent how many values it has hidden today.
 //

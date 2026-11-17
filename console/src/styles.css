@@ -14,6 +14,17 @@
   --line: #e2e5ea;
   --line-strong: #cdd2d9;
   --chart: #6a7482;
+  /* Categorical series, in a fixed order a series keeps (the tokens chart's models):
+     ordered so neighbours stay apart under colour-vision deficiency, validated against
+     both surfaces. Three light slots are under 3:1, so a chart using them carries its
+     values in a table beside it. Past seven, the rest fold into one --chart grey. */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
+  --series-7: #6250d6;
 
   --accent: #2f6bd8;
   --accent-ink: #ffffff;
@@ -48,6 +59,13 @@
     --line: #2a2f36;
     --line-strong: #3b414a;
     --chart: #8f99a6;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-6: #008300;
+    --series-7: #9085e9;
     --accent: #6d9cff;
     --accent-ink: #0b1220;
     --accent-soft: #1b2741;
@@ -74,6 +92,13 @@
   --line: #2a2f36;
   --line-strong: #3b414a;
   --chart: #8f99a6;
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
+  --series-7: #9085e9;
   --accent: #6d9cff;
   --accent-ink: #0b1220;
   --accent-soft: #1b2741;

@@ -232,6 +232,25 @@ func TestSettingsURLNamesLoopbackWhateverWasBound(t *testing.T) {
 	}
 }
 
+// The menu bar opens a page without a ticket when it cannot get one, and named the bound
+// address: http://:9787/settings, which is no URL, or 0.0.0.0, which namesThisMachine
+// refuses. A browser here reaches an agent on every address on loopback.
+func TestABrowserReachesAnAgentOnEveryAddressOnLoopback(t *testing.T) {
+	for bound, want := range map[string]string{
+		"":                "127.0.0.1:9787",
+		":9787":           "127.0.0.1:9787",
+		"0.0.0.0:9787":    "127.0.0.1:9787",
+		"[::]:9787":       "127.0.0.1:9787",
+		"localhost:9787":  "localhost:9787",
+		"127.0.0.1:9787":  "127.0.0.1:9787",
+		"192.0.2.10:9787": "192.0.2.10:9787", // the only address it listens on
+	} {
+		if got := BrowsableAddr(bound); got != want {
+			t.Errorf("%q: %q, want %q", bound, got, want)
+		}
+	}
+}
+
 // An agent bound to one address that is not loopback has no page anywhere: it says so,
 // where dialling 127.0.0.1, on which nothing listens, said "connection refused".
 func TestSettingsURLSaysWhyAnAgentOffLoopbackHasNoPage(t *testing.T) {

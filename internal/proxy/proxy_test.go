@@ -1164,3 +1164,21 @@ func TestEveryRouteRefusesACallerWithoutTheKey(t *testing.T) {
 		})
 	}
 }
+
+// A pass asks, for each name it mints, whether the text already holds it as text. The
+// tokens are collected once and asked of; a stand-in, which has no shape to collect, is
+// searched for. Both must answer as a search of the text would.
+func TestCarriedInAnswersAsASearchWould(t *testing.T) {
+	carried := carriedIn([]byte(`{"text":"write to [EMAIL_3] or Jean Dupont, not [email_4]"}`))
+	for name, want := range map[string]bool{
+		"[EMAIL_3]":   true,
+		"[EMAIL_4]":   false, // only in another case, which is no token
+		"[EMAIL_33]":  false,
+		"Jean Dupont": true,
+		"Jean Durand": false,
+	} {
+		if got := carried(name); got != want {
+			t.Errorf("%s: %v, want %v", name, got, want)
+		}
+	}
+}

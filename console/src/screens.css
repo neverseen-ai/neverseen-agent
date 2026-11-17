@@ -74,6 +74,34 @@
 .hour-now { background: var(--accent); opacity: 1; }
 .hour-unmeasured { background: var(--line); opacity: 1; height: 2px; }
 .hours-axis { display: flex; justify-content: space-between; font: 10.5px var(--mono); color: var(--muted); margin-top: 4px; border-top: 1px solid var(--line); padding-top: 3px; }
+/* The day's tokens: one stacked column an hour, a 2px surface gap between segments and
+   no stroke, a rounded data end; the values themselves are in the table under it. */
+.tokens { margin-top: 12px; }
+.token-chart { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 8px; margin-top: 18px; }
+.token-axis { display: flex; flex-direction: column; justify-content: space-between; height: 120px; font: 10.5px var(--mono); color: var(--muted); text-align: right; }
+.token-hours { display: grid; grid-template-columns: repeat(24, 1fr); gap: 3px; height: 120px; background: linear-gradient(var(--line), var(--line)) top / 100% 1px no-repeat; }
+.token-hour { position: relative; display: flex; align-items: flex-end; justify-content: center; border-radius: 3px; outline: none; }
+.token-hour:focus-visible { box-shadow: var(--ring); }
+.token-stack { display: flex; flex-direction: column-reverse; gap: 2px; width: min(100%, 24px); }
+.token-stack > span { flex: 1 1 0; min-height: 1px; }
+.token-stack > span:last-child { border-radius: 4px 4px 0 0; }
+.token-hour:hover .token-stack, .token-hour:focus-visible .token-stack { filter: brightness(1.12); }
+.token-unmeasured { width: min(100%, 24px); height: 2px; background: var(--line); }
+.token-tip { position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); z-index: 5; padding: 8px 10px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r-ctl); box-shadow: var(--pop); font-size: 12px; color: var(--ink-2); white-space: nowrap; pointer-events: none; }
+.tip-start .token-tip { left: 0; transform: none; }
+.tip-end .token-tip { left: auto; right: 0; transform: none; }
+.token-tip-head { color: var(--muted); margin-bottom: 4px; }
+.token-tip strong { color: var(--ink); font-weight: 620; font-variant-numeric: tabular-nums; }
+.token-tip-row { display: flex; align-items: center; gap: 6px; }
+.token-key { flex: none; width: 10px; height: 2px; border-radius: 1px; }
+.table-scroll { overflow-x: auto; margin-top: 16px; }
+.token-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.token-table th, .token-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.token-table thead th { font-size: 12px; font-weight: 560; color: var(--muted); }
+.token-table th:first-child { text-align: left; }
+.token-table tbody th { font-weight: 400; color: var(--ink); }
+.token-table td { color: var(--ink-2); }
+.token-swatch { display: inline-block; width: 10px; height: 10px; margin-right: 8px; border-radius: 2px; vertical-align: -1px; }
 .bars { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
 .bars li { display: grid; grid-template-columns: minmax(0, 11rem) minmax(0, 1fr) 3.4rem; gap: 10px; align-items: center; font-size: 13px; }
 .bar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -259,3 +287,8 @@
   
   
 }
+
+/* Service: the enrolment form. */
+.enrol { display: grid; gap: 12px; padding: 14px 16px 16px; max-width: 52rem; }
+.enrol .lede { margin: 0; }
+.enrol label { display: grid; gap: 5px; font-size: 13px; color: var(--muted); }

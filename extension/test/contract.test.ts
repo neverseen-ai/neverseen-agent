@@ -149,3 +149,32 @@ test('contract: a listener that cannot prove it holds the key is sent nothing', 
     }
   }
 });
+
+// A streamed answer is restored an event at a time, and a proof before each call was a
+// second round trip for every event. A proof stands for the calls right after it, and a
+// failed send drops it: the next call proves the listener again.
+test('contract: a proof stands for the calls right after it, until a send fails', async () => {
+  const exchange = contract.exchanges.find((e) => e.route === '/mask')!;
+  const texts = exchange.request.texts as string[];
+  const urls: string[] = [];
+  let status = 200;
+  const fetchImpl = async (url: string, init?: RequestInit): Promise<Response> => {
+    urls.push(url);
+    if (url.endsWith('/prove')) {
+      const { nonce } = JSON.parse(init?.body as string) as { nonce: string };
+      return new Response(JSON.stringify({ proof: await proofOf(cfg.key, nonce, '9787') }), { status: 200 });
+    }
+    return new Response(JSON.stringify(exchange.response), { status });
+  };
+  const proofs = () => urls.filter((u) => u.endsWith('/prove')).length;
+
+  await mask(cfg, contract.session, texts, fetchImpl);
+  await mask(cfg, contract.session, texts, fetchImpl);
+  assert.equal(proofs(), 1, 'a second call so soon after the first proved the listener again');
+
+  status = 403; // the key refused: the proof no longer says anything
+  await assert.rejects(mask(cfg, contract.session, texts, fetchImpl));
+  status = 200;
+  await mask(cfg, contract.session, texts, fetchImpl);
+  assert.equal(proofs(), 2, 'a call after a failed send was not proved again');
+});

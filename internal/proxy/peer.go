@@ -234,11 +234,16 @@ func ownerIn(table string, local, remote netip.AddrPort, order binary.ByteOrder)
 	local = netip.AddrPortFrom(local.Addr().Unmap().WithZone(""), local.Port())
 	remote = netip.AddrPortFrom(remote.Addr().Unmap().WithZone(""), remote.Port())
 
-	// The listener on local's address, else one on every address of local's port.
+	// The listener on local's address, else one on every address of local's port: the
+	// owner of a connection this machine holds and no process has accepted yet (pending),
+	// and of nothing else. A pair with no line at all is no socket here — another
+	// machine's end, an agent this one is pointed at — and is answered as not found, or a
+	// stranger listening on every address of that port would own it.
 	var listener, wildcard struct {
 		uid   uint32
 		found bool
 	}
+	pending := false
 	for i, line := range strings.Split(table, "\n") {
 		fields := strings.Fields(line)
 		if i == 0 || len(fields) < 10 {
@@ -261,14 +266,21 @@ func ownerIn(table string, local, remote netip.AddrPort, order binary.ByteOrder)
 			}
 			continue
 		}
-		if fields[9] == "0" || mine != local { // inode 0: no process holds it
+		if mine != local {
 			continue
 		}
 		theirs, ok := procAddr(fields[2], order)
 		if !ok || theirs != remote {
 			continue
 		}
+		if fields[9] == "0" { // inode 0: no process holds it, so the uid is not its owner's
+			pending = true
+			continue
+		}
 		return uint32(uid), true
+	}
+	if !pending {
+		return 0, false
 	}
 	if listener.found {
 		return listener.uid, true

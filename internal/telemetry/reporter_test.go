@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -1256,5 +1257,98 @@ func TestAWakeOnTheIntervalDoesNotFileAnEmptyWindow(t *testing.T) {
 		if !closed.Window.End.After(closed.Window.Start) {
 			t.Errorf("a bucket covers [%s, %s], a window of no length", closed.Window.Start, closed.Window.End)
 		}
+	}
+}
+
+// The settings page enrols a reporter that is already running and has nothing to
+// enrol with — a backend configured, no token. It has been climbing its ladder on
+// "no identity", so left to it the first report waits out a rung; and a token the
+// backend refuses has to come back as a refusal the page can name, leaving nothing
+// behind that a later attempt would mistake for an identity.
+func TestEnrolFromOutsideTheLoopReportsAtOnce(t *testing.T) {
+	b := newBackend(t)
+	r := NewRecorder(epoch)
+
+	identity := filepath.Join(t.TempDir(), "agent.json")
+	rep, err := NewReporter(Config{
+		BaseURL:      b.server.URL,
+		IdentityFile: identity,
+		BufferFile:   filepath.Join(t.TempDir(), "buffer.json"),
+		Recorder:     r,
+		State:        func() telemetry.State { return telemetry.State{} },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	stopped := runInBackground(t, rep, ctx)
+	defer func() { cancel(); stopped() }()
+
+	// Two failures, so the next attempt on the ladder is five seconds away: a
+	// report arriving sooner than that can only be the nudge.
+	for deadline := time.Now().Add(5 * time.Second); rep.Status().Problem == ""; time.Sleep(20 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the reporter never said that it has no identity")
+		}
+	}
+	time.Sleep(1200 * time.Millisecond)
+
+	id, err := rep.Enrol(t.Context(), "from-the-page")
+	if err != nil {
+		t.Fatalf("Enrol: %v", err)
+	}
+	if id.AgentID != "agt_test" || rep.Status().AgentID != "agt_test" {
+		t.Errorf("enrolled as %q, status says %q", id.AgentID, rep.Status().AgentID)
+	}
+	if _, found, err := LoadIdentity(identity); err != nil || !found {
+		t.Errorf("the identity was not saved (found %v, %v)", found, err)
+	}
+
+	arrived := time.Now().Add(2 * time.Second)
+	for len(b.batchSizes()) == 0 {
+		if time.Now().After(arrived) {
+			t.Fatal("no report within two seconds of enrolling: the ladder was left to run")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	// Enrolled already: the token in hand is working, and a second one is not spent.
+	if _, err := rep.Enrol(t.Context(), "another"); err != nil {
+		t.Fatalf("a second Enrol: %v", err)
+	}
+	if _, _, enrolments := b.received(); enrolments != 1 {
+		t.Errorf("enrolled %d times, want 1", enrolments)
+	}
+}
+
+func TestARefusedTokenIsARefusalAndLeavesNoIdentity(t *testing.T) {
+	refusing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer refusing.Close()
+
+	identity := filepath.Join(t.TempDir(), "agent.json")
+	rep, err := NewReporter(Config{
+		BaseURL:      refusing.URL,
+		IdentityFile: identity,
+		BufferFile:   filepath.Join(t.TempDir(), "buffer.json"),
+		Recorder:     NewRecorder(epoch),
+		State:        func() telemetry.State { return telemetry.State{} },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = rep.Enrol(t.Context(), "spent")
+	var refused *RefusedError
+	if !errors.As(err, &refused) || refused.Status != http.StatusUnauthorized {
+		t.Fatalf("Enrol returned %v, want the backend's 401 as a RefusedError", err)
+	}
+	if rep.Status().AgentID != "" {
+		t.Errorf("status names agent %q after a refusal", rep.Status().AgentID)
+	}
+	if _, err := os.Stat(identity); !os.IsNotExist(err) {
+		t.Errorf("an identity file exists after a refusal: %v", err)
 	}
 }

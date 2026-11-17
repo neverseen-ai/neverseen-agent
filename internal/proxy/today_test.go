@@ -330,6 +330,16 @@ func TestTodayReplyFitsTheQueryBound(t *testing.T) {
 	for h := range reply.Hourly {
 		reply.Hourly[h] = 100_000_000
 	}
+	// Every model the day can name, each with the longest id kept and a full day.
+	reply.Tokens = nil
+	for i := range maxTokenModels {
+		m := modelTokens{Model: fmt.Sprintf("%0*d", maxModelLen, i),
+			Day: contract.TokenUsage{Input: 1e10, Output: 1e10, CacheWrite: 1e10, CacheRead: 1e10}}
+		for h := range m.Hourly {
+			m.Hourly[h] = 4e10
+		}
+		reply.Tokens = append(reply.Tokens, m)
+	}
 	reply.Agent = agentState{StartedAt: time.Now(), Rerouted: []string{"anthropic", "openai", "gemini", "mistral"}, Allowlisted: 1_000_000}
 	body, err := json.Marshal(reply)
 	if err != nil {
@@ -421,7 +431,8 @@ func TestTheDayAndTheHeartbeatCountTheSameTraffic(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"content":[{"type":"tool_use","name":"SendMail","input":{"to":%q}}]}`,
+		fmt.Fprintf(w, `{"model":"claude-test","usage":{"input_tokens":12,"output_tokens":3,`+
+			`"cache_read_input_tokens":40},"content":[{"type":"tool_use","name":"SendMail","input":{"to":%q}}]}`,
 			mintedToken(t, string(body)))
 	})
 	// A provider that never answers: the error handler's count, the one path that is
@@ -488,5 +499,70 @@ func TestTheDayAndTheHeartbeatCountTheSameTraffic(t *testing.T) {
 	}
 	if replaced != 3 || minted != replaced {
 		t.Errorf("the heartbeat counted %d values replaced and the day %d minted, want 3 each", replaced, minted)
+	}
+	// The day's tokens through usageSink, the one place both are fed.
+	if len(heartbeat.Models) == 0 {
+		t.Fatal("the heartbeat counted no tokens: the test drove less than it meant to")
+	}
+	if len(today.Tokens) != len(heartbeat.Models) {
+		t.Fatalf("the day counted %d models, the heartbeat %d", len(today.Tokens), len(heartbeat.Models))
+	}
+	for _, m := range today.Tokens {
+		if heartbeat.Models[m.Model] != m.Day {
+			t.Errorf("%s: the day counted %+v, the heartbeat %+v", m.Model, m.Day, heartbeat.Models[m.Model])
+		}
+	}
+}
+
+// What each model was sent and answered: the four counts summed for the day, their sum
+// by the hour the answer came, in the order the models were first seen — the order the
+// page colours them in — and nothing after midnight.
+func TestTodayCountsTokensByModelAndHour(t *testing.T) {
+	var count tally
+	at := func(hour, minute int) time.Time { return time.Date(2026, 11, 14, hour, minute, 0, 0, time.Local) }
+
+	count.usage(at(9, 10), "claude-opus", contract.TokenUsage{Input: 100, Output: 20, CacheRead: 1000})
+	count.usage(at(9, 40), "claude-haiku", contract.TokenUsage{Input: 5, CacheWrite: 50})
+	count.usage(at(14, 0), "claude-opus", contract.TokenUsage{Output: 7})
+	count.usage(at(14, 5), "", contract.TokenUsage{Output: 9}) // an answer that named no model
+
+	r := count.reply(at(15, 0))
+	if len(r.Tokens) != 2 || r.Tokens[0].Model != "claude-opus" || r.Tokens[1].Model != "claude-haiku" {
+		t.Fatalf("tokens = %+v, want claude-opus then claude-haiku, in the order first seen", r.Tokens)
+	}
+	opus, haiku := r.Tokens[0], r.Tokens[1]
+	if want := (contract.TokenUsage{Input: 100, Output: 27, CacheRead: 1000}); opus.Day != want {
+		t.Errorf("claude-opus's day = %+v, want %+v", opus.Day, want)
+	}
+	if opus.Hourly[9] != 1120 || opus.Hourly[14] != 7 || haiku.Hourly[9] != 55 {
+		t.Errorf("by hour: claude-opus %v, claude-haiku %v; want 1120 and 7, and 55", opus.Hourly, haiku.Hourly)
+	}
+
+	if got := count.reply(at(9, 0).AddDate(0, 0, 1)).Tokens; len(got) != 0 {
+		t.Errorf("after midnight the tokens are %+v, want none", got)
+	}
+}
+
+// The model id is whatever the provider reported, so the set is open; the answer the
+// menu bar reads is not. Past maxTokenModels-1 models, every later one is summed under
+// Other, and the ones before keep their place — and so their colour.
+func TestTodayFoldsTheModelsPastTheCap(t *testing.T) {
+	var count tally
+	now := time.Date(2026, 11, 14, 10, 0, 0, 0, time.Local)
+	for i := range maxTokenModels + 3 {
+		count.usage(now, fmt.Sprintf("model-%d", i), contract.TokenUsage{Output: 1})
+	}
+
+	r := count.reply(now)
+	if len(r.Tokens) != maxTokenModels {
+		t.Fatalf("%d entries, want %d", len(r.Tokens), maxTokenModels)
+	}
+	for i, m := range r.Tokens[:maxTokenModels-1] {
+		if m.Model != fmt.Sprintf("model-%d", i) {
+			t.Errorf("entry %d is %s, want model-%d: a model seen first lost its place", i, m.Model, i)
+		}
+	}
+	if other := r.Tokens[maxTokenModels-1]; other.Model != contract.Other || other.Day.Output != 4 {
+		t.Errorf("the last entry is %+v, want %s holding the 4 models after the cap", other, contract.Other)
 	}
 }

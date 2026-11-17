@@ -136,6 +136,18 @@ func TestAConnectionNotYetAcceptedBelongsToItsListener(t *testing.T) {
 	if uid, ok := ownerIn(orphaned, surface, agent, binary.LittleEndian); ok {
 		t.Errorf("a socket its process has closed was read as owned by uid %d", uid)
 	}
+
+	// No line for the pair at all: another machine's end — an agent this one is pointed
+	// at, a caller on the network — while another account listens on every address of
+	// that port here. The listener owns what it has not accepted, not a port number.
+	remoteAgent := netip.MustParseAddrPort("10.0.0.5:9787")
+	const elsewhere = `  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode
+   0: 00000000:263B 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1001        0 41234 1 0000000000000000 100 0 0 10 0
+   1: 0A00000A:D000 0500000A:263B 01 00000000:00000000 00:00000000 00000000  1000        0 41240 1 0000000000000000 20 4 30 10 -1
+`
+	if uid, ok := ownerIn(elsewhere, remoteAgent, netip.MustParseAddrPort("10.0.0.10:53248"), binary.LittleEndian); ok {
+		t.Errorf("another machine's socket was read as owned by uid %d, the account listening on every address here", uid)
+	}
 }
 
 // fixedOwner answers every lookup with one account, or with none.

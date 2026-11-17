@@ -3,9 +3,9 @@ import { Check, Info, OctagonAlert, TriangleAlert } from "lucide-react";
 import { useStore, MARK_FOR } from "../app/store";
 import { agent } from "../agent/client";
 import { countedSince, inClear, toggledSet } from "../agent/decisions";
-import type { Snapshot } from "../agent/types";
+import type { ModelTokens, Snapshot } from "../agent/types";
 import { LEVELS, MODES, countryName, listOf, plural } from "../copy";
-import { locale, num, tr } from "../i18n";
+import { compact, locale, num, tr } from "../i18n";
 import { Empty } from "../ui/controls";
 import { Mark, Pip } from "../ui/Mark";
 
@@ -26,13 +26,16 @@ export function Overview() {
       ) : (
         // Two columns of about the same height: the day on the left, the standing
         // facts and the traffic on the right, rather than a short card beside a tall one.
-        <div className="overview-grid">
-          <MaskedToday snap={snap} />
-          <div className="overview-side">
-            <Configuration snap={snap} />
-            <Traffic snap={snap} />
+        <>
+          <div className="overview-grid">
+            <MaskedToday snap={snap} />
+            <div className="overview-side">
+              <Configuration snap={snap} />
+              <Traffic snap={snap} />
+            </div>
           </div>
-        </div>
+          {snap.today.tokens && <Tokens snap={snap} tokens={snap.today.tokens} />}
+        </>
       )}
     </div>
   );
@@ -209,6 +212,156 @@ function Hours({ snap, hourly }: { snap: Snapshot; hourly: number[] }) {
         <span>24</span>
       </div>
     </>
+  );
+}
+
+/** The model the agent sums every model under once the day has named seven. */
+const OTHER_MODELS = "other";
+
+/** A model's colour: the categorical slot of its place in the agent's list, which is the
+ *  order the models were first seen today, so a model keeps its colour all day. The
+ *  models past the seventh share the neutral grey. */
+function seriesOf(m: ModelTokens, index: number): string {
+  return m.model === OTHER_MODELS ? "var(--chart)" : `var(--series-${index + 1})`;
+}
+
+function modelLabel(m: ModelTokens): string {
+  return m.model === OTHER_MODELS ? tr("Other models", "Autres modèles") : m.model;
+}
+
+function totalOf(m: ModelTokens): number {
+  return m.day.input + m.day.output + (m.day.cache_write ?? 0) + (m.day.cache_read ?? 0);
+}
+
+/** The day's tokens by hour, one stacked column an hour and one segment a model, and
+ *  the same day per model in a table — which carries every value the chart draws, for
+ *  a reader who cannot tell two colours apart, and for three colours that are faint on
+ *  the light surface. An hour before the agent started, or still to come, was not
+ *  measured and is drawn as a flat line, as in the day's histogram. */
+function Tokens({ snap, tokens }: { snap: Snapshot; tokens: ModelTokens[] }) {
+  const [hovered, setHovered] = useState<number>();
+  const now = new Date();
+  const hour = now.getHours();
+  const from = countedSince(snap.today.agent?.started_at, now)?.getHours() ?? 0;
+  const byHour = Array.from({ length: 24 }, (_, h) => tokens.reduce((sum, m) => sum + (m.hourly[h] ?? 0), 0));
+  const peak = Math.max(1, ...byHour);
+  const day = tokens.reduce((sum, m) => sum + totalOf(m), 0);
+  const clock = (h: number) => `${String(h).padStart(2, "0")}:00`;
+
+  return (
+    <section className="panel tokens" aria-labelledby="tokens-title">
+      <header className="panel-head">
+        <h2 id="tokens-title">{tr("Tokens", "Tokens")}</h2>
+        <span className="muted">{since(snap)}</span>
+      </header>
+      <div className="panel-body">
+        {tokens.length === 0 ? (
+          <p className="muted">{tr("No answer has reported its tokens yet today.", "Aucune réponse n'a encore donné ses tokens aujourd'hui.")}</p>
+        ) : (
+          <>
+            <p className="today-figure">
+              <span className="figure">{compact(day)}</span>
+              <span className="figure-label">{tr("tokens today, by hour and by model", "tokens aujourd'hui, par heure et par modèle")}</span>
+            </p>
+            <div className="token-chart">
+              <div className="token-axis" aria-hidden>
+                <span>{compact(peak)}</span>
+                <span>0</span>
+              </div>
+              <div className="token-hours" role="group" aria-label={tr("Tokens per hour today", "Tokens par heure aujourd'hui")}>
+                {byHour.map((total, h) => {
+                  const measured = h >= from && h <= hour;
+                  return (
+                    <div
+                      key={h}
+                      className={`token-hour ${h < 4 ? "tip-start" : h > 19 ? "tip-end" : ""}`}
+                      tabIndex={measured ? 0 : -1}
+                      aria-label={measured ? `${clock(h)}, ${num(total)} tokens` : clock(h)}
+                      onPointerEnter={() => setHovered(h)}
+                      onPointerLeave={() => setHovered(undefined)}
+                      onFocus={() => setHovered(h)}
+                      onBlur={() => setHovered(undefined)}
+                    >
+                      {measured ? (
+                        <div className="token-stack" style={{ height: `${(total / peak) * 100}%` }}>
+                          {tokens.map(
+                            (m, i) =>
+                              (m.hourly[h] ?? 0) > 0 && (
+                                <span key={m.model} style={{ flexGrow: m.hourly[h], background: seriesOf(m, i) }} />
+                              ),
+                          )}
+                        </div>
+                      ) : (
+                        <div className="token-unmeasured" />
+                      )}
+                      {hovered === h && measured && total > 0 && (
+                        <div className="token-tip" role="tooltip">
+                          <div className="token-tip-head">
+                            <strong>{num(total)}</strong> {tr(`tokens, ${clock(h)}–${clock(h + 1)}`, `tokens, ${clock(h)}–${clock(h + 1)}`)}
+                          </div>
+                          {tokens.map(
+                            (m, i) =>
+                              (m.hourly[h] ?? 0) > 0 && (
+                                <div key={m.model} className="token-tip-row">
+                                  <span className="token-key" style={{ background: seriesOf(m, i) }} />
+                                  <strong>{num(m.hourly[h]!)}</strong> {modelLabel(m)}
+                                </div>
+                              ),
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <span aria-hidden />
+              <div className="hours-axis" aria-hidden>
+                <span>00</span>
+                <span>06</span>
+                <span>12</span>
+                <span>18</span>
+                <span>24</span>
+              </div>
+            </div>
+            <div className="table-scroll">
+              <table className="token-table">
+                <thead>
+                  <tr>
+                    <th scope="col">{tr("Model", "Modèle")}</th>
+                    <th scope="col">{tr("Total", "Total")}</th>
+                    <th scope="col">{tr("Input", "Entrée")}</th>
+                    <th scope="col">{tr("Cache write", "Écriture cache")}</th>
+                    <th scope="col">{tr("Cache read", "Lecture cache")}</th>
+                    <th scope="col">{tr("Output", "Sortie")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tokens.map((m, i) => (
+                    <tr key={m.model}>
+                      <th scope="row">
+                        <span className="token-swatch" style={{ background: seriesOf(m, i) }} aria-hidden />
+                        {modelLabel(m)}
+                      </th>
+                      <td>{num(totalOf(m))}</td>
+                      <td>{num(m.day.input)}</td>
+                      <td>{num(m.day.cache_write ?? 0)}</td>
+                      <td>{num(m.day.cache_read ?? 0)}</td>
+                      <td>{num(m.day.output)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="fine">
+              {tr(
+                "As each provider reports them in its answer. A cache read is input served from the provider's cache, at a discount. Counts only: what they cost depends on each provider's prices.",
+                "Tels que chaque fournisseur les donne dans sa réponse. Une lecture cache est une entrée servie depuis le cache du fournisseur, à prix réduit. Des nombres seulement : leur coût dépend des tarifs de chaque fournisseur.",
+              )}
+            </p>
+          </>
+        )}
+      </div>
+    </section>
   );
 }
 

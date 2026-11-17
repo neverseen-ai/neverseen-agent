@@ -185,6 +185,44 @@ function hex(bytes: Uint8Array): string {
   return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+/** How long a proof stands for the calls that follow it. */
+const PROOF_STANDS_MS = 2_000;
+
+/** When each address last proved each key, per fetch: a test's own fetch starts with
+ * nothing proved, and the worker's one fetch keeps its proofs across calls. */
+const proved = new WeakMap<Fetch, Map<string, number>>();
+
+/**
+ * proven proves the listener unless the same address proved the same key within
+ * PROOF_STANDS_MS. A streamed answer is restored an event at a time, the calls
+ * serialised, and a proof before each was a second round trip for every event: the
+ * latency of the restoration doubled.
+ *
+ * TODO: the proof stands for two seconds, so a listener that takes the port within two
+ * seconds of the agent leaving it receives what is sent in that time, where a proof per
+ * call left it the moment between the check and the send. Any failure drops the proof,
+ * which closes it for an agent that stopped answering. The upgrade is native messaging,
+ * as for prove.
+ */
+async function proven(cfg: AgentConfig, fetchImpl: Fetch): Promise<void> {
+  let byAddress = proved.get(fetchImpl);
+  if (!byAddress) {
+    byAddress = new Map();
+    proved.set(fetchImpl, byAddress);
+  }
+  const entry = `${cfg.baseUrl}\0${cfg.key}`;
+  const at = byAddress.get(entry);
+  if (at !== undefined && Date.now() - at < PROOF_STANDS_MS) return;
+  byAddress.delete(entry);
+  await prove(cfg, fetchImpl);
+  byAddress.set(entry, Date.now());
+}
+
+/** forgetProof drops what proven holds for this address and key. */
+function forgetProof(cfg: AgentConfig, fetchImpl: Fetch): void {
+  proved.get(fetchImpl)?.delete(`${cfg.baseUrl}\0${cfg.key}`);
+}
+
 async function call<T>(
   cfg: AgentConfig,
   path: string,
@@ -197,7 +235,7 @@ async function call<T>(
   }
   // Before the key, and before the text: the two things a listener of another account
   // must never receive.
-  await prove(cfg, fetchImpl);
+  await proven(cfg, fetchImpl);
 
   let resp: Response;
   try {
@@ -213,9 +251,11 @@ async function call<T>(
   } catch (err) {
     // A fetch that rejects is the agent being stopped, or bound somewhere else.
     // Never a reason to carry on: the send this was masking is blocked.
+    forgetProof(cfg, fetchImpl);
     throw new AgentError('unreachable', describe(err));
   }
 
+  if (!resp.ok) forgetProof(cfg, fetchImpl);
   if (resp.status === 403 || resp.status === 503) {
     // 403 is a key this agent does not accept; 503 is an agent that has no key of
     // its own. Both are "reconnect" for a person, and neither is "it is down".

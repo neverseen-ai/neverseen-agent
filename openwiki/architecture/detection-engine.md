@@ -1015,7 +1015,7 @@ match is dropped whole rather than clipped.
 or `fake`, read from `NEVERSEEN_PII_SUBSTITUTION`. The zero value is `token`, so a `Config` built by hand keeps
 the reversible behaviour without saying so.
 
-`Detector.render` (`mask.go:128`) applies the mode to one index:
+`Detector.render` (`mask.go:149`) applies the mode to one index:
 
 ```go
 if fake mode && !pii.IsSecret(cat) { if stand-in available for (cat, locale, index) → use it }
@@ -1047,7 +1047,7 @@ back to a token.
 **The known gap is named rather than hidden.** A short stand-in can be matched by
 coincidence: a fake postcode is five digits, and a model that wrote those five digits about
 something else has them replaced by the caller's real postcode. The `TODO` on
-`detector.Unmask` (`mask.go:240`) carries it, with the upgrade path — a minimum length, or
+`detector.Unmask` (`mask.go:260`) carries it, with the upgrade path — a minimum length, or
 marking the substitution invisibly.
 
 ## Tokens
@@ -1063,7 +1063,7 @@ prefix, carried across a restart, and safe under concurrency because the vault l
 claims a name in one step under its lock (`TestConcurrentClaimsNeverRepeatAnIndex`,
 `TestConcurrentClaimsGiveOneValueOneName`). Per session also keeps the numbers small and
 the stand-ins inside their generators' capacity. A pass given no index source — the test
-page, `scan`, `replay` — falls back to `Detector.nextIndex` (`mask.go:148`), per category
+page, `scan`, `replay` — falls back to `Detector.nextIndex` (`mask.go:168`), per category
 and process-wide (`TestConcurrentPassesNeverShareAMask`). A value the session named before
 is given no index at all — `vault.Name` hands it back the replacement it had, even once
 the mapping has expired (see [the request path](request-path.md#the-session-vault)).
