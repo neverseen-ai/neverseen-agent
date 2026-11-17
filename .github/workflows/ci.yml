@@ -173,7 +173,7 @@ jobs:
           cache: true
 
       - name: Check the release configuration
-        uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6.4.0
+        uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           version: v2.18.2
           args: check
@@ -187,7 +187,7 @@ jobs:
       # first release failed on the second of those, on a tag, where the failure is
       # a published tag with nothing attached to it.
       - name: Build a snapshot release, archives and checksums included
-        uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6.4.0
+        uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           version: v2.18.2
           args: release --snapshot --clean --skip=publish
