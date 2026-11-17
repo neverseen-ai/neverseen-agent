@@ -12,6 +12,7 @@ import (
 	"github.com/neverseen-ai/neverseen-agent/internal/detector"
 	"github.com/neverseen-ai/neverseen-agent/internal/telemetry"
 	"github.com/neverseen-ai/neverseen-agent/internal/vault"
+	pkgtelemetry "github.com/neverseen-ai/neverseen-agent/pkg/telemetry"
 )
 
 // Assembling the agent: what the command decides, what the environment decides,
@@ -222,6 +223,10 @@ func FromEnv(logger *slog.Logger, opts Options) (*Agent, error) {
 	}
 
 	agent := &Agent{Server: srv, Addr: addr}
+	// Wired here rather than in New, for the reason the reporter's Gain is: a server
+	// built by a test reads nothing, and no rtk on the machine running it can reach
+	// an assertion.
+	srv.rtk = rtkReader{path: telemetry.RTKPath, gain: telemetry.GainAt}
 	if err := agent.superviseFromEnv(logger, recorder, policyFile); err != nil {
 		return nil, err
 	}
@@ -313,6 +318,10 @@ func (a *Agent) superviseFromEnv(logger *slog.Logger, recorder *telemetry.Record
 	sup.log = logger
 	sup.file = supervisionFile(policyFile)
 	sup.fresh = func() { recorder.Take(time.Now()) }
+	sup.preview = func(now time.Time) pkgtelemetry.Bucket {
+		counters, window, _ := recorder.Snapshot(now)
+		return pkgtelemetry.Bucket{Window: window, Counters: counters}
+	}
 	token := strings.TrimSpace(os.Getenv(EnvEnrolmentToken))
 	sup.build = func(backend string) (*telemetry.Reporter, error) {
 		return telemetry.NewReporter(telemetry.Config{

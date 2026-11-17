@@ -8,8 +8,8 @@ import type { MarkState } from "../ui/Mark";
 
 // ---------------------------------------------------------------- routes
 
-export type Screen = "overview" | "masked" | "try" | "connect" | "service";
-export const SCREENS: Screen[] = ["overview", "masked", "try", "connect", "service"];
+export type Screen = "overview" | "masked" | "try" | "connect" | "rtk" | "cloud" | "service";
+export const SCREENS: Screen[] = ["overview", "masked", "try", "connect", "rtk", "cloud", "service"];
 
 export interface Route {
   screen: Screen;

@@ -323,6 +323,12 @@ type agentState struct {
 	// Supervision is where this agent reports and how that goes, and what the
 	// page's enrolment form starts from when it reports nowhere.
 	Supervision supervisionState `json:"supervision"`
+
+	// RTK is whether a binary called rtk is on this workstation, which is what
+	// decides whether the page's rtk screen makes the case for rtk or asks it for
+	// its record. Found, not run: whether it answers is /rtk's to say, once
+	// somebody opens that screen.
+	RTK bool `json:"rtk,omitempty"`
 }
 
 // agentNow reads agentState from the server.
@@ -336,6 +342,7 @@ func (s *Server) agentNow() agentState {
 		Allowlisted:     s.det.Allowlisted(),
 		ExtensionSeenAt: s.extensionSeen.Load(),
 		Supervision:     s.supervision.state(),
+		RTK:             s.rtk.installed(),
 	}
 }
 

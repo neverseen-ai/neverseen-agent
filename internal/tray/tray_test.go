@@ -249,7 +249,7 @@ func TestWatchAppliesOnlyWhatChanged(t *testing.T) {
 			mu.Lock()
 			defer mu.Unlock()
 			return answer
-		}, time.Millisecond, nil)
+		}, time.Millisecond)
 	}()
 
 	// The first application happens before the first wait, or the bar would show
@@ -322,45 +322,6 @@ func TestTheProvidersOfferedAreTheOnesTheAgentServes(t *testing.T) {
 }
 
 // A change in the provider list is a change on screen. It went unnoticed while
-// A click is drawn by asking watch to poll at once, so the loop compares with what is on
-// screen. Drawn beside it, the loop went on comparing with the display before the click,
-// and a change made elsewhere back to that one was never drawn: "Masking" on the icon
-// while two categories went out in clear.
-func TestAClickIsDrawnThroughTheWatch(t *testing.T) {
-	var mu sync.Mutex
-	twoOff := proxy.Status{Addr: "127.0.0.1:9787", Answering: true, Health: healthWithGroups("EMAIL", "PHONE")}
-	everything := proxy.Status{Addr: "127.0.0.1:9787", Answering: true, Health: healthWithGroups()}
-	answer := twoOff
-
-	view := &recorder{}
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	now := make(chan struct{}, 1)
-	go watch(ctx, view, func() proxy.Status {
-		mu.Lock()
-		defer mu.Unlock()
-		return answer
-	}, time.Hour, now) // no tick during the test: only the clicks redraw
-	waitFor(t, func() bool { return view.updates() >= 1 })
-
-	set := func(s proxy.Status, updates int) {
-		t.Helper()
-		mu.Lock()
-		answer = s
-		mu.Unlock()
-		now <- struct{}{}
-		waitFor(t, func() bool { return view.updates() >= updates })
-	}
-	set(everything, 2) // "Mask everything again"
-	set(twoOff, 3)     // the settings page switches the two off again
-	if !same(view.last(), render(twoOff)) {
-		t.Error("the menu still draws everything masked while two categories are off")
-	}
-}
-
-// watch compared only the informational lines, which do not mention providers —
-// so an agent restarted with a different set would have kept the old submenu for
-// the life of the icon.
 func TestWatchNoticesAProviderListChange(t *testing.T) {
 	var mu sync.Mutex
 	answer := proxy.Status{Addr: "127.0.0.1:9787", Answering: true,
@@ -374,7 +335,7 @@ func TestWatchNoticesAProviderListChange(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		return answer
-	}, time.Millisecond, nil)
+	}, time.Millisecond)
 
 	waitFor(t, func() bool { return view.updates() >= 1 })
 
@@ -505,46 +466,6 @@ func TestAPartlyMaskingAgentGetsItsOwnIcon(t *testing.T) {
 	}
 }
 
-// The two changes the field-by-field comparison could not see.
-//
-// Neither is exotic: both are made by `neverseen mask`, which is the only way to
-// reach these settings on a workstation with no menu bar, and both used to leave
-// the bar ticking the value the agent had stopped applying. The secret level is
-// named nowhere in the state lines, so it moved with nothing else to give it away;
-// the locales are named in a state line only while no category is switched off,
-// which is why the second case pins an agent in the partial state.
-func TestSameSeesTheSettingsNoStateLineCarries(t *testing.T) {
-	masking := proxy.Status{Addr: "127.0.0.1:9787", Answering: true, Health: proxy.Health{
-		Version: "1.0.0", Masking: "full", Substitution: "token", SecretLevel: "weak",
-		Locales: []string{"fr"}, AvailableLocales: []string{"fr", "gb"},
-	}}
-
-	partial := masking
-	partial.Health.Masking = "partial"
-	partial.Groups = []proxy.HealthGroup{{Code: "personal", Label: "Personal details",
-		Categories: []proxy.HealthCategory{{Code: "EMAIL", Label: "Email address", Off: true}}}}
-
-	for _, tc := range []struct {
-		name   string
-		before proxy.Status
-		change func(*proxy.Status)
-	}{
-		{"the secret level", masking, func(s *proxy.Status) { s.SecretLevel = "strong" }},
-		{"the locales, with a category switched off", partial,
-			func(s *proxy.Status) { s.Locales = []string{"gb"} }},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			after := tc.before
-			tc.change(&after)
-
-			if same(render(tc.before), render(after)) {
-				t.Errorf("%s changed and the menu bar would not redraw, "+
-					"so it goes on ticking what the agent stopped applying", tc.name)
-			}
-		})
-	}
-}
-
 // The guard the comparison's own comment promised and did not keep: six fields
 // were added to display and none of them was compared.
 //
@@ -601,38 +522,5 @@ func perturb(v reflect.Value) bool {
 		return true
 	default:
 		return false
-	}
-}
-
-// The one write the menu has left, and the whole state has to travel with it.
-//
-// PUT /policy replaces rather than patches, so a request carrying nothing but the
-// empty set would take the mode, the locales and the secret level down with it —
-// switching off, from a menu entry that says "mask everything again", three settings
-// somebody chose on the settings page.
-func TestMaskingEverythingAgainCarriesTheRestUnchanged(t *testing.T) {
-	health := healthWithGroups("EMAIL")
-	health.SecretLevel = "strong"
-	health.Substitution = "fake"
-	d := render(proxy.Status{Addr: "127.0.0.1:9787", Answering: true, Health: health})
-
-	want := d.maskEverything()
-
-	if len(want.Off) != 0 {
-		t.Errorf("a category stayed switched off: %v", want.Off)
-	}
-	// Empty rather than nil: the route reads an absent list as a malformed request,
-	// and this one means "nothing is switched off".
-	if want.Off == nil {
-		t.Error("the switched-off set is nil, which the route refuses as a partial request")
-	}
-	if want.Substitution != "fake" {
-		t.Errorf("the substitution mode was lost: %q", want.Substitution)
-	}
-	if want.SecretLevel != "strong" {
-		t.Errorf("the secret level was lost: %q", want.SecretLevel)
-	}
-	if len(want.Locales) != 1 || want.Locales[0] != "fr" {
-		t.Errorf("the locales were lost: %v", want.Locales)
 	}
 }

@@ -52,7 +52,7 @@ Usage:
   neverseen mask          list what is masked, and switch a category or a family
                            off for this run
   neverseen key           print the control key, for the browser extension
-  neverseen settings      print a one-time link to the settings page
+  neverseen console       print a one-time link to the console
   neverseen env [--force] [--shell posix|powershell]
                           print the lines that point a tool at the agent
   neverseen replay <dir>  rebuild the heartbeat batch from the traces in a
@@ -165,7 +165,9 @@ func run(args []string, stdin io.Reader, stdout io.Writer) error {
 		return runMask(args[1:], stdout)
 	case "key":
 		return runKey(stdout)
-	case "settings":
+	// "settings" is what the command was called while the page was only settings:
+	// kept, so a note or a script written then still opens it.
+	case "console", "settings":
 		return runSettings(stdout)
 	case "env":
 		return runEnv(args[1:], stdout)

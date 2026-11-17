@@ -311,18 +311,12 @@ else can, which is to say without being clicked whether the traffic is masked.
   about the twenty-odd categories that are. The third is the right-hand square **half
   filled** — the mark's own vocabulary again, and half rather than a smaller inner square
   because at sixteen points an inner shape is three pixels with a one-pixel gap.
-- **"Mask everything again" is the one thing the menu writes**, and it sends the whole state
-  with the switched-off set emptied (`display.maskEverything`,
-  `TestMaskingEverythingAgainCarriesTheRestUnchanged`). `PUT /policy` replaces rather than
-  patches, so a request carrying nothing but the empty set would take the mode, the locales
-  and the secret level down with it — switching off, from an entry that says "mask everything
-  again", three settings somebody had just chosen on the page. It redraws from the reply, so
-  a refused click corrects itself rather than leaving the menu claiming something it did not
-  get. `proxy.SetPolicy` is the one place a local surface writes this, as `proxy.Query` is
-  the one place it is read.
-- **The three settings the menu stopped drawing are still compared.** They are not on
-  screen, but they are in every request that entry sends, and a stale copy of them is a
-  click that quietly reverts what the settings page has just changed.
+- **The menu writes nothing.** "Mask everything again" was its last write and is gone: the
+  settings page and `neverseen mask --reset` do it. `PUT /policy` replaces rather than
+  patches, so the entry had to send the mode, the locales and the secret level with the
+  emptied set — three settings the menu no longer drew, kept and compared only for that
+  request, and a stale copy of them was a click that reverted what the page had just
+  changed. The menu reads, and opens the page.
 - `display` is **one value rather than four calls**, so `watch` can tell whether anything
   changed by comparing two of them — and a fifth thing to show cannot be added without the
   comparison being updated with it. `watch` applies only on a change, because a menu bar told
@@ -336,8 +330,7 @@ else can, which is to say without being clicked whether the traffic is masked.
 - **The day's count is shown in three places, because no single one is drawn everywhere**:
   beside the icon (`display.title`, `systray.SetTitle` — drawn on macOS, a no-op on Windows,
   the host's decision on Linux), in the tooltip, and under the verdict. It comes from
-  `GET /today`, behind the control key, which `ask` reads on every poll as "Mask everything
-  again" reads it on every click — never from `/healthz`, which carries no counter (see
+  `GET /today`, behind the control key, which `ask` reads on every poll — never from `/healthz`, which carries no counter (see
   [`/healthz` and the local callers](../architecture/request-path.md#healthz-and-the-local-callers)).
   When the agent did not give one, **nothing** is shown rather than a zero nobody measured
   (`TestTheDaysCountIsShownOnlyWhenTheAgentGaveOne`). **Which families it counts is chosen

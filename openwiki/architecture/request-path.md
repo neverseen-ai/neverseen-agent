@@ -36,7 +36,7 @@ replacing it (`ParseProviders`, `provider.go:59`): a deployment pointing one pro
 its own gateway must not silently lose the other seven.
 
 **Reserved routes.** `reservedRoutes` = `healthz`, `test`, `settings`, `policy`, `mask`,
-`unmask`, `prove`, `today`, `enrol`
+`unmask`, `prove`, `today`, `enrol`, `report`, `rtk`
 (`proxy.go:258`) — every route the agent answers itself. A provider may
 not take one of those codes — `/healthz` would reach the agent while `/healthz/v1/…`
 reached the provider, a routing table nobody could reason about. `New` refuses it
@@ -139,7 +139,7 @@ A caller off this machine has no socket here and is `-l`'s question, not this gu
 
 **The other direction is the surfaces'** (`agentClient`): the first account to bind the port
 used to receive everybody else's traffic, and nothing asked who was listening before
-`neverseen mask`, the menu bar or `neverseen settings` sent it the control key — or before
+`neverseen mask`, the menu bar or `neverseen console` sent it the control key — or before
 `Query` told `neverseen env` to point every tool at it. Every local surface reaches the agent
 through one client whose dialer looks up the listener's end of the connection and refuses
 another account's **before a byte is written** (`TestASurfaceSendsNothingToAListenerOfAnotherAccount`,

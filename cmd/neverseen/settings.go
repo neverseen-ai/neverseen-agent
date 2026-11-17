@@ -9,7 +9,8 @@ import (
 	"github.com/neverseen-ai/neverseen-agent/internal/proxy"
 )
 
-// `neverseen settings` prints a one-time link to the settings page.
+// `neverseen console` prints a one-time link to the console, the page the agent
+// serves at /settings.
 //
 // The page carries the control key only when it is opened with such a link, because a
 // page typed by hand could be another account's on this machine. This is the way to it

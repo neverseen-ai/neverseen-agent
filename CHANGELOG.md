@@ -7,9 +7,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); eac
 
 ### Security
 
-- On Linux, another account on the same machine can no longer send requests through the agent and read a restored answer, and no surface hands the control key to an agent another account started (563650d)
+- On Linux, another account on the same machine can no longer send requests through the agent and read a restored answer, and no surface hands the control key to an agent another account started (563650d, 4bb4da5)
 - The settings page carries the control key only when opened through a one-time link, valid for a minute, from the menu bar or `neverseen settings` (563650d)
-- The browser extension sends nothing to a listener that has not first proved it holds the control key (563650d)
+- The browser extension sends nothing to a listener that has not first proved it holds the control key (563650d, 4bb4da5)
 - A web page that rebinds its own domain to this machine can no longer use the agent and read a restored answer: a request whose `Host` is not the agent's is refused with a 421 (419f691)
 - An AWS secret key is masked where no `=` or `:` follows its name — `aws configure set`, a command-line flag, the console's `credentials.csv`, a sentence naming it beside its access key id (d21e07f)
 - A telephone number, a date of birth or a postcode assigned to a field named for it is masked inside source code too, where a customer record in a test fixture used to go out in clear (493e678)
@@ -20,6 +20,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); eac
 
 - The agent log says when a request carries a picture or other encoded content the agent cannot read, and when an answer uses a placeholder the agent never gave (52b65c5)
 - `neverseen settings` prints the link that opens the settings page (563650d)
+- The settings page enrols a running agent with a supervision backend, with no edit of `~/.neverseen/.env` and no restart, and says why when the token is refused (4bb4da5)
+- The settings page shows the tokens each model was sent and answered, for the day and by hour (4bb4da5)
 
 ### Changed
 
@@ -30,8 +32,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); eac
 ### Fixed
 
 - A placeholder the model remembers is restored after a long pause, where it used to come back unexpanded once the session had expired (da231dc)
-- A restart no longer gives a placeholder a conversation remembers to another value, two requests in flight no longer give one value two names, and a conversation resumed after a restart gets its placeholders back; uninstalling deletes the record that makes this possible (6fd0595, d4b50b2, 8819669)
-- A value is never given a placeholder the conversation already carries as text, which the answer would have restored as that value (63d9156)
+- A restart no longer gives a placeholder a conversation remembers to another value, two requests in flight no longer give one value two names, and a conversation resumed after a restart gets its placeholders back; uninstalling deletes the record that makes this possible (6fd0595, d4b50b2, 8819669, 4bb4da5)
+- A value is never given a placeholder the conversation already carries as text, which the answer would have restored as that value (63d9156, 4bb4da5)
 - A request body with nothing to mask is forwarded as the bytes that arrived, rather than re-encoded (465c77e)
 - A request body is refused with a 413 above 32 MiB, measured after decompression, where a small compressed body could exhaust memory (3490ebb)
 - A UK National Insurance number no longer takes the word that follows it into the mask (9015bda)
@@ -39,6 +41,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); eac
 - `neverseen service install` works without `~/.neverseen/.env`, whose absence used to put the agent in a restart loop (bde3758)
 - `install.sh --uninstall` removes the service registration even when the binary is already gone (8f57832)
 - `neverseen service restart` restarts the menu bar icon on Windows too, as on macOS (876fcd0)
+- The menu bar redraws a change made on the settings page after one of its own clicks, where it could go on saying "Masking" with categories switched off (4bb4da5)
+- The menu bar's links open for an agent bound to every address, such as `:9787` (4bb4da5)
 - A change the agent refuses redraws the settings page from what the agent applied (9c6bba0)
 - `neverseen mask` wraps its country lists instead of printing one line of several hundred columns (f53f678)
 - An agent whose disk refused its supervision identity keeps reporting and retries the save, rather than being unable to enrol again (5a1a953)

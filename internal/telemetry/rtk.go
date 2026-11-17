@@ -56,13 +56,22 @@ var rtkEnvironment = []string{
 // its SQLite history, whose schema is rtk's business and whose rows carry the
 // command lines — content this contract refuses.
 func Gain(ctx context.Context) (out []byte, found bool, err error) {
-	path := rtkPath(exec.LookPath, os.UserHomeDir)
+	path := RTKPath()
 	if path == "" {
 		return nil, false, nil
 	}
-	out, err = runGain(ctx, path)
+	out, err = GainAt(ctx, path)
 	return out, true, err
 }
+
+// GainAt is Gain on a binary already found, for a caller that reports which one it
+// ran: looked up again, the path said need not be the path run.
+func GainAt(ctx context.Context, path string) ([]byte, error) { return runGain(ctx, path) }
+
+// RTKPath is where the rtk binary is on this workstation, or "" with none: what
+// Gain would run. For the settings page, whose rtk screen makes the case for rtk
+// where there is none — a file called rtk, which is less than rtk having answered.
+func RTKPath() string { return rtkPath(exec.LookPath, os.UserHomeDir) }
 
 // runGain runs one binary as rtk, bounded in time, in output and in what it is
 // told of the agent.
@@ -167,6 +176,24 @@ type rtkDay struct {
 	Output   int    `json:"output_tokens"`
 }
 
+// RTKDay is one day as rtk recorded it, for the settings page. The date is rtk's
+// own, a UTC day (rtkTally says how that was measured).
+type RTKDay = rtkDay
+
+// GainDays reads the daily rows out of what Gain returned.
+func GainDays(out []byte) ([]RTKDay, error) {
+	var gain struct {
+		Daily *[]rtkDay `json:"daily"`
+	}
+	if err := json.Unmarshal(out, &gain); err != nil {
+		return nil, err
+	}
+	if gain.Daily == nil {
+		return nil, errNoDailyRows
+	}
+	return *gain.Daily, nil
+}
+
 // errNoDailyRows is a reading that is JSON without the rows asked for — `{}`,
 // `null`, or whatever another tool called rtk prints. Accepted as an empty
 // reading, it became the baseline, and the next real one was counted whole:
@@ -200,19 +227,14 @@ type rtkTally struct {
 // add reads one `rtk gain` output, taken at a given moment, and returns what was
 // recorded since the last.
 func (t *rtkTally) add(out []byte, at time.Time) (telemetry.RTK, error) {
-	var gain struct {
-		Daily *[]rtkDay `json:"daily"`
-	}
-	if err := json.Unmarshal(out, &gain); err != nil {
+	days, err := GainDays(out)
+	if err != nil {
 		return telemetry.RTK{}, err
-	}
-	if gain.Daily == nil {
-		return telemetry.RTK{}, errNoDailyRows
 	}
 
 	var delta telemetry.RTK
-	seen := make(map[string]rtkDay, len(*gain.Daily))
-	for _, day := range *gain.Daily {
+	seen := make(map[string]rtkDay, len(days))
+	for _, day := range days {
 		seen[day.Date] = day
 		if t.seen == nil {
 			continue

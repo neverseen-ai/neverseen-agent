@@ -67,7 +67,7 @@ neverseen scan [file]   report the sensitive values in a file, or in stdin
 neverseen status        report whether the agent is masking, and what
 neverseen mask          list what is masked, and switch a category or family off
 neverseen key           print the control key, for the browser extension
-neverseen settings      print a one-time link to the settings page
+neverseen console       print a one-time link to the console
 neverseen env [--force] print the shell exports that point a tool at the agent
 neverseen replay <dir>  rebuild the heartbeat batch from the traces in a
                          directory and print it; nothing is sent or queued
@@ -362,7 +362,7 @@ While the agent runs, `http://127.0.0.1:9787/settings` is where the four things 
 change under a running agent are changed: which categories are masked, which countries are
 loaded, the substitution mode and the secret level. It is what the menu bar opens, and what
 the menu bar stopped being. It is opened with a one-time link — from the menu bar's
-*Settings…*, or printed by `neverseen settings` — because typed by hand it carries no key and
+*Open the console…*, or printed by `neverseen console` — because typed by hand it carries no key and
 changes nothing (below).
 
 **It exists because the menu bar was the wrong shape for the job.** `fyne.io/systray` gives
@@ -384,9 +384,10 @@ every surface goes through.
 The page is a React application, `console/`: an overview (what the agent is doing, the day's
 count from `GET /today` with the families the menu bar counts — chosen here, applied by the
 agent through `PUT /today` — and the running configuration), *What is masked* (countries, personal
-data, secrets, substitution), *Try it* (over `POST /test` in JSON), *Connect a tool* (the lines
-from `Health.Tools`, which is `shellTools`), and *Service* (the version, the commands, the
-files under `~/.neverseen`). In English or French, light or dark. The overview also draws the
+data, secrets, substitution), *Try it* (over `POST /test` in JSON), *Connect an LLM agent* (the lines
+from `Health.Tools`, which is `shellTools`), *rtk savings* (what rtk cut, or the case for installing it),
+*Neverseen Cloud* (the connection to a supervision
+backend), and *Service* (the version, the commands, the files under `~/.neverseen`). In English or French, light or dark. The overview also draws the
 day by local hour (`hourly`) and by category (`by_category`): the same minted counts, so both
 add up to the figure, and an hour before the agent started, or still to come, is drawn as not
 measured. Under them, the day's tokens: one stacked column an hour and a segment per model
@@ -409,10 +410,58 @@ byte.
 **A block the agent serves no data for is left out, never drawn from a mock.** The overview's
 day — the count by family, the traffic, the warnings about how the agent runs — and the
 extension's last call come from `GET /today`, behind the key, so a page opened without it
-draws none of them. The Service screen's Supervision panel is drawn from the same answer
+draws none of them. The Neverseen Cloud screen is drawn from the same answer
 (`agent.supervision`): an enrolment form while no backend has issued this workstation an
-identity, sent to `POST /enrol`, and the state alone once one has — see
-[supervision](../architecture/supervision.md). What the design the console came from also had and the agent does not
+identity, sent to `POST /enrol`, and the state alone once one has — where it reports, since
+when, the last report, the next attempt and how many wait — see
+[supervision](../architecture/supervision.md).
+
+**The rtk screen draws what rtk saved, or makes the case for it, and asks rtk when
+opened.** `GET /today` carries `agent.rtk` — a binary called rtk was *found*
+(`telemetry.RTKPath`, the lookup the reporter uses), a lookup and never a run, because that
+answer is polled every five seconds. What the screen shows is one decision (`rtkScreen`, in
+`decisions.ts`), and it keeps three answers apart. **The agent did not say** — a page
+without the key, an agent that has stopped — and nothing is claimed either way: the case
+for installing rtk, made to somebody who has it, is a page wrong about the workstation it
+is on. **No rtk**, and the page is `RtkPitch`: what rtk is for, the same command with and
+without it, where it sits beside this agent, and three steps to install it. **An rtk**, and
+its days. Because the lookup is polled, the page changes within seconds of an install with
+no reload; an rtk that answers with no day yet is `fresh` — the same page with the steps
+behind it ticked — and is asked again every thirty seconds until it has one. An rtk that
+gave a problem, or an agent that did not answer, is asked again at the same pace, so a
+repair shows without leaving the screen (`rtkAsksAgain`); once there is a reading nothing
+asks again, because each asking runs rtk. The first
+version hid the screen where there was no rtk; it was reversed because a workstation
+without rtk is exactly the one with something to gain from the screen.
+
+**The pitch is about a third party's tool, and says only what that tool says of itself.**
+The install lines are rtk's README's — Homebrew, its script, winget — and are spelled in
+the page rather than served: they are prose about another project, not a set this agent
+owns, and a `TODO:` names the drift. The example is counted in lines, which can be read off
+it, never in tokens nobody measured. The licence is worded as rtk words it — the
+command-line tool is Apache-2.0, its engine is source-available under BUSL-1.1 — for the
+reason this repository's own is: "open source" would be wrong about half of it. The second
+step is not ticked by a found binary, because whether the hook is installed is the coding
+agent's configuration and nothing this agent reads.
+
+`GET /rtk`, behind the control key, runs
+`rtk gain --daily --format json` through the heartbeat's reader (`telemetry.GainAt`, on a
+binary looked up once, so the path the answer names is the path that was run) — the
+daily rows, never the history, whose rows carry the command lines — and answers in the
+agent's own shape: a date, the commands, and the tokens before and after. The saving is
+their difference, computed by the page as the backend computes it, and no price is derived.
+Three answers, as for `State.RTK`: no rtk; one that gave no reading, with what it said and
+**no days** — an empty record would be drawn as ninety idle ones; a reading. The page fills
+the dates rtk has no row for (`rtkPeriod`), so an idle day is a gap rather than two days
+side by side — the share line lifts over it (`sharePath`) — and compares a period with the one before only when rtk's ninety days still
+hold that one whole. A day is rtk's, midnight to midnight UTC, and the screen says so.
+Wired in `FromEnv` alone (`Server.rtk`), so a server built by a test reads nothing. A
+`TODO:` names the ceiling: every `GET /rtk` spawns rtk, which is sized for a screen being
+opened, not for a surface that polls. `TestRTKServesTheDailyRows`,
+`TestRTKThatGivesNoReadingIsAProblemNotAnEmptyRecord`, `TestRTKAbsentIsSaidAndNothingIsRun`,
+`TestTodaySaysWhetherRTKIsInstalledWithoutRunningIt`.
+
+What the design the console came from also had and the agent does not
 serve — the hours, whether the login service and the icon are installed, a team policy — is
 left out, with a `TODO` where it would go. The countries are one list rather than one section
 per continent: forty-one of the forty-two are European. Without
@@ -453,7 +502,7 @@ is a leak between accounts rather than an escalation.
 So **the key is in the page only when the request carries a ticket**, and a ticket is minted
 by `POST /settings`, which needs the key. Whoever opens the page with the key in it has proved
 they can read `~/.neverseen/control.key` — 0600 and the owner's. The menu bar mints one and
-opens the link; `neverseen settings` mints one and prints it. `proxy.SettingsURL` is the one
+opens the link; `neverseen console` mints one and prints it. `proxy.SettingsURL` is the one
 asker, as `SetPolicy` is the one writer. Without a ticket the page is served all the same,
 reads `/healthz` like any surface, and says where to open it from; its controls are greyed
 (`TestSettingsPageWithoutATicketCarriesNoKey`).
@@ -467,7 +516,8 @@ reads `/healthz` like any surface, and says where to open it from; its controls 
   belongs to this origin and this tab alone, and strips the spent ticket from the address bar.
   A key the agent serves wins over the one the tab kept (`keyFrom` in
   `console/src/agent/decisions.ts`): the agent may have been given a new key since.
-- **`neverseen settings` prints the link rather than opening it**: nobody else reads that
+- **`neverseen console` prints the link rather than opening it** (`neverseen settings`, its
+  earlier name, still does): nobody else reads that
   terminal, and it is the way to the page wherever there is no menu bar — a GNOME desktop
   without the extension, a server reached through an SSH tunnel.
 - The ticket is compared in constant time, for the reason the key is.

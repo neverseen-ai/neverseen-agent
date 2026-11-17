@@ -1,10 +1,7 @@
-import { useState } from "react";
-import { agent } from "../agent/client";
-import { enrolmentFrom } from "../agent/decisions";
 import { useStore } from "../app/store";
 import { clock, licence, MODES, since } from "../copy";
 import { tr } from "../i18n";
-import { CommandLine, CopyButton, Notice } from "../ui/controls";
+import { CommandLine, CopyButton } from "../ui/controls";
 import { Mark, type MarkState } from "../ui/Mark";
 
 const ICONS: { state: MarkState; text: () => string }[] = [
@@ -75,8 +72,6 @@ export function Service() {
         </dl>
       </section>
 
-      <SupervisionPanel />
-
       <section className="block" aria-labelledby="files-title">
         <h2 id="files-title">{tr("Files in ~/.neverseen", "Fichiers dans ~/.neverseen")}</h2>
         <table className="table">
@@ -100,15 +95,6 @@ export function Service() {
                 {tr(
                   `The replacements already given out (${MODES.token.example}, ${MODES.fake.example}…), so a conversation finds them again after a restart. A fingerprint of each value is kept, never the value. Cleared a week after last use.`,
                   `Les remplacements déjà attribués (${MODES.token.example}, ${MODES.fake.example}…), pour qu'une conversation les retrouve après un redémarrage. Une empreinte de chaque valeur est gardée, jamais la valeur. Effacés une semaine après le dernier usage.`,
-                )}
-              </td>
-            </tr>
-            <tr>
-              <td><code>agent.json</code>, <code>supervision.json</code></td>
-              <td>
-                {tr(
-                  "Only on a supervised workstation: the identity the backend issued, which signs every report, and the backend's address. Never the enrolment token.",
-                  "Seulement sur un poste supervisé : l'identité émise par le backend, qui signe chaque rapport, et l'adresse du backend. Jamais le jeton d'enrôlement.",
                 )}
               </td>
             </tr>
@@ -150,104 +136,5 @@ export function Service() {
 
       <p className="fine about">neverseen {snap.health.version}. {licence()}</p>
     </div>
-  );
-}
-
-// Supervision is optional and the agent is whole without it, so this panel is the
-// form until a backend has issued this workstation an identity, and only the state
-// after: where it reports, as whom, and whether the reports arrive. Leaving a backend
-// is not a button — the seat is the backend's to free, and a workstation that enrolled
-// twice counts twice. Left out when the agent did not say (no key, an older build).
-function SupervisionPanel() {
-  const { snap, busy, working, act } = useStore();
-  // Undefined until typed in, so the field follows what the agent offers.
-  const [typed, setTyped] = useState<string>();
-  const [token, setToken] = useState("");
-  const s = snap?.today.agent?.supervision;
-  if (!s) return null;
-
-  const backend = typed ?? s.offered;
-  const sent = enrolmentFrom(backend, token);
-  const enrol = async () => {
-    if (!sent) return;
-    const done = await act(() => agent.enrol(sent.backend, sent.token), tr("This workstation is enrolled", "Ce poste est enrôlé"));
-    // Kept after a refusal, for the typo to be corrected in; dropped once spent.
-    if (done) setToken("");
-  };
-
-  return (
-    <section className="panel" aria-labelledby="sup-title">
-      <header className="panel-head">
-        <h2 id="sup-title">{tr("Supervision", "Supervision")}</h2>
-        <span className="muted">{s.agent_id ? tr("Enrolled", "Enrôlé") : tr("Not enrolled", "Non enrôlé")}</span>
-      </header>
-      {s.problem && (
-        <div className="panel-note">
-          <Notice tone="warn" title={tr("The last report did not go through", "Le dernier rapport n'est pas passé")}>
-            {s.problem}
-          </Notice>
-        </div>
-      )}
-      {s.agent_id ? (
-        <dl className="facts facts-wide">
-          <dt>{tr("Backend", "Backend")}</dt>
-          <dd><code>{s.backend}</code></dd>
-          <dt>{tr("This workstation", "Ce poste")}</dt>
-          <dd><code>{s.agent_id}</code></dd>
-          <dt>{tr("Last report", "Dernier rapport")}</dt>
-          <dd>
-            {s.delivered_at
-              ? tr(`${clock(s.delivered_at)}, ${since(s.delivered_at)} ago`, `${clock(s.delivered_at)}, il y a ${since(s.delivered_at)}`)
-              : tr("None delivered yet", "Aucun livré pour l'instant")}
-          </dd>
-        </dl>
-      ) : (
-        <form
-          className="enrol"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void enrol();
-          }}
-        >
-          <p className="lede">
-            {tr(
-              "Optional: the agent masks the same without it. Enrolled, it reports every five minutes how many requests it relayed, how many values it masked in each category, how many tokens went to each model, and its configuration, with this machine's name and local addresses. Never a prompt, an answer or a masked value.",
-              "Facultatif : l'agent masque de la même façon sans elle. Enrôlé, il rapporte toutes les cinq minutes le nombre de requêtes relayées, de valeurs masquées par catégorie, de tokens par modèle, et sa configuration, avec le nom et les adresses locales de cette machine. Jamais un prompt, une réponse ni une valeur masquée.",
-            )}
-          </p>
-          <label>
-            {tr("Backend address", "Adresse du backend")}
-            <input
-              className="input"
-              type="url"
-              value={backend}
-              // Set by the environment: the agent would refuse any other.
-              readOnly={!!s.backend}
-              disabled={busy}
-              onChange={(e) => setTyped(e.target.value)}
-              spellCheck={false}
-            />
-          </label>
-          <label>
-            {tr("Enrolment token, as your backend's dashboard gave it. Single use: it is sent once and never stored.", "Jeton d'enrôlement, tel que le tableau de bord de votre backend l'a donné. À usage unique : il est envoyé une fois et jamais enregistré.")}
-            <input
-              className="input"
-              type="password"
-              value={token}
-              disabled={busy}
-              onChange={(e) => setToken(e.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-              placeholder="nse_…"
-            />
-          </label>
-          <div className="btn-row">
-            <button type="submit" className="btn btn-primary" disabled={busy || working || !sent}>
-              {working ? tr("Enrolling…", "Enrôlement…") : tr("Enrol this workstation", "Enrôler ce poste")}
-            </button>
-          </div>
-        </form>
-      )}
-    </section>
   );
 }

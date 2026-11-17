@@ -235,6 +235,14 @@ func (b *buffer) pending() int {
 	return len(b.buckets)
 }
 
+// oldest is where the first bucket waiting starts, false with none waiting.
+func (b *buffer) oldest() (time.Time, bool) {
+	if len(b.buckets) == 0 {
+		return time.Time{}, false
+	}
+	return b.buckets[0].Window.Start, true
+}
+
 // next returns the buckets one batch will carry, oldest first.
 func (b *buffer) next() []bucket {
 	return b.buckets[:min(len(b.buckets), maxBucketsPerRequest)]

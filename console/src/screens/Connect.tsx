@@ -32,7 +32,7 @@ export function Connect() {
     <div className="page">
       <header className="page-head">
         <div>
-          <h1>{tr("Connect a tool", "Connecter un outil")}</h1>
+          <h1>{tr("Connect an LLM agent", "Connecter un agent LLM")}</h1>
           <p className="lede">
             {tr(
               "For the agent to mask, a tool has to send its requests here rather than straight to the provider: only its base address changes. The agent needs no key of its own; your tool's key passes through untouched.",

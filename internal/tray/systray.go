@@ -39,10 +39,10 @@ func Run(ctx context.Context, addr string) error {
 	}
 
 	systray.Run(func() {
-		bar := &menuBar{addr: addr, redraw: make(chan struct{}, 1)}
+		bar := &menuBar{addr: addr}
 		bar.build()
 
-		go watch(ctx, bar, func() proxy.Status { return ask(addr) }, pollEvery, bar.redraw)
+		go watch(ctx, bar, func() proxy.Status { return ask(addr) }, pollEvery)
 		go func() {
 			// The icon goes when the process is asked to stop, so a logout does not
 			// leave a dead item in the bar until the session ends.
@@ -70,15 +70,6 @@ type menuBar struct {
 	// — a bug that would look like the menu being wrong now and then.
 	mu    sync.Mutex
 	slots []providerSlot
-
-	// shown is the display the menu is currently drawing. "Mask everything again"
-	// builds what it sends from it, so the request carries the whole state rather
-	// than one change: the route replaces rather than patches, and a request built
-	// from anything staler would revert what another surface has just set.
-	shown display
-
-	// redraw asks watch to poll at once, which is how a click is drawn (watch).
-	redraw chan struct{}
 }
 
 // providerSlot is one entry in the provider submenu and the provider it currently
@@ -108,8 +99,7 @@ func (m *menuBar) build() {
 	// rather than restating the label: the page is served by the agent this icon is
 	// watching, and which agent that is on a machine with a non-default listen
 	// address is the one thing the label cannot say.
-	settings := systray.AddMenuItem("Settings…", "http://"+proxy.BrowsableAddr(m.addr)+"/settings")
-	restore := systray.AddMenuItem("Mask everything again", "Switch every category back on")
+	settings := systray.AddMenuItem("Open the console…", "http://"+proxy.BrowsableAddr(m.addr)+"/settings")
 
 	systray.AddSeparator()
 	m.buildProviders()
@@ -123,11 +113,6 @@ func (m *menuBar) build() {
 			select {
 			case <-settings.ClickedCh:
 				m.openSettings()
-			case <-restore.ClickedCh:
-				m.mu.Lock()
-				shown := m.shown
-				m.mu.Unlock()
-				m.apply(shown.maskEverything())
 			case <-test.ClickedCh:
 				m.openTestPage()
 			case <-quit.ClickedCh:
@@ -136,28 +121,6 @@ func (m *menuBar) build() {
 			}
 		}
 	}()
-}
-
-// apply sends the new set to the agent and has watch redraw at once.
-//
-// Redrawn from what the agent says rather than from what was asked for, because the
-// agent is the one that refuses: a click on something it will not switch off would
-// otherwise leave the menu showing it unticked while the value went on being
-// masked, and somebody would believe the wrong thing about a live key. Through watch
-// rather than straight to the screen, so the loop compares with what is drawn.
-func (m *menuBar) apply(want proxy.Policy) {
-	if _, err := proxy.SetPolicy(context.Background(), m.addr,
-		proxy.ReadControlKey(""), want, askTimeout); err != nil {
-		// Nothing to do but leave the menu as it is: the next poll redraws it from
-		// the agent, so a refused click corrects itself within pollEvery rather than
-		// leaving a tick that lies.
-		log.Printf("neverseen-tray: %v", err)
-		return
-	}
-	select {
-	case m.redraw <- struct{}{}:
-	default: // a redraw already asked for will read the same answer
-	}
 }
 
 // openSettings opens the settings page with a one-time link, the only way it is served
@@ -282,14 +245,6 @@ func (m *menuBar) show(d display) {
 			m.entries[i].Show()
 		}
 	}
-
-	// Kept under the provider lock, because "Mask everything again" reads it on the
-	// click goroutine to build the state it sends while a poll is writing it — and a
-	// display read half-written is a request that reverts whatever the settings page
-	// changed between the two halves.
-	m.mu.Lock()
-	m.shown = d
-	m.mu.Unlock()
 
 	m.showProviders(d.providers)
 }

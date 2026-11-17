@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -281,6 +282,9 @@ func (r *Reporter) Run(ctx context.Context) {
 	var backoff time.Duration
 
 	for {
+		// Once per turn of the loop, which is the only thing that changes the queue.
+		r.noteQueue()
+
 		select {
 		case <-ctx.Done():
 			// The bucket in progress is closed and one delivery is attempted, so a
@@ -311,7 +315,7 @@ func (r *Reporter) Run(ctx context.Context) {
 			// bucket waited a whole interval to leave. Not while the ladder is
 			// climbing: an outage keeps its own cadence, which is why there are two.
 			if backoff == 0 {
-				send.Reset(0)
+				r.arm(send, 0)
 			}
 
 		case <-snapshot.C:
@@ -319,11 +323,11 @@ func (r *Reporter) Run(ctx context.Context) {
 			r.snapshot()
 
 		case <-r.nudge:
-			// An identity has just been issued through Enrol. Off the ladder at once:
-			// what it was climbing for — no identity — is no longer true, and the
-			// person who enrolled is looking at a page waiting for the first report.
+			// Somebody is looking at a page: an identity has just been issued through
+			// Enrol, or SendNow was asked for. Off the ladder at once — what it was
+			// climbing for may no longer be true, and the answer is one attempt away.
 			backoff = 0
-			send.Reset(0)
+			r.arm(send, 0)
 
 		case <-send.C:
 			r.wake()
@@ -332,16 +336,16 @@ func (r *Reporter) Run(ctx context.Context) {
 			case !delivered:
 				backoff = r.retryAfter(backoff)
 				r.log.Warn("the backend did not take the heartbeat, retrying", "in", backoff)
-				send.Reset(backoff)
+				r.arm(send, backoff)
 			case r.queue.pending() > 0:
 				// Still a backlog, so the next attempt is not made to wait an
 				// interval: a week of buckets delivered at one attempt per five
 				// minutes would take a week again.
 				backoff = 0
-				send.Reset(time.Second)
+				r.arm(send, time.Second)
 			default:
 				backoff = 0
-				send.Reset(r.interval)
+				r.arm(send, r.interval)
 			}
 		}
 	}
@@ -632,6 +636,16 @@ type Status struct {
 	DeliveredAt time.Time
 	// Problem is why the last attempt failed, empty once one succeeds.
 	Problem string
+	// EnrolledAt is when the identity was written to this disk, zero for one the
+	// disk refused. The file's date rather than a field of its own: the identity is
+	// written once, and a date inside it would be a second thing to keep true.
+	EnrolledAt time.Time
+	// NextAt is when the next delivery is attempted, zero before the first.
+	NextAt time.Time
+	// Queued is how many closed buckets wait to be delivered, and OldestQueued
+	// where the first of them starts.
+	Queued       int
+	OldestQueued time.Time
 }
 
 // Status reports how the reporting goes. Safe from any goroutine.
@@ -651,6 +665,33 @@ func (r *Reporter) failed(err error) {
 	}
 }
 
+// arm has the next delivery attempted in a while, and says when for Status.
+func (r *Reporter) arm(send *time.Timer, in time.Duration) {
+	send.Reset(in)
+	r.statusMu.Lock()
+	r.status.NextAt = r.now().Add(in)
+	r.statusMu.Unlock()
+}
+
+// noteQueue records what waits to be delivered, for Status. Called from Run's
+// goroutine, the only one that touches the queue.
+func (r *Reporter) noteQueue() {
+	oldest, _ := r.queue.oldest()
+	r.statusMu.Lock()
+	r.status.Queued, r.status.OldestQueued = r.queue.pending(), oldest
+	r.statusMu.Unlock()
+}
+
+// SendNow has Run attempt a delivery at once, off its ladder. For a person looking
+// at "7 reports waiting" who has just fixed what kept them: the ladder would have
+// them wait up to an interval to see whether it worked.
+func (r *Reporter) SendNow() {
+	select {
+	case r.nudge <- struct{}{}:
+	default:
+	}
+}
+
 // Enrol trades token for an identity now, on the caller's goroutine, and has Run
 // report at once.
 //
@@ -663,10 +704,7 @@ func (r *Reporter) Enrol(ctx context.Context, token string) (Identity, error) {
 	if err != nil {
 		return Identity{}, err
 	}
-	select {
-	case r.nudge <- struct{}{}:
-	default:
-	}
+	r.SendNow()
 	return id, nil
 }
 
@@ -694,8 +732,12 @@ func (r *Reporter) enrolWith(ctx context.Context, token string) (Identity, error
 	if err != nil {
 		return Identity{}, err
 	}
+	var enrolledAt time.Time
+	if info, err := os.Stat(r.identity); err == nil {
+		enrolledAt = info.ModTime()
+	}
 	r.statusMu.Lock()
-	r.status.AgentID = id.AgentID
+	r.status.AgentID, r.status.EnrolledAt = id.AgentID, enrolledAt
 	r.statusMu.Unlock()
 	return id, nil
 }

@@ -334,6 +334,8 @@ button.tag { cursor: pointer; }
 .table th { text-align: left; font-weight: 600; color: var(--muted); font-size: 12px; padding: 6px 12px 6px 0; border-bottom: 1px solid var(--line); }
 .table td { padding: 8px 12px 8px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
 .table td:first-child { white-space: nowrap; }
+/* A row's own header — the name the row is about — reads as the cell it replaces. */
+.table tbody th { font-weight: 400; font-size: inherit; color: inherit; padding: 8px 12px 8px 0; vertical-align: top; white-space: nowrap; }
 .table .num { text-align: right; font-variant-numeric: tabular-nums; }
 .value { word-break: break-all; }
 

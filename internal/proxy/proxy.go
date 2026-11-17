@@ -136,9 +136,13 @@ type Server struct {
 	// menuBarMu serialises PUT /today, which writes menubar.json beside the policy.
 	menuBarMu sync.Mutex
 
-	// supervision is the reporter this agent runs, if any, and POST /enrol's way to
-	// gain one. Never nil; FromEnv is what makes it able to enrol.
+	// supervision is the reporter this agent runs, if any, POST /enrol's way to
+	// gain one, and what /report shows and sends. Never nil; FromEnv is what makes it able to enrol.
 	supervision *supervision
+
+	// rtk is how /rtk reads rtk's own record for the settings page. Its zero value
+	// reads nothing, and FromEnv is what wires it.
+	rtk rtkReader
 
 	// extensionSeen is when the browser extension last called /mask, for the
 	// settings page. Nil until it does.
@@ -255,7 +259,7 @@ func (s *Server) reverseProxy(base *url.URL) *httputil.ReverseProxy {
 // reservedRoutes are the paths the agent answers itself. A provider may not take
 // one of these codes: "/healthz" would reach the agent while "/healthz/v1/…"
 // reached the provider, which is a routing table nobody could reason about.
-var reservedRoutes = []string{"healthz", "test", "settings", "policy", "mask", "unmask", "prove", "today", "enrol"}
+var reservedRoutes = []string{"healthz", "test", "settings", "policy", "mask", "unmask", "prove", "today", "enrol", "report", "rtk"}
 
 // Handler returns the agent's routes.
 func (s *Server) Handler() http.Handler {
@@ -269,6 +273,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/prove", s.handleProve)
 	mux.HandleFunc("/today", s.handleToday)
 	mux.HandleFunc("/enrol", s.handleEnrol)
+	mux.HandleFunc("/report", s.handleReport)
+	mux.HandleFunc("/rtk", s.handleRTK)
 	mux.HandleFunc("/", s.forward)
 	return s.guardAccount(s.guardHost(mux))
 }

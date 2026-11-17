@@ -1352,3 +1352,71 @@ func TestARefusedTokenIsARefusalAndLeavesNoIdentity(t *testing.T) {
 		t.Errorf("an identity file exists after a refusal: %v", err)
 	}
 }
+
+// What the settings page shows of the reporting while a backend is not answering —
+// how many buckets wait, since when, and when the next attempt is — and its "Send now":
+// the ladder would have somebody who has just fixed the cause wait for the next rung
+// to learn whether it worked.
+func TestStatusSaysWhatWaitsAndSendNowDeliversIt(t *testing.T) {
+	b := newBackend(t)
+	b.mu.Lock()
+	b.failing = true
+	b.mu.Unlock()
+
+	rep, err := NewReporter(Config{
+		BaseURL:        b.server.URL,
+		EnrolmentToken: "enrol-me",
+		IdentityFile:   filepath.Join(t.TempDir(), "agent.json"),
+		BufferFile:     filepath.Join(t.TempDir(), "buffer.json"),
+		Recorder:       NewRecorder(time.Now()),
+		State:          func() telemetry.State { return telemetry.State{} },
+		Interval:       time.Hour, // nothing but the ladder and the nudge sends
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	stopped := runInBackground(t, rep, ctx)
+	defer func() { cancel(); stopped() }()
+
+	waitForStatus := func(what string, ok func(Status) bool) Status {
+		t.Helper()
+		for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+			if s := rep.Status(); ok(s) {
+				return s
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("the status never said %s: %+v", what, rep.Status())
+			}
+		}
+	}
+
+	waiting := waitForStatus("that a bucket waits", func(s Status) bool { return s.Problem != "" && s.Queued == 1 })
+	if waiting.AgentID != "agt_test" || waiting.EnrolledAt.IsZero() {
+		t.Errorf("enrolled, and the status names %q since %v", waiting.AgentID, waiting.EnrolledAt)
+	}
+	if waiting.OldestQueued.IsZero() {
+		t.Error("a bucket waits and the status does not say since when")
+	}
+	if !waiting.NextAt.After(time.Now().Add(-time.Second)) || !waiting.DeliveredAt.IsZero() {
+		t.Errorf("a failed attempt: next at %v, delivered at %v", waiting.NextAt, waiting.DeliveredAt)
+	}
+
+	// Two failures, so the next rung is five seconds away: a delivery sooner than
+	// that can only be SendNow.
+	time.Sleep(1200 * time.Millisecond)
+	b.mu.Lock()
+	b.failing = false
+	b.mu.Unlock()
+	rep.SendNow()
+
+	sent := time.Now()
+	delivered := waitForStatus("that the bucket was delivered", func(s Status) bool { return s.Queued == 0 && !s.DeliveredAt.IsZero() })
+	if took := time.Since(sent); took > 2*time.Second {
+		t.Errorf("delivered %v after SendNow: the ladder was left to run", took)
+	}
+	if delivered.Problem != "" || !delivered.OldestQueued.IsZero() {
+		t.Errorf("delivered, and the status still says %q, oldest %v", delivered.Problem, delivered.OldestQueued)
+	}
+}

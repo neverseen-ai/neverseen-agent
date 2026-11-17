@@ -11,7 +11,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bulkSet, countedSince, enrolmentFrom, keyFrom, masterState, policyFrom, routeForPanel, splitGroups, switchableOf, toggledSet, undone } from "./decisions.ts";
+import { bulkSet, cloudState, countedSince, enrolmentFrom, keyFrom, masterState, policyFrom, routeForPanel, rtkAsksAgain, rtkPeriod, rtkScreen, sharePath, splitGroups, switchableOf, tipSide, toggledSet, undone } from "./decisions.ts";
 import type { Health, HealthGroup, Policy } from "./types.ts";
 
 // A catalogue shaped like the one the agent serves: two switchable families, one of
@@ -227,4 +227,73 @@ test("an enrolment is sent trimmed, and not at all while a field is empty", () =
   assert.deepEqual(enrolmentFrom(" https://backend.example ", "nse_abc\n"), { backend: "https://backend.example", token: "nse_abc" });
   assert.equal(enrolmentFrom("https://backend.example", "  "), undefined);
   assert.equal(enrolmentFrom("", "nse_abc"), undefined);
+});
+
+test("the connection is waiting on a failed attempt or a backlog, and absent is not 'not connected'", () => {
+  assert.equal(cloudState(undefined), "absent", "the agent did not say: no form is offered");
+  assert.equal(cloudState({}), "none");
+  assert.equal(cloudState({ agent_id: "agt_1" }), "connected");
+  // One report waiting is the one just closed, on its way: every five minutes for a moment.
+  assert.equal(cloudState({ agent_id: "agt_1", queued: 1 }), "connected");
+  assert.equal(cloudState({ agent_id: "agt_1", queued: 2 }), "waiting");
+  assert.equal(cloudState({ agent_id: "agt_1", problem: "no such host" }), "waiting");
+  // Not enrolled and failing is still the form: the problem is that there is no identity.
+  assert.equal(cloudState({ problem: "no identity yet" }), "none");
+});
+
+test("the rtk screen makes the case for rtk only to a workstation known to lack it", () => {
+  const day = { date: "2026-11-17", commands: 1, input: 10, output: 5 };
+  assert.equal(rtkScreen(undefined, undefined), "unknown", "the agent did not say: no claim either way");
+  assert.equal(rtkScreen(false, undefined), "absent");
+  assert.equal(rtkScreen(true, undefined), "asking");
+  assert.equal(rtkScreen(true, { installed: false }), "absent", "gone between the lookup and the run");
+  assert.equal(rtkScreen(true, { installed: true, problem: "exit status 1" }), "problem");
+  // Installed and answering, with nothing recorded: not a chart of idle days.
+  assert.equal(rtkScreen(true, { installed: true }), "fresh");
+  assert.equal(rtkScreen(true, { installed: true, days: [] }), "fresh");
+  assert.equal(rtkScreen(true, { installed: true, days: [day] }), "reading");
+});
+
+test("the rtk screen asks again only while it has no reading to draw", () => {
+  assert.equal(rtkAsksAgain("fresh", false), true, "the first day shows without a reload");
+  assert.equal(rtkAsksAgain("problem", false), true, "a repaired rtk shows without leaving the screen");
+  assert.equal(rtkAsksAgain("asking", true), true, "the agent did not answer: asked again");
+  // Each asking runs rtk: never once there is a reading, nor where there is no rtk to run.
+  for (const state of ["reading", "absent", "unknown", "asking"] as const) assert.equal(rtkAsksAgain(state, false), false, state);
+});
+
+test("an rtk period holds every date, and compares only with a period rtk still has whole", () => {
+  const rows = [
+    { date: "2026-11-13", commands: 5, input: 500, output: 400 },
+    { date: "2026-11-14", commands: 10, input: 1000, output: 600 },
+    { date: "2026-11-16", commands: 2, input: 300, output: 100 },
+    // More out than in: nothing saved, never a negative saving.
+    { date: "2026-11-17", commands: 1, input: 50, output: 80 },
+  ];
+  const p = rtkPeriod(rows, 2, "2026-11-17");
+  assert.deepEqual(p.days.map((d) => d.date), ["2026-11-16", "2026-11-17"]);
+  assert.deepEqual(p.days.map((d) => d.saved), [200, 0]);
+  assert.deepEqual([p.commands, p.input, p.output, p.saved], [3, 350, 180, 200]);
+  // The two days before: the 14th, and the 15th rtk has no row for.
+  assert.equal(p.before, 400);
+
+  const week = rtkPeriod(rows, 4, "2026-11-17");
+  assert.deepEqual(week.days.map((d) => d.commands), [10, 0, 2, 1], "a day with no row is drawn, idle");
+  assert.equal(week.before, undefined, "the record starts inside the period before");
+
+  // Across a month's end, by the calendar and not by string arithmetic.
+  assert.deepEqual(rtkPeriod([], 3, "2026-03-01").days.map((d) => d.date), ["2026-02-27", "2026-02-28", "2026-03-01"]);
+});
+
+test("the share line lifts over an idle day and stops at the top of its axis", () => {
+  const d = (commands: number, input: number, saved: number) => ({ commands, input, saved });
+  // 25%, then 50%, an idle day, then 90% drawn at the 60% the axis stops at.
+  assert.equal(sharePath([d(1, 100, 25), d(1, 100, 50), d(0, 0, 0), d(1, 100, 90)], 60), "M0.5 35 L1.5 10 M3.5 0");
+  assert.equal(sharePath([d(0, 0, 0)], 60), "", "nothing ran: no line");
+  // Commands whose output rtk measured as nothing: no share to draw, and no division by zero.
+  assert.equal(sharePath([d(3, 0, 0), d(1, 100, 30)], 60), "M1.5 30");
+});
+
+test("a tooltip near either end of the chart hangs from that end", () => {
+  assert.deepEqual([0, 5, 15, 25, 29].map((i) => tipSide(i, 30)), ["tip-start", "tip-start", "", "tip-end", "tip-end"]);
 });

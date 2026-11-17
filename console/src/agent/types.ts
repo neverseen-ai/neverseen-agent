@@ -128,6 +128,28 @@ export interface AgentState {
   extension_seen_at?: string;
   /** Absent from an agent built before the page could enrol it. */
   supervision?: Supervision;
+  /** A binary called rtk is on this workstation: the rtk screen asks it for its record
+   * rather than making the case for it. */
+  rtk?: boolean;
+}
+
+/** One day as rtk recorded it (internal/proxy/rtk.go rtkDayReply): a UTC date, and the
+ * tokens the commands' output would have cost before rtk shortened it and after. */
+export interface RtkDay {
+  date: string;
+  commands: number;
+  input: number;
+  output: number;
+}
+
+/** GET /rtk (internal/proxy/rtk.go rtkReply). */
+export interface RtkReading {
+  installed: boolean;
+  path?: string;
+  read_at?: string;
+  /** Why rtk gave no reading, in its own words; `days` is then absent. */
+  problem?: string;
+  days?: RtkDay[];
 }
 
 /** Where this agent reports and how that goes (internal/proxy/supervision.go supervisionState). */
@@ -142,6 +164,14 @@ export interface Supervision {
   delivered_at?: string;
   /** Why the last attempt failed, absent once one succeeds. */
   problem?: string;
+  /** When the identity was written to this workstation. */
+  enrolled_at?: string;
+  /** When the next delivery is attempted. */
+  next_at?: string;
+  /** How many reports wait to be delivered, absent with none. */
+  queued?: number;
+  /** Where the first report waiting starts. */
+  oldest_queued?: string;
 }
 
 export interface Snapshot {
@@ -207,4 +237,11 @@ export interface AgentClient {
   setUncounted(families: string[]): Promise<void>;
   /** POST /enrol: trades a single-use token for this agent's identity at a backend. */
   enrol(backend: string, token: string): Promise<void>;
+  /** GET /report: the next report as it stands, in the shape it is sent. Drawn as it
+   * comes, never read: the page holds no copy of the heartbeat's shape to drift. */
+  nextReport(): Promise<unknown>;
+  /** POST /report: has the reports that wait sent now rather than at the next attempt. */
+  sendNow(): Promise<void>;
+  /** GET /rtk: what rtk recorded on this workstation, day by day. Runs rtk. */
+  rtk(): Promise<RtkReading>;
 }

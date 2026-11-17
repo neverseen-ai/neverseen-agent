@@ -97,16 +97,6 @@ type display struct {
 
 	lines     []string
 	providers []string
-
-	// The three settings the menu no longer draws, kept because it still writes
-	// once: "Mask everything again" replaces the whole state, and a request that
-	// left these out would switch them off by omission.
-	//
-	// Compared like everything else, so a change made on the settings page or by
-	// `neverseen mask` still redraws this — see same.
-	substitution string
-	secretLevel  string
-	locales      []string
 }
 
 // view is what the menu bar can be told. The real one wraps fyne.io/systray; a
@@ -246,29 +236,7 @@ func render(s proxy.Status) display {
 		// offering a provider a deployment had pointed elsewhere, and an agent that
 		// is not answering serves nothing — the submenu empties with it rather than
 		// handing out lines that lead nowhere.
-		providers:    s.Providers,
-		substitution: s.Substitution,
-		secretLevel:  s.SecretLevel,
-		locales:      s.Locales,
-	}
-}
-
-// maskEverything is the state to send when "Mask everything again" is clicked.
-//
-// The whole state with the switched-off set emptied, because PUT /policy replaces
-// rather than patches: a request carrying only the empty set would take the mode,
-// the locales and the secret level down with it.
-//
-// The other three parts come from what the agent last reported, which is what this
-// menu is currently drawing. It is the one write left here, and the only one that
-// needs no reading of the catalogue at all — "everything" is the empty set whatever
-// the catalogue holds.
-func (d display) maskEverything() proxy.Policy {
-	return proxy.Policy{
-		Off:          []string{},
-		Substitution: d.substitution,
-		Locales:      d.locales,
-		SecretLevel:  d.secretLevel,
+		providers: s.Providers,
 	}
 }
 
@@ -287,13 +255,7 @@ func plural(n int, one, many string) string {
 //
 // ask is passed in rather than called directly so the loop can be driven in a test
 // without a listening agent.
-//
-// now asks for a poll at once, and is how a click's answer reaches the screen: through
-// this loop, never straight to the view, so what is drawn and what the loop compares
-// with stay one value. A click drawn beside it left the loop comparing with a display
-// no longer shown, and a later change back to that one was never drawn — the menu said
-// "Masking" while two categories went out in clear.
-func watch(ctx context.Context, v view, ask func() proxy.Status, every time.Duration, now <-chan struct{}) {
+func watch(ctx context.Context, v view, ask func() proxy.Status, every time.Duration) {
 	var shown display
 
 	apply := func() {
@@ -317,8 +279,6 @@ func watch(ctx context.Context, v view, ask func() proxy.Status, every time.Dura
 			return
 		case <-ticker.C:
 			apply()
-		case <-now:
-			apply()
 		}
 	}
 }
@@ -328,16 +288,9 @@ func watch(ctx context.Context, v view, ask func() proxy.Status, every time.Dura
 // The whole value, rather than the four fields somebody thought of. The
 // field-by-field version carried a promise that a fifth thing to show could not be
 // added without this being updated with it, and six were added past it. None of them
-// was compared, and what that cost is a menu that lies: no line of the menu carries
-// the secret level, so `neverseen mask --secret-level strong` changed nothing this
-// looked at and the menu went on writing the old level back in its next request;
-// the locales are named in a state line only while no category is switched off, so a
-// locale change on an agent in the partial state was invisible in the same way.
-//
-// The three settings the menu stopped drawing are still compared for that second
-// reason. They are not on screen, but they are in every request "Mask everything
-// again" sends, and a stale copy of them is a click that quietly reverts what the
-// settings page just changed.
+// was compared, and what that cost is a menu that lies: a change to one of them was
+// a change this did not see, and the menu went on drawing what the agent had stopped
+// applying.
 //
 // A promise in a comment is not what keeps a comparison current — comparing the
 // value is. DeepEqual reads the icons by content as well, which is the property
@@ -363,8 +316,8 @@ func orUnknown(value string) string {
 // has hidden today.
 //
 // The count is a second request because it is behind the control key and /healthz
-// is not. The key is read on every poll, as "Mask everything again" reads it on
-// every click, so this process never holds it longer than one question.
+// is not. The key is read on every poll, so this process never holds it longer than
+// one question.
 //
 // Each request has its own askTimeout: under one shared deadline a slow /healthz left the
 // count no time, and the figure dropped out of the title for a poll.
@@ -373,10 +326,6 @@ func ask(addr string) proxy.Status {
 }
 
 // withToday adds the day's count to what the agent said about itself, when it gives one.
-//
-// Asked after a write as after a poll: SetPolicy answers with /healthz's payload, which
-// carries no count, and redrawn from it alone the count left the title and the menu
-// until the next poll — the agent looking as if it had stopped reporting.
 func withToday(ctx context.Context, addr string, status proxy.Status) proxy.Status {
 	if !status.Answering {
 		return status

@@ -54,7 +54,7 @@ import (
 // a ticket, and a ticket is minted by POST /settings — which needs the key. Whoever
 // opens the page with the key in it has therefore proved they can read
 // ~/.neverseen/control.key, which is 0600 and the owner's. The menu bar and
-// `neverseen settings` mint one; a page typed by hand is served without the key and
+// `neverseen console` mint one; a page typed by hand is served without the key and
 // says where to open it from.
 //
 // A ticket works once and for a minute, because it travels on a command line —
@@ -278,7 +278,7 @@ func (t *tickets) redeem(value string) bool {
 // SettingsURL asks the agent for a one-time link to its settings page.
 //
 // The one place a surface asks for it, as SetPolicy is the one place a surface writes:
-// the menu bar opens what this returns and `neverseen settings` prints it.
+// the menu bar opens what this returns and `neverseen console` prints it.
 func SettingsURL(ctx context.Context, addr, key string, timeout time.Duration) (string, error) {
 	// The page is served on loopback, under a loopback name, whatever -l bound. One
 	// bound to a single other address does not listen on loopback at all: dialled there,

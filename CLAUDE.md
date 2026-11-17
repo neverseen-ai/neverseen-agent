@@ -227,7 +227,7 @@ and it is deliberately not repeated here.
   ticket** — TCP on loopback carries no identity, and another user's
   `curl -H 'Host: localhost'` was handed the key. `POST /settings` mints a ticket **with
   the key**, so opening the page with it proves the caller can read `control.key`; the
-  menu bar opens the link and `neverseen settings` prints it, both through
+  menu bar opens the link and `neverseen console` prints it, both through
   `proxy.SettingsURL`. **Once and for a minute**, because the link crosses a command line
   other accounts can read; the tab keeps the key in `sessionStorage` so a reload works.
   Without a ticket the page is served keyless and says where to open it from.
@@ -282,8 +282,8 @@ and it is deliberately not repeated here.
 - **A level counts the effect, `Disabled` records the intent**, and the level counts
   only what the loaded patterns can emit (`disabledInPlay`).
   `TestTheLevelCountsOnlyWhatTheDetectorCanEmit`.
-- **`neverseen mask`, the settings page and the menu bar all go through
-  `proxy.SetPolicy`/`PUT /policy`** — the one writer, as `proxy.Query` is the one asker.
+- **`neverseen mask` and the settings page go through `PUT /policy`** — `proxy.SetPolicy`
+  is the one writer a command uses, as `proxy.Query` is the one asker.
   Each lists only what the detector can emit (`Detector.Categories`).
 - **The menu bar's day count is behind the control key, never on `/healthz`**
   (`GET /today`, `proxy.QueryToday`), which carries no counter because it is
@@ -306,11 +306,26 @@ and it is deliberately not repeated here.
   process where to look. `todayMaxBytes` bounds the whole answer, and
   `TestTodayReplyFitsTheQueryBound` fails at half of it: cut short, the menu bar's figure
   no longer parses.
-- **The menu bar writes once — "Mask everything again" — and it carries the whole
-  state.** The route replaces rather than patches, so a request carrying nothing but the
-  empty set would switch off, from an entry that says "mask everything again", the mode,
-  the locales and the secret level somebody had just chosen on the page. The three
-  settings the menu stopped drawing are still compared by `same`, for that reason alone.
+- **The console's rtk screen makes the case for rtk only to a workstation known to lack
+  it, and rtk is run only when the screen is opened** (`GET /rtk`, behind the control key;
+  `rtk.go`). `GET /today` carries `agent.rtk`, a lookup (`telemetry.RTKPath`) and never a
+  run — it is polled. **Three answers the page must not merge** (`rtkScreen`, in
+  `decisions.ts`): the agent did not say — no key, a stopped agent — and nothing is
+  claimed; no rtk, and the page says what rtk is for and how to install it (`RtkPitch`);
+  an rtk, and its days. The rows come through `telemetry.GainAt`, the heartbeat's reader
+  on a binary looked up once, so the path the answer names is the path run: the daily
+  rows, never the history. **An rtk that gave no reading is a problem and no days**,
+  never an empty record; one that answered with no day is `fresh`, not a chart of ninety
+  idle ones. The install lines are rtk's README's, spelled in the page — a `TODO:` names
+  the drift — and **its licence is said as rtk says it**: the CLI is Apache-2.0, the
+  engine is not. Wired in `FromEnv` alone, so a server built by a test reads nothing.
+  `TestRTKThatGivesNoReadingIsAProblemNotAnEmptyRecord`,
+  `TestTodaySaysWhetherRTKIsInstalledWithoutRunningIt`.
+- **The menu bar writes nothing.** Its last write, "Mask everything again", is gone: the
+  settings page and `neverseen mask --reset` do it, and an entry that replaced the whole
+  state from a menu had to carry three settings it no longer drew, a stale copy of which
+  reverted what the page had just changed. It reads `/healthz` and `GET /today`, and opens
+  the page.
 - **Four things change while the agent runs**: switched-off categories, substitution
   mode, secret level, loaded locales. All behind one atomic pointer in
   `detector.policy`, the locales carrying `patterns` and `fakes` in one `catalogue`
@@ -445,10 +460,16 @@ and it is deliberately not repeated here.
   no identity. Where the agent reports is kept in `supervision.json` beside the policy
   file and read **after** the environment, which goes on deciding for an install it
   configured. **What was counted before the enrolment is not reported** (`fresh`). An
-  enrolled agent is shown its state and no form: leaving a backend is not a button.
+  enrolled agent is shown its state and no form: leaving a backend is not a button. The
+  form and the state are the console's **Neverseen Cloud** screen, and "counts, never
+  content" is checkable there: `GET /report` is the next report as it stands, read with
+  `Recorder.Snapshot` and **never `Take`** — a look must not close the window it shows.
+  `POST /report` sends what waits (`Reporter.SendNow`); what waits is noted by `Run`, the
+  queue's only owner, never read by a surface.
   `TestTheSettingsPageEnrolsARunningAgent`,
   `TestAnEnrolmentElsewhereThanTheConfiguredBackendIsRefused`,
-  `TestEnrolFromOutsideTheLoopReportsAtOnce`.
+  `TestEnrolFromOutsideTheLoopReportsAtOnce`, `TestTheNextReportIsShownWithoutBeingTaken`,
+  `TestStatusSaysWhatWaitsAndSendNowDeliversIt`.
 
 ### Distribution — `openwiki/operations/distribution.md`
 

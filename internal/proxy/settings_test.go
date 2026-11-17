@@ -214,7 +214,7 @@ func TestSettingsURLIsALinkThatWorksOnce(t *testing.T) {
 
 // An agent bound beyond loopback (-l 0.0.0.0:<port>, for a container) still serves its
 // page on loopback only, so the link must name loopback: naming the bound address, the
-// ticket request was refused by namesThisMachine and the menu bar's Settings… did nothing.
+// ticket request was refused by namesThisMachine and the menu bar's entry for the page did nothing.
 func TestSettingsURLNamesLoopbackWhateverWasBound(t *testing.T) {
 	srv := settingsAgent(t, testControlKey)
 	agent := httptest.NewServer(srv.Handler())

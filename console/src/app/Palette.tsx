@@ -23,7 +23,13 @@ export const SCREEN_LABELS: Record<Screen, string> = {
     return tr("Try it", "Essayer");
   },
   get connect() {
-    return tr("Connect a tool", "Connecter un outil");
+    return tr("Connect an LLM agent", "Connecter un agent LLM");
+  },
+  get rtk() {
+    return tr("rtk savings", "Économies rtk");
+  },
+  get cloud() {
+    return "Neverseen Cloud";
   },
   get service() {
     return tr("Service", "Service");

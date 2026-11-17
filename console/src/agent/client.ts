@@ -4,7 +4,7 @@
 // the Content Security Policy's `connect-src 'self'` is all it needs.
 
 import { keyFrom } from "./decisions";
-import { Refusal, type AgentClient, type Finding, type Health, type Policy, type Rendering, type Snapshot, type TestResult } from "./types";
+import { Refusal, type AgentClient, type Finding, type Health, type Policy, type Rendering, type RtkReading, type Snapshot, type TestResult } from "./types";
 import { served, tr } from "../i18n";
 
 /** The header the control key travels in (internal/proxy/policy.go controlHeader). */
@@ -14,7 +14,7 @@ const CONTROL_HEADER = "X-Neverseen-Control";
 const KEPT_KEY = "neverseen-control";
 
 // The key arrives in the page only when it was opened with a one-time ticket — the
-// menu bar or `neverseen settings` — because a page typed by hand could be another
+// menu bar or `neverseen console` — because a page typed by hand could be another
 // account's (settings.go says why). The tab keeps its own copy so a reload still
 // writes: sessionStorage belongs to this origin and this tab alone. Storage can be
 // refused, and the page then works until it is reloaded.
@@ -142,6 +142,26 @@ export const agent: AgentClient = {
     if (!res.ok) throw await refusal(res);
   },
 
+  async nextReport(): Promise<unknown> {
+    if (!KEY) throw new Refusal(lockedSentence(), 403);
+    const res = await fetch("/report", withKey());
+    if (!res.ok) throw await refusal(res);
+    return res.json();
+  },
+
+  async sendNow(): Promise<void> {
+    if (!KEY) throw new Refusal(lockedSentence(), 403);
+    const res = await fetch("/report", withKey({ method: "POST" }));
+    if (!res.ok) throw await refusal(res);
+  },
+
+  async rtk(): Promise<RtkReading> {
+    if (!KEY) throw new Refusal(lockedSentence(), 403);
+    const res = await fetch("/rtk", withKey());
+    if (!res.ok) throw await refusal(res);
+    return (await res.json()) as RtkReading;
+  },
+
   async test(text: string): Promise<TestResult> {
     const res = await fetch("/test", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }), cache: "no-store" });
     if (!res.ok) throw await refusal(res);
@@ -186,10 +206,20 @@ function rendering(c: WireColumn): Rendering {
   return { text: c.text, marks, count: c.count };
 }
 
+/** Where the page is opened from with its key. Written once: the menu entry and the
+ * command have both been renamed, and each copy of this sentence was one to miss. */
+export function whereToOpen(): string {
+  return tr(
+    "Open this page from the menu bar (Open the console…), or run: neverseen console",
+    "Ouvrez cette page depuis la barre de menus (Open the console…) ou lancez : neverseen console",
+  );
+}
+
 /** What a locked page says, wherever a control is tried. */
 export function lockedSentence(): string {
-  return tr(
-    "This page was opened without its one-time link, so nothing on it can be changed. Open it from the menu bar (Settings…), or run: neverseen settings",
-    "Cette page a été ouverte sans son lien à usage unique : rien n'y peut être modifié. Ouvrez-la depuis la barre de menus (Réglages…) ou lancez : neverseen settings",
+  const why = tr(
+    "This page was opened without its one-time link, so nothing on it can be changed.",
+    "Cette page a été ouverte sans son lien à usage unique : rien n'y peut être modifié.",
   );
+  return `${why} ${whereToOpen()}`;
 }

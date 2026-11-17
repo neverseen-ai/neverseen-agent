@@ -250,3 +250,80 @@ func TestAnEnrolmentElsewhereThanTheConfiguredBackendIsRefused(t *testing.T) {
 		t.Errorf("supervision.json was written for a backend the environment sets: %v", err)
 	}
 }
+
+// reportThrough calls /report as the settings page does.
+func reportThrough(t *testing.T, agent *Agent, method string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequestWithContext(t.Context(), method, "/report", nil)
+	req.RemoteAddr = "127.0.0.1:52341"
+	req.Host = "localhost:9787"
+	req.Header.Set(controlHeader, agent.Server.controlKey)
+
+	rec := httptest.NewRecorder()
+	agent.Server.Handler().ServeHTTP(rec, req)
+	return rec
+}
+
+// "Counts, never content" is a claim the settings page lets its reader check: GET
+// /report is the next report as it stands, in the shape a heartbeat carries, and
+// looking at it must not close the window it shows — or every look would cut a
+// five-minute bucket in two. POST sends what waits, and has nothing to send for an
+// agent that reports nowhere.
+func TestTheNextReportIsShownWithoutBeingTaken(t *testing.T) {
+	backend := newSupervisionBackend(t)
+	agent := unsupervisedAgent(t, t.TempDir(), io.Discard)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	supervised := make(chan struct{})
+	go func() { defer close(supervised); agent.Supervise(ctx) }()
+	defer func() { cancel(); <-supervised }()
+
+	shown := func() contract.HeartbeatBatch {
+		t.Helper()
+		got := reportThrough(t, agent, http.MethodGet)
+		if got.Code != http.StatusOK {
+			t.Fatalf("GET /report answered %d: %s", got.Code, got.Body)
+		}
+		var batch contract.HeartbeatBatch
+		if err := json.Unmarshal(got.Body.Bytes(), &batch); err != nil {
+			t.Fatalf("the next report does not parse as a heartbeat batch: %v — %s", err, got.Body)
+		}
+		if len(batch.Buckets) != 1 {
+			t.Fatalf("the next report holds %d buckets, want the one in progress", len(batch.Buckets))
+		}
+		return batch
+	}
+
+	// Shown before anybody enrolled: that is when somebody decides whether to.
+	agent.Server.recorder.Request("default", "", "")
+	if got := shown(); got.Buckets[0].Counters.Requests != 1 || got.AgentID != "" {
+		t.Errorf("unenrolled, the next report shows %d request(s) as %q", got.Buckets[0].Counters.Requests, got.AgentID)
+	}
+	if got := reportThrough(t, agent, http.MethodPost); got.Code != http.StatusConflict {
+		t.Errorf("sending now with no backend answered %d, want 409 — %s", got.Code, got.Body)
+	}
+
+	if got := enrolThrough(t, agent, backend.URL, goodToken); got.Code != http.StatusOK {
+		t.Fatalf("the enrolment answered %d: %s", got.Code, got.Body)
+	}
+	agent.Server.recorder.Request("default", "", "")
+	agent.Server.recorder.Request("default", "", "")
+	for range 2 { // twice: the second look sees what the first left
+		if got := shown(); got.Buckets[0].Counters.Requests != 2 || got.AgentID != "agt_page" {
+			t.Errorf("the next report shows %d request(s) as %q, want 2 as agt_page",
+				got.Buckets[0].Counters.Requests, got.AgentID)
+		}
+	}
+
+	got := reportThrough(t, agent, http.MethodPost)
+	if got.Code != http.StatusOK {
+		t.Fatalf("POST /report answered %d: %s", got.Code, got.Body)
+	}
+	var state supervisionState
+	if err := json.Unmarshal(got.Body.Bytes(), &state); err != nil || state.AgentID != "agt_page" {
+		t.Errorf("sending now answered %s (%v), want the supervision state", got.Body, err)
+	}
+	if state.EnrolledAt == nil {
+		t.Error("an enrolled agent does not say since when")
+	}
+}

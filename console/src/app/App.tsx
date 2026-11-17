@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { FlaskConical, Gauge, Keyboard, Lock, Monitor, Moon, Plug, Search, Server, ShieldCheck, Sun } from "lucide-react";
+import { Cloud as CloudIcon, FlaskConical, Gauge, Keyboard, Lock, Monitor, Moon, Plug, Search, Server, ShieldCheck, Sun, TrendingDown } from "lucide-react";
 import { MARK_FOR, SCREENS, dropParam, parseRoute, useStore, type Screen } from "./store";
 import { Palette, SCREEN_LABELS } from "./Palette";
-import { inClear } from "../agent/decisions";
+import { cloudState, inClear } from "../agent/decisions";
 import { LANGS, setLang, tr, useLang } from "../i18n";
 import { Kbd, MOD } from "../ui/controls";
 import { Mark } from "../ui/Mark";
@@ -12,6 +12,8 @@ import { Overview } from "../screens/Overview";
 import { Masked } from "../screens/Masked";
 import { TryIt } from "../screens/TryIt";
 import { Connect } from "../screens/Connect";
+import { Cloud } from "../screens/Cloud";
+import { Rtk } from "../screens/Rtk";
 import { Service } from "../screens/Service";
 
 const NAV: { screen: Screen; icon: typeof Gauge }[] = [
@@ -19,6 +21,8 @@ const NAV: { screen: Screen; icon: typeof Gauge }[] = [
   { screen: "masked", icon: ShieldCheck },
   { screen: "try", icon: FlaskConical },
   { screen: "connect", icon: Plug },
+  { screen: "rtk", icon: TrendingDown },
+  { screen: "cloud", icon: CloudIcon },
   { screen: "service", icon: Server },
 ];
 
@@ -85,6 +89,7 @@ export function App() {
   }, [go, route.screen]);
 
   const off = snap ? inClear(snap.health) : [];
+  const cloud = cloudState(snap?.today.agent?.supervision);
   const status = {
     full: tr("Masking", "Masquage actif"),
     partial: tr(`Masking, ${off.length} in clear`, `Masquage, ${off.length} en clair`),
@@ -92,7 +97,7 @@ export function App() {
     stopped: tr("Not running", "Arrêté"),
   }[verdict];
 
-  const Screen = { overview: Overview, masked: Masked, try: TryIt, connect: Connect, service: Service }[route.screen];
+  const Screen = { overview: Overview, masked: Masked, try: TryIt, connect: Connect, rtk: Rtk, cloud: Cloud, service: Service }[route.screen];
 
   return (
     <div className={`app ${working ? "is-busy" : ""}`}>
@@ -128,6 +133,12 @@ export function App() {
                 <Icon size={16} aria-hidden />
                 <span>{SCREEN_LABELS[screen]}</span>
                 {screen === "masked" && verdict === "partial" && <span className="nav-badge nav-badge-warn">{off.length}</span>}
+                {screen === "cloud" && cloud === "connected" && <span className="nav-dot" role="img" aria-label={tr("Connected, reports arriving", "Connecté, les rapports arrivent")} />}
+                {screen === "cloud" && cloud === "waiting" && (
+                  <span className="nav-badge nav-badge-warn" role="img" aria-label={tr("Reports not arriving", "Les rapports n'arrivent pas")}>
+                    !
+                  </span>
+                )}
                 <span className="nav-key" aria-hidden>
                   {MOD === "⌘" ? "⌘" : "^"}
                   {i + 1}

@@ -41,8 +41,12 @@ func TestSettingsPrintsALinkThatOpensThePageWithTheKey(t *testing.T) {
 	t.Setenv(proxy.EnvListen, strings.TrimPrefix(agent.URL, "http://"))
 
 	var out bytes.Buffer
-	if err := run([]string{"settings"}, strings.NewReader(""), &out); err != nil {
-		t.Fatalf("settings: %v", err)
+	if err := run([]string{"console"}, strings.NewReader(""), &out); err != nil {
+		t.Fatalf("console: %v", err)
+	}
+	// The name the command had before: a note written then still opens the page.
+	if err := run([]string{"settings"}, strings.NewReader(""), io.Discard); err != nil {
+		t.Errorf("the command's earlier name, settings: %v", err)
 	}
 
 	var link string
@@ -72,7 +76,7 @@ func TestSettingsWithoutAKeyPrintsNoLink(t *testing.T) {
 	testHome(t)
 
 	var out bytes.Buffer
-	err := run([]string{"settings"}, strings.NewReader(""), &out)
+	err := run([]string{"console"}, strings.NewReader(""), &out)
 	if err == nil {
 		t.Fatal("a link was printed with no control key to ask for it")
 	}

@@ -301,12 +301,11 @@ Click it and the menu says what is happening — the address, the locales, the
 substitution mode, the version — and offers the few things a menu is the right
 shape for:
 
-- **Settings…**, which opens the agent's own page. That is where a category is
+- **Open the console…**, which opens the agent's own page. That is where a category is
   switched off, the substitution mode is chosen and a locale is loaded: a menu bar
   gives you titles and ticks, with no radio group, no mixed tick and no room for the
   sentence that says what a choice costs, and every one of those absences used to be
   answered by writing the sentence into an entry's own title;
-- **Mask everything again**, one click back to the whole catalogue;
 - **copy the command that points one tool at the agent**, one entry per provider
   the agent actually serves — `ANTHROPIC_BASE_URL=… claude`, ready to paste. The
   first line of that submenu is a caution rather than a command: what belongs in a

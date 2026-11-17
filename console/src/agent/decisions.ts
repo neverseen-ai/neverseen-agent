@@ -10,7 +10,7 @@
 // Only type imports, which `node --test --experimental-strip-types` erases: a runtime
 // import would pull the browser in with it.
 
-import type { Health, HealthCategory, HealthGroup, Policy } from "./types";
+import type { Health, HealthCategory, HealthGroup, Policy, RtkDay, RtkReading } from "./types";
 
 /** The whole state to send with one part replaced: PUT /policy replaces rather than
  * patches, so a click carries the other parts unchanged or switches them off by
@@ -120,6 +120,114 @@ export function countedSince(startedAt: string | undefined, now: Date): Date | u
 export function enrolmentFrom(backend: string, token: string): { backend: string; token: string } | undefined {
   const sent = { backend: backend.trim(), token: token.trim() };
   return sent.backend && sent.token ? sent : undefined;
+}
+
+/** What the Cloud screen and its entry in the sidebar say of the connection: the agent
+ * did not say, it reports nowhere, its reports arrive, or they wait. Waiting is a
+ * failed attempt or a queue — not a queue alone being empty, since a report that was
+ * refused while nothing else waited is still not arriving. Never `absent` drawn as
+ * `none`: a page without the key would offer a form to an agent already connected. */
+export function cloudState(s: { agent_id?: string; problem?: string; queued?: number } | undefined): "absent" | "none" | "connected" | "waiting" {
+  if (!s) return "absent";
+  if (!s.agent_id) return "none";
+  return s.problem || (s.queued ?? 0) > 1 ? "waiting" : "connected";
+}
+
+/** What the rtk screen shows. `found` is what GET /today says of the binary — absent
+ * when the agent did not say, a page without the key or an agent that has stopped — and
+ * `reading` is GET /rtk, absent while it is asked.
+ *
+ * `unknown` is never drawn as `absent`: the case for installing rtk, made to somebody
+ * who has it, is a page that is wrong about the workstation it is on. And an rtk that
+ * answered with no day is `fresh`, not a chart of ninety idle ones. */
+export type RtkScreen = "unknown" | "absent" | "asking" | "problem" | "fresh" | "reading";
+
+export function rtkScreen(found: boolean | undefined, reading: Pick<RtkReading, "installed" | "problem" | "days"> | undefined): RtkScreen {
+  if (found === undefined) return "unknown";
+  if (!found) return "absent";
+  if (!reading) return "asking";
+  // Gone between the lookup and the run.
+  if (!reading.installed) return "absent";
+  if (reading.problem) return "problem";
+  return reading.days?.length ? "reading" : "fresh";
+}
+
+/** Whether the rtk screen asks again by itself. While rtk has recorded nothing, so the
+ * first day shows without a reload; and while there is no reading — rtk answered with a
+ * problem, or the agent did not answer (`failed`) — so a repair shows without leaving
+ * the screen. Never once there is a reading: each asking runs rtk. */
+export function rtkAsksAgain(state: RtkScreen, failed: boolean): boolean {
+  return failed || state === "fresh" || state === "problem";
+}
+
+/** A day of the rtk screen: rtk's row, or zeros for a day it has none for. */
+export interface RtkPeriodDay extends RtkDay {
+  saved: number;
+}
+
+export interface RtkPeriod {
+  days: RtkPeriodDay[];
+  commands: number;
+  input: number;
+  output: number;
+  saved: number;
+  /** What the same number of days just before saved, absent when rtk's record does not
+   * reach back over all of them: compared with half a period, any period is a rise. */
+  before?: number;
+}
+
+/** The last `n` days ending on `today`, both UTC dates as rtk writes them, oldest
+ * first. Every date is there, so a day nothing ran is a gap in the chart rather than
+ * two days drawn side by side. A row whose output exceeds its input saved nothing. */
+export function rtkPeriod(rows: RtkDay[], n: number, today: string): RtkPeriod {
+  const byDate = new Map(rows.map((r) => [r.date, r]));
+  const end = Date.parse(`${today}T00:00:00Z`);
+  const dateAt = (back: number) => new Date(end - back * 86400000).toISOString().slice(0, 10);
+  const dayAt = (back: number): RtkPeriodDay => {
+    const date = dateAt(back);
+    const row = byDate.get(date) ?? { date, commands: 0, input: 0, output: 0 };
+    return { ...row, saved: Math.max(0, row.input - row.output) };
+  };
+  const sum = (days: RtkPeriodDay[], key: "commands" | "input" | "output" | "saved") => days.reduce((t, d) => t + d[key], 0);
+
+  const days = Array.from({ length: n }, (_, i) => dayAt(n - 1 - i));
+  const earliest = rows.reduce((min, r) => (r.date < min ? r.date : min), "9999");
+  const covered = earliest <= dateAt(2 * n - 1);
+  return {
+    days,
+    commands: sum(days, "commands"),
+    input: sum(days, "input"),
+    output: sum(days, "output"),
+    saved: sum(days, "saved"),
+    before: covered ? sum(Array.from({ length: n }, (_, i) => dayAt(2 * n - 1 - i)), "saved") : undefined,
+  };
+}
+
+/** The share of each day's output rtk cut, as an SVG path: one point a day at the
+ * middle of its column, on an axis running from `top` percent down to zero. A day
+ * nothing ran lifts the pen — joined across, the line would draw a share for a day that
+ * has none — and a share above `top` is drawn at the top rather than off the chart. */
+export function sharePath(days: Pick<RtkPeriodDay, "commands" | "input" | "saved">[], top: number): string {
+  const points: string[] = [];
+  let pen = false;
+  days.forEach((d, i) => {
+    if (!d.commands || !d.input) {
+      pen = false;
+      return;
+    }
+    const cut = Math.min((100 * d.saved) / d.input, top);
+    points.push(`${pen ? "L" : "M"}${i + 0.5} ${top - cut}`);
+    pen = true;
+  });
+  return points.join(" ");
+}
+
+/** Which edge a day's tooltip hangs from, so that one near either end of the chart
+ * stays inside it. */
+export function tipSide(i: number, n: number): "tip-start" | "tip-end" | "" {
+  if (i < n * 0.2) return "tip-start";
+  if (i > n * 0.8) return "tip-end";
+  return "";
 }
 
 /** What Undo sends: the state now, with this one change reversed. Never the state from

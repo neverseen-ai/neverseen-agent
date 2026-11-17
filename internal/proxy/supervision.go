@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/neverseen-ai/neverseen-agent/internal/telemetry"
+	pkgtelemetry "github.com/neverseen-ai/neverseen-agent/pkg/telemetry"
 )
 
 // DefaultBackendURL is the backend the settings page's enrolment form starts from.
@@ -53,6 +54,10 @@ type supervision struct {
 
 	// fresh starts the recorder's window, dropping what it counted so far.
 	fresh func()
+
+	// preview is the bucket in progress, as it stands at an instant and without
+	// closing it. Nil where build is.
+	preview func(now time.Time) pkgtelemetry.Bucket
 
 	// start runs a reporter for as long as the agent serves. Nil before run and
 	// after it, and a reporter built meanwhile is started by run or not at all.
@@ -119,6 +124,26 @@ type supervisionState struct {
 
 	// Problem is why the last attempt failed, empty once one succeeds.
 	Problem string `json:"problem,omitempty"`
+
+	// EnrolledAt is when the identity was written to this disk.
+	EnrolledAt *time.Time `json:"enrolled_at,omitempty"`
+
+	// NextAt is when the next delivery is attempted.
+	NextAt *time.Time `json:"next_at,omitempty"`
+
+	// Queued is how many reports wait to be delivered, and OldestQueued where the
+	// first of them starts. Counts and dates: what waits is in buffer.json.
+	Queued       int        `json:"queued,omitempty"`
+	OldestQueued *time.Time `json:"oldest_queued,omitempty"`
+}
+
+// dated is a date for the page, or nothing for one that was never set: a zero time
+// travels as year 1, which a page would draw.
+func dated(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	return &t
 }
 
 func (s *supervision) state() supervisionState {
@@ -132,14 +157,14 @@ func (s *supervision) state() supervisionState {
 	}
 	state.Offered = backend
 	status := reporter.Status()
-	state.AgentID, state.Problem = status.AgentID, status.Problem
-	if !status.DeliveredAt.IsZero() {
-		state.DeliveredAt = &status.DeliveredAt
-	}
+	state.AgentID, state.Problem, state.Queued = status.AgentID, status.Problem, status.Queued
+	state.DeliveredAt, state.EnrolledAt = dated(status.DeliveredAt), dated(status.EnrolledAt)
+	state.NextAt, state.OldestQueued = dated(status.NextAt), dated(status.OldestQueued)
 	return state
 }
 
 var (
+	errNotEnrolled     = errors.New("this workstation reports nowhere: there is nothing to send")
 	errAlreadyEnrolled = errors.New("this workstation is already enrolled")
 	errNotAssembled    = errors.New("this agent was not started in a way that can be supervised")
 )
@@ -289,6 +314,58 @@ func (s *Server) handleEnrol(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "neverseen: could not enrol with "+backend+": "+err.Error(), http.StatusBadGateway)
 	}
+}
+
+// handleReport shows what the next report holds (GET) and has the waiting ones sent
+// now (POST), for the settings page.
+//
+// Behind the control key. The GET is the claim "counts, never content" made checkable
+// by the person it is made to: the bucket in progress and the state, in the shape a
+// heartbeat carries them, read without closing the window. On an agent that reports
+// nowhere it answers the same, because that is when somebody decides whether to
+// enrol — and what it shows then is counted since the agent started, which an
+// enrolment drops (fresh).
+//
+// TODO: the state shown leaves out whether rtk answers, which the reporter's own
+// goroutine holds; the report sent carries it. The upgrade is the reporter serving
+// the preview itself, under a lock that field does not have today.
+func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
+		w.Header().Set("Allow", "GET, POST")
+		http.Error(w, "neverseen: use GET to see the next report, POST to send the waiting ones", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.authorised(w, r) {
+		return
+	}
+	sup := s.supervision
+	w.Header().Set("Cache-Control", "no-store")
+
+	if r.Method == http.MethodGet {
+		if sup.preview == nil {
+			http.Error(w, "neverseen: "+errNotAssembled.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		now := time.Now()
+		writeJSON(w, pkgtelemetry.HeartbeatBatch{
+			Schema:  pkgtelemetry.SchemaVersion,
+			AgentID: sup.state().AgentID,
+			SentAt:  now,
+			State:   s.State(),
+			Buckets: []pkgtelemetry.Bucket{sup.preview(now)},
+		})
+		return
+	}
+
+	sup.mu.Lock()
+	reporter := sup.reporter
+	sup.mu.Unlock()
+	if reporter == nil || reporter.Status().AgentID == "" {
+		http.Error(w, "neverseen: "+errNotEnrolled.Error(), http.StatusConflict)
+		return
+	}
+	reporter.SendNow()
+	writeJSON(w, sup.state())
 }
 
 // checkBackend refuses an address the token must not be sent to: one that is not an

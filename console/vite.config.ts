@@ -36,7 +36,7 @@ export default defineConfig(() => {
       host: "127.0.0.1",
       port: 9245,
       strictPort: true,
-      proxy: { "/healthz": route, "/policy": route, "/today": route, "/test": route },
+      proxy: { "/healthz": route, "/policy": route, "/today": route, "/test": route, "/enrol": route, "/report": route, "/rtk": route },
     },
     plugins: [react(), withoutHTML()],
     build: {

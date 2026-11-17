@@ -276,7 +276,8 @@ token is reached (`TestAnIdentityTheDiskRefusesIsKeptAndSavedLater`).
 The environment was the only way in: a backend address and a token in `~/.neverseen/.env`,
 then a restart. A token typed wrong, a line left commented, an address nobody remembered —
 each was a second edit and a second restart, and a refusal was a line in a log.
-`POST /enrol` makes the same trade from the Service screen, while the agent runs.
+`POST /enrol` makes the same trade from the console's Neverseen Cloud screen, while the agent
+runs.
 
 - **Behind the control key**, like everything that changes what the agent does: it decides
   where a description of this workstation goes every five minutes. Classified by
@@ -292,6 +293,21 @@ each was a second edit and a second restart, and a refusal was a line in a log.
 - **The token is presented once and dropped.** Never stored, never logged, and sent under a
   context that outlives the request: a tab closed while the backend answered would leave a
   spent token and no identity.
+- **The screen's own tab, not a panel of Service**, with a dot in the sidebar while reports
+  arrive and a warning while they wait (`cloudState`, in `decisions.ts`): the connection is
+  a second thing the agent does, and "is this workstation reporting" was three clicks from
+  where somebody looks.
+- **"Counts, never content" is checkable** (`GET /report`, behind the key): the bucket in
+  progress and the state, in the shape a heartbeat carries them, read with
+  `Recorder.Snapshot` — **never `Take`**, or every look would cut a five-minute bucket in
+  two. Served unenrolled too, since that is when somebody decides
+  (`TestTheNextReportIsShownWithoutBeingTaken`). A `TODO:` names what it leaves out: whether
+  rtk answers, which the reporter's goroutine holds.
+- **What waits is said, and can be sent** (`Reporter.Status`: `Queued`, `OldestQueued`,
+  `NextAt`, `EnrolledAt`; `POST /report`, `Reporter.SendNow`). The queue is `Run`'s alone, so
+  `Run` notes it once per turn under the status lock rather than a surface reading it.
+  `SendNow` is the enrolment's nudge under its own name: off the ladder, one attempt
+  (`TestStatusSaysWhatWaitsAndSendNowDeliversIt`).
 - **A refusal is typed** (`RefusedError`), so the route can tell a token the backend will
   not take (422 — the person's to fix) from a backend that is down (502).
 - **Where the agent reports survives the restart in `supervision.json`**, beside the policy
