@@ -306,6 +306,16 @@ func TestTheNextReportIsShownWithoutBeingTaken(t *testing.T) {
 	if got := enrolThrough(t, agent, backend.URL, goodToken); got.Code != http.StatusOK {
 		t.Fatalf("the enrolment answered %d: %s", got.Code, got.Body)
 	}
+	// An enrolment has Run report at once, and that report closes the window. Counted
+	// before it left, the two requests below went with it and the look showed none —
+	// on Linux every time, where the delivery wins the race, and never on macOS.
+	deadline := time.Now().Add(5 * time.Second)
+	for agent.Server.agentNow().Supervision.DeliveredAt == nil {
+		if time.Now().After(deadline) {
+			t.Fatal("the report an enrolment sends at once never left")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 	agent.Server.recorder.Request("default", "", "")
 	agent.Server.recorder.Request("default", "", "")
 	for range 2 { // twice: the second look sees what the first left

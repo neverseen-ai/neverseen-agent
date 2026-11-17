@@ -211,7 +211,13 @@ test('a hostile script on the page cannot read another session back', async () =
 
   // Stand in for a tool talking to the agent through the proxy: it sends no session
   // header, so it lands in "default", exactly as Claude Code does.
-  const terminalAddress = 'bruno.terminal@example.fr';
+  //
+  // Several addresses rather than one, and the last token is the one forged: each
+  // session numbers on its own, so the terminal's first token is [EMAIL_1] — which is
+  // also this page's own first token, for the address it typed earlier. Forged, that
+  // one comes back as the page's own value: no leak, and no proof either. A number the
+  // page's session never reached is a token that must come back untouched.
+  const terminalAddresses = ['alice.terminal@example.fr', 'boris.terminal@example.fr', 'chloe.terminal@example.fr', 'bruno.terminal@example.fr'];
   const masked = await (
     await fetch(agent.baseUrl + '/mask', {
       method: 'POST',
@@ -220,12 +226,13 @@ test('a hostile script on the page cannot read another session back', async () =
         'X-Neverseen-Control': agent.key,
         'X-Session-Id': 'default',
       },
-      body: JSON.stringify({ texts: [`terminal traffic: ${terminalAddress}`] }),
+      body: JSON.stringify({ texts: [`terminal traffic: ${terminalAddresses.join(', ')}`] }),
     })
   ).json();
 
-  const terminalToken = /\[EMAIL_\d+\]/.exec(masked.texts[0])?.[0];
-  assert.ok(terminalToken, `nothing was masked for the terminal: ${masked.texts[0]}`);
+  const terminalToken = `[EMAIL_${terminalAddresses.length}]`;
+  assert.ok(masked.texts[0].includes(terminalToken) && !terminalAddresses.some((a) => masked.texts[0].includes(a)),
+    `the terminal's addresses were not all masked: ${masked.texts[0]}`);
 
   // Now the attack, from a script running on claude.ai.
   const stolen = await page.evaluate(
@@ -235,7 +242,7 @@ test('a hostile script on the page cannot read another session back', async () =
   );
 
   const back = JSON.stringify(stolen);
-  assert.ok(!back.includes(terminalAddress),
+  assert.ok(!terminalAddresses.some((a) => back.includes(a)),
     `a page script read the terminal's traffic back: ${back}`);
   assert.equal(stolen.ok && stolen.result.expanded, terminalToken,
     'the forged session was ignored, so the token belongs to no mapping the page may see');
