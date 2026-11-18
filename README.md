@@ -1,92 +1,75 @@
 # Neverseen
 
-**AI never sees your data. It still does the work.**
+**Use AI while protecting your data.**
 
-Your teams already use AI. Your data does not have to go with it.
-— [neverseen.info](https://neverseen.info/)
-
-Neverseen is a local agent that sits between the AI tools you already use —
-Claude Code, Cursor, Codex, a script — and the model provider. On the way out it
-replaces personal data and credentials with tokens. On the way back it puts your
-real values into the answer.
-
-The model never sees the data. You never see a placeholder.
+Neverseen sits between your AI tools — Claude Code, Cursor, Codex, a script — and
+the LLM providers. Before a request leaves the workstation, sensitive data is
+replaced with tokens or plausible stand-ins. The model reasons as usual. When the
+answer comes back, the local vault restores the original values.
 
 [![CI](https://github.com/neverseen-ai/neverseen-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/neverseen-ai/neverseen-agent/actions/workflows/ci.yml)
 [![Go](https://img.shields.io/badge/go-1.26+-00ADD8?logo=go&logoColor=white)](https://go.dev)
 [![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)](#install)
 [![Licence](https://img.shields.io/badge/licence-FSL--1.1--ALv2-blue)](LICENSE.md)
 
-![One exchange seen from both sides: on the workstation the request carries a real
-email, phone, social security number, company registration and IBAN, and an
-Anthropic key; what the provider receives carries stand-ins for each and a bracket
-token for the key. The model's reply comes back with the original values put back
-in.](docs/images/round-trip.png)
+![Three steps of one exchange. What you type: a sentence carrying an IP address,
+a Redis URL with a password in it, an email address and a Stripe secret key. What
+leaves your machine, all the model sees: the same sentence with a bracket token in
+place of each value. What you read: the model's answer, with your own values back
+in it.](images/three-steps.png)
 
-*The same exchange, twice — what you wrote, and what left the machine. The personal
-data travels as stand-ins (`fake` mode, which reads to the model as prose); the
-credential takes a bracket token, because a stand-in that looks like a working key
-is a thing somebody will try to use. The answer arrives with your own values in it.*
-
-In the blocks below, red is your own values and green is everything the provider
-ever saw.
-
-```diff
-  # what you typed
-- The worker at 10.42.7.19 can't reach
-- redis://cache:s3cr3t-pa55w0rd@10.42.7.30:6379/0, and ops-oncall@acme-corp.io
-- is getting paged. STRIPE_SECRET_KEY=sk_live_51H8xQ2eZvKYlo2C9mVqTnBw3fLp
-
-  # what left the machine — token mode, the default
-+ The worker at [IP_1] can't reach redis://[CONN_STR_1], and [EMAIL_1] is
-+ getting paged. STRIPE_SECRET_KEY=[STRIPE_KEY_1]
-
-  # what left the machine — fake mode, which reaches the model as prose
-+ The worker at 192.0.2.0 can't reach redis://[CONN_STR_1], and
-+ contact1@example.org is getting paged. STRIPE_SECRET_KEY=[STRIPE_KEY_1]
-```
-
-The credential keeps its bracket token in **both** modes. That is not a gap in the
-stand-in generator: a credential never gets one, because a stand-in that looks like
-a working key is a thing somebody will try to use.
-
-Then the model answers, and the two modes converge:
-
-```diff
-  # what the model wrote back — token mode
-+ [IP_1] cannot open a socket to [CONN_STR_1], so the page to [EMAIL_1] is a
-+ symptom rather than the fault. Rotate [STRIPE_KEY_1] once the link is back.
-
-  # what the model wrote back — fake mode
-+ 192.0.2.0 cannot open a socket to [CONN_STR_1], so the page to
-+ contact1@example.org is a symptom rather than the fault. Rotate
-+ [STRIPE_KEY_1] once the link is back.
-
-  # what you read in your terminal — byte for byte the same in both modes
-- 10.42.7.19 cannot open a socket to cache:s3cr3t-pa55w0rd@10.42.7.30:6379/0,
-- so the page to ops-oncall@acme-corp.io is a symptom rather than the fault.
-- Rotate sk_live_51H8xQ2eZvKYlo2C9mVqTnBw3fLp once the link is back.
-```
-
-**The mode changes what the provider sees, never what you read.** Stand-ins are
-expanded on the way back exactly as tokens are, so `fake` is not a one-way trade of
-legibility against restoration — it buys prose the model reads as prose, and costs
-nothing at the other end.
-
-*Not a mock-up: every masked and every restored line above is the real output of
-`POST /mask` and `POST /unmask` on that exact input — four categories, one pass,
-`NEVERSEEN_PII_LOCALE=fr,gb,us`. Only the model's two sentences are written here
-rather than generated, since quoting a real one would pin this page to one
-provider's wording on one day. Step 1 below reproduces the masking half on your own
-text.*
-
-Nothing to rewrite in your prompts. Nothing to remember. One environment
-variable and the tool you already run.
+**100% local, no cloud** · **No prompts to rewrite** · **Secrets and personal data**
+— [neverseen.info](https://neverseen.info/)
 
 **And the obvious objection, answered first:** the agent holds no API keys.
 Whatever credential your tool sent — a bearer token, an `x-api-key` header — is
 forwarded untouched, because the tool making the request already has it. This is
 one more thing between you and the provider, not one more place a key is stored.
+
+---
+
+## Quick start
+
+For when you just want it running. [Try it](#try-it) below is the careful route,
+starting from a scan that installs nothing.
+
+**1. Install it** — macOS and Linux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/neverseen-ai/neverseen-agent/main/install.sh | sh
+```
+
+Windows, in PowerShell:
+
+```powershell
+iwr -useb https://raw.githubusercontent.com/neverseen-ai/neverseen-agent/main/install.ps1 -OutFile install.ps1
+.\install.ps1
+```
+
+**2. Open the console and choose your countries**
+
+Click the Neverseen icon
+![The Neverseen icon, with the number of values masked today](images/menu-bar-icon.png)
+in the menu bar or the notification area, then **Open the console…** — or ask for
+the link from a terminal:
+
+```bash
+~/.local/bin/neverseen console
+```
+
+The link opens the agent's settings page, and only once, within a minute: it
+carries the key that lets the page change anything. A fresh install has no country
+chosen, so tick the ones whose personal data you handle, under **What is masked**.
+
+**3. Point your tool at it**
+
+```bash
+ANTHROPIC_BASE_URL=http://127.0.0.1:9787/anthropic  claude
+OPENAI_BASE_URL=http://127.0.0.1:9787/openai        codex
+```
+
+The console's **Connect an LLM agent** screen hands you the same line for every
+tool the agent serves.
 
 ---
 
@@ -187,6 +170,77 @@ Open **<http://127.0.0.1:9787/test>** — paste a real record with the values
 changed and see exactly what would leave the machine, in both substitution
 modes, with this agent's own configuration. Nothing on that page is sent
 anywhere, stored, or kept.
+
+---
+
+## Tokens or stand-ins
+
+The example at the top went out in `token` mode, the default. With
+`NEVERSEEN_PII_SUBSTITUTION=fake`, personal data travels as stand-ins instead —
+values the model reads as prose.
+
+![One exchange seen from both sides: on the workstation the request carries a real
+email, phone, social security number, company registration and IBAN, and an
+Anthropic key; what the provider receives carries stand-ins for each and a bracket
+token for the key. The model's reply comes back with the original values put back
+in.](images/round-trip.png)
+
+*The same exchange, twice — what you wrote, and what left the machine. The personal
+data travels as stand-ins (`fake` mode, which reads to the model as prose); the
+credential takes a bracket token, because a stand-in that looks like a working key
+is a thing somebody will try to use. The answer arrives with your own values in it.*
+
+The same kind of incident, in both modes. A line marked `-` carries your own
+values, and a line marked `+` is everything the provider ever saw:
+
+```diff
+  # what you typed
+- The worker at 10.42.7.19 can't reach
+- redis://cache:s3cr3t-pa55w0rd@10.42.7.30:6379/0, and ops-oncall@acme-corp.io
+- is getting paged. STRIPE_SECRET_KEY=sk_live_51H8xQ2eZvKYlo2C9mVqTnBw3fLp
+
+  # what left the machine — token mode, the default
++ The worker at [IP_1] can't reach redis://[CONN_STR_1], and [EMAIL_1] is
++ getting paged. STRIPE_SECRET_KEY=[STRIPE_KEY_1]
+
+  # what left the machine — fake mode, which reaches the model as prose
++ The worker at 192.0.2.0 can't reach redis://[CONN_STR_1], and
++ contact1@example.org is getting paged. STRIPE_SECRET_KEY=[STRIPE_KEY_1]
+```
+
+The credential keeps its bracket token in **both** modes. That is not a gap in the
+stand-in generator: a credential never gets one, because a stand-in that looks like
+a working key is a thing somebody will try to use.
+
+Then the model answers, and the two modes converge:
+
+```diff
+  # what the model wrote back — token mode
++ [IP_1] cannot open a socket to [CONN_STR_1], so the page to [EMAIL_1] is a
++ symptom rather than the fault. Rotate [STRIPE_KEY_1] once the link is back.
+
+  # what the model wrote back — fake mode
++ 192.0.2.0 cannot open a socket to [CONN_STR_1], so the page to
++ contact1@example.org is a symptom rather than the fault. Rotate
++ [STRIPE_KEY_1] once the link is back.
+
+  # what you read in your terminal — byte for byte the same in both modes
+- 10.42.7.19 cannot open a socket to cache:s3cr3t-pa55w0rd@10.42.7.30:6379/0,
+- so the page to ops-oncall@acme-corp.io is a symptom rather than the fault.
+- Rotate sk_live_51H8xQ2eZvKYlo2C9mVqTnBw3fLp once the link is back.
+```
+
+**The mode changes what the provider sees, never what you read.** Stand-ins are
+expanded on the way back exactly as tokens are, so `fake` is not a one-way trade of
+legibility against restoration — it buys prose the model reads as prose, and costs
+nothing at the other end.
+
+*Not a mock-up: every masked and every restored line above is the real output of
+`POST /mask` and `POST /unmask` on that exact input — four categories, one pass,
+`NEVERSEEN_PII_LOCALE=fr,gb,us`. Only the model's two sentences are written here
+rather than generated, since quoting a real one would pin this page to one
+provider's wording on one day. Step 1 of [Try it](#try-it) reproduces the masking
+half on your own text.*
 
 ---
 
