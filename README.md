@@ -2,14 +2,14 @@
 
 **Use AI while protecting your data.**
 
-Neverseen sits between your AI tools — Claude Code, Cursor, Codex, a script — and
+Neverseen sits between your AI tools — Claude Code, Codex, a script — and
 the LLM providers. Before a request leaves the workstation, sensitive data is
 replaced with tokens or plausible stand-ins. The model reasons as usual. When the
 answer comes back, the local vault restores the original values.
 
 [![CI](https://github.com/neverseen-ai/neverseen-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/neverseen-ai/neverseen-agent/actions/workflows/ci.yml)
 [![Go](https://img.shields.io/badge/go-1.26+-00ADD8?logo=go&logoColor=white)](https://go.dev)
-[![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)](#install)
+[![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)](#quick-start)
 [![Licence](https://img.shields.io/badge/licence-FSL--1.1--ALv2-blue)](LICENSE.md)
 
 ![Three steps of one exchange. What you type: a sentence carrying an IP address,
@@ -18,7 +18,7 @@ leaves your machine, all the model sees: the same sentence with a bracket token 
 place of each value. What you read: the model's answer, with your own values back
 in it.](images/three-steps.png)
 
-**100% local, no cloud** · **No prompts to rewrite** · **Secrets and personal data**
+**100% local, no cloud required** · **No prompts to rewrite** · **Secrets and personal data**
 — [neverseen.info](https://neverseen.info/)
 
 **And the obvious objection, answered first:** the agent holds no API keys.
@@ -57,19 +57,30 @@ the link from a terminal:
 ~/.local/bin/neverseen console
 ```
 
+The full path, because the installer leaves your `PATH` alone: it only warns when
+`~/.local/bin` is not on it. The rest of this page writes `neverseen` alone.
+
 The link opens the agent's settings page, and only once, within a minute: it
 carries the key that lets the page change anything. A fresh install has no country
 chosen, so tick the ones whose personal data you handle, under **What is masked**.
+
+![The console's Overview: masking is on, how many values were masked today by hour
+and by category, the running configuration — countries, substitution mode, secret
+level, providers, address, version — the day's requests and tool calls, and the
+tokens each model used, hour by hour.](images/console-overview.png)
 
 **3. Point your tool at it**
 
 ```bash
 ANTHROPIC_BASE_URL=http://127.0.0.1:9787/anthropic  claude
-OPENAI_BASE_URL=http://127.0.0.1:9787/openai        codex
 ```
 
-The console's **Connect an LLM agent** screen hands you the same line for every
-tool the agent serves.
+Codex does not read `OPENAI_BASE_URL`: put
+`openai_base_url = "http://127.0.0.1:9787/openai"` in `~/.codex/config.toml` —
+the one in your home directory, since Codex ignores the key in a project's file.
+
+The console's **Connect an LLM agent** screen hands you the line for every tool the
+agent serves, with the caveat that goes with it.
 
 ---
 
@@ -139,9 +150,8 @@ iwr -useb https://raw.githubusercontent.com/neverseen-ai/neverseen-agent/main/in
 The service is a launchd agent on macOS, a systemd user unit on Linux, a logon
 task on Windows. It is supervised on all three — `KeepAlive`, `Restart=always`,
 `RestartOnFailure` — because nobody is meant to be able to stop the masking by
-killing a process. You also get an icon in the menu bar or the notification area,
-and that one is deliberately *not* restarted: its menu offers "Quit the icon", and
-a supervisor would put it straight back.
+killing a process. You also get an icon in the menu bar or the notification area
+— see [the menu bar icon](#the-menu-bar-icon).
 
 It does **not** touch your shell profile unless you ask for it with `--shell`.
 Already cloned at step 1? `./install.sh` from that directory skips the download
@@ -150,109 +160,63 @@ and uses the binary you just built.
 **3. Choose what to look for**
 
 ```bash
-echo 'NEVERSEEN_PII_LOCALE=fr,gb,us' >> ~/.neverseen/.env
-./install.sh --restart
+neverseen mask --locales fr,gb,us
 ```
+
+…or tick the same countries in the console, under **What is masked**. Either is
+applied at once, without a restart, and kept in `~/.neverseen/policy.json` — which
+wins over `NEVERSEEN_PII_LOCALE` in `~/.neverseen/.env`, so a line added there
+later changes nothing.
 
 **4. Point a tool at it**
 
 ```bash
 ANTHROPIC_BASE_URL=http://127.0.0.1:9787/anthropic  claude
-OPENAI_BASE_URL=http://127.0.0.1:9787/openai        codex
 ```
+
+Codex takes `openai_base_url` in `~/.codex/config.toml` instead — see
+[Quick start](#quick-start).
 
 That's it. Ask your tool something that mentions a colleague, a customer record
 or a key, and watch it work.
 
 **5. Keep checking it, on your own data**
 
-Open **<http://127.0.0.1:9787/test>** — paste a real record with the values
-changed and see exactly what would leave the machine, in both substitution
-modes, with this agent's own configuration. Nothing on that page is sent
-anywhere, stored, or kept.
+The console's **Try it** screen shows one text as it would leave the machine, in
+both substitution modes, with this agent's own settings. Paste a real record with
+the values changed: nothing on that screen is sent anywhere, stored, or kept.
 
----
+![The console's Try it screen: a support ticket as written, the same text with
+placeholders, and the same text with stand-ins, then a table of the six values found
+with their category and confidence.](images/console-try.png)
 
-## Tokens or stand-ins
-
-The example at the top went out in `token` mode, the default. With
-`NEVERSEEN_PII_SUBSTITUTION=fake`, personal data travels as stand-ins instead —
-values the model reads as prose.
-
-![One exchange seen from both sides: on the workstation the request carries a real
-email, phone, social security number, company registration and IBAN, and an
-Anthropic key; what the provider receives carries stand-ins for each and a bracket
-token for the key. The model's reply comes back with the original values put back
-in.](images/round-trip.png)
-
-*The same exchange, twice — what you wrote, and what left the machine. The personal
-data travels as stand-ins (`fake` mode, which reads to the model as prose); the
-credential takes a bracket token, because a stand-in that looks like a working key
-is a thing somebody will try to use. The answer arrives with your own values in it.*
-
-The same kind of incident, in both modes. A line marked `-` carries your own
-values, and a line marked `+` is everything the provider ever saw:
-
-```diff
-  # what you typed
-- The worker at 10.42.7.19 can't reach
-- redis://cache:s3cr3t-pa55w0rd@10.42.7.30:6379/0, and ops-oncall@acme-corp.io
-- is getting paged. STRIPE_SECRET_KEY=sk_live_51H8xQ2eZvKYlo2C9mVqTnBw3fLp
-
-  # what left the machine — token mode, the default
-+ The worker at [IP_1] can't reach redis://[CONN_STR_1], and [EMAIL_1] is
-+ getting paged. STRIPE_SECRET_KEY=[STRIPE_KEY_1]
-
-  # what left the machine — fake mode, which reaches the model as prose
-+ The worker at 192.0.2.0 can't reach redis://[CONN_STR_1], and
-+ contact1@example.org is getting paged. STRIPE_SECRET_KEY=[STRIPE_KEY_1]
-```
-
-The credential keeps its bracket token in **both** modes. That is not a gap in the
-stand-in generator: a credential never gets one, because a stand-in that looks like
-a working key is a thing somebody will try to use.
-
-Then the model answers, and the two modes converge:
-
-```diff
-  # what the model wrote back — token mode
-+ [IP_1] cannot open a socket to [CONN_STR_1], so the page to [EMAIL_1] is a
-+ symptom rather than the fault. Rotate [STRIPE_KEY_1] once the link is back.
-
-  # what the model wrote back — fake mode
-+ 192.0.2.0 cannot open a socket to [CONN_STR_1], so the page to
-+ contact1@example.org is a symptom rather than the fault. Rotate
-+ [STRIPE_KEY_1] once the link is back.
-
-  # what you read in your terminal — byte for byte the same in both modes
-- 10.42.7.19 cannot open a socket to cache:s3cr3t-pa55w0rd@10.42.7.30:6379/0,
-- so the page to ops-oncall@acme-corp.io is a symptom rather than the fault.
-- Rotate sk_live_51H8xQ2eZvKYlo2C9mVqTnBw3fLp once the link is back.
-```
-
-**The mode changes what the provider sees, never what you read.** Stand-ins are
-expanded on the way back exactly as tokens are, so `fake` is not a one-way trade of
-legibility against restoration — it buys prose the model reads as prose, and costs
-nothing at the other end.
-
-*Not a mock-up: every masked and every restored line above is the real output of
-`POST /mask` and `POST /unmask` on that exact input — four categories, one pass,
-`NEVERSEEN_PII_LOCALE=fr,gb,us`. Only the model's two sentences are written here
-rather than generated, since quoting a real one would pin this page to one
-provider's wording on one day. Step 1 of [Try it](#try-it) reproduces the masking
-half on your own text.*
+Without the console, **<http://127.0.0.1:9787/test>** answers the same question.
 
 ---
 
 ## What it catches
 
-| Always, whatever the locale | With `fr` | With `gb` | With `us` |
-|---|---|---|---|
-| Email · payment cards · IBAN (every issuing country) · IP addresses · MongoDB ids · ISO dates | NIR · SIREN · SIRET · postcode + commune · address · number plate · phone · day-first dates | NHS number · National Insurance number · postcode · phone | SSN · EIN · ABA routing number · street address · ZIP · phone |
+| Always, whatever the locale | With `fr` | With `gb` | With `us` | With any other European country — `de`, `es`, `it`, …, or `eu` for all of them |
+|---|---|---|---|---|
+| Email · payment cards · IBAN (every issuing country) · IP addresses · MongoDB ids · ISO dates · map coordinates and links | NIR · SIREN · SIRET · postcode + commune · address · number plate · phone · day-first dates | NHS number · National Insurance number · street address · postcode · number plate · phone · day-first dates | SSN · EIN · ABA routing number · street address · ZIP · phone · month-first dates | number plate |
+
+The console's **What is masked** screen shows the same, country by country, with a
+switch for each kind of personal data:
+
+![The console's What is masked screen: the forty-two countries, each with a gauge of
+how many kinds of data the agent recognises for it — eight for France, seven for the
+United Kingdom and the United States, one for every other — and below them one switch
+per kind of value, grouped into personal details, company identifiers, technical
+identifiers and banking.](images/console-masked.png)
 
 **Credentials, always:** API keys for 100+ vendors (Anthropic, OpenAI, AWS,
 Stripe, GitHub, Slack…), private keys, JWTs, connection strings carrying a
 password, and a graded catch-all for anything shaped like `SECRET=…`.
+
+![The console's Credentials tab: how a secret is found — by its shape, always masked,
+or by its name, depending on the strength chosen — the three strength levels with
+what each masks, and the formats always masked: connection strings and 130 secrets
+and keys, each named by its vendor and prefix.](images/console-credentials.png)
 
 Checksums decide where a checksum exists — NHS, IBAN, NIR, SIREN/SIRET, cards,
 ABA. A value failing its checksum is not a weak match; it is not a match.
@@ -268,15 +232,20 @@ three work on traffic you actually sent.
 # 1. Scan a text from the shell — nothing started, nothing sent
 bin/neverseen scan < incident.txt
 
-# 2. Watch a real exchange, value by value
-neverseen proxy -a          # prints every value replaced and restored, coloured
+# 2. Watch a real exchange, value by value — on a second port, beside the service
+neverseen proxy -a -l 127.0.0.1:9788     # prints every value replaced and restored, coloured
+ANTHROPIC_BASE_URL=http://127.0.0.1:9788/anthropic  claude
 
 # 3. Keep the evidence: both request bodies and the answer, per exchange
-neverseen proxy -a -v       # writes traces/ — diff the two bodies to find what was missed
+neverseen proxy -a -v -l 127.0.0.1:9788  # writes traces/ — diff the two bodies to find what was missed
 
 # 4. The whole product, end to end
-make e2e-claude             # real CLI, real provider, a tap recording every byte upstream
+make e2e-claude                          # real CLI, real provider, a tap recording every byte upstream
 ```
+
+The service already holds `9787`, and it is supervised, so it cannot be stopped to
+make room: `-l` runs the audit beside it, with the same detector and the same
+settings.
 
 `make e2e-claude` asserts both halves of the claim at once: that no value the
 caller wrote reached the provider, and that the caller got it back anyway.
@@ -321,10 +290,10 @@ neverseen mask --off EMAIL      # switch a category off
 neverseen mask --substitution fake
 ```
 
-…or click the icon in the menu bar, which shows the same state and hands you the
-line that points a tool at the agent.
+…or do the same from the console. The icon in the menu bar shows that state and
+changes nothing.
 
-*A credential can never be switched off — the detector refuses, so no menu and no
+*A credential can never be switched off — the detector refuses, so no page and no
 API call can route around it.*
 
 ---
@@ -337,19 +306,21 @@ traffic went out in clear. The icon exists for that one question, and it answers
 it without being clicked: the mark's right-hand square is **outlined while values
 are being replaced, filled when they are not**.
 
-Three states, not two, because "masking" and "masking everything" are different
-answers:
+Four states, not two, because "masking" and "masking everything" are different
+answers, and so are "replacing nothing" and "not there":
 
 | Icon | Meaning |
 |---|---|
 | Outlined | Masking — every category the loaded locales can find is being replaced |
 | Half | `Masking, with N categories in clear` — you switched something off, and it names which |
-| Filled | Not masking — either no locale is loaded, or the agent is not answering |
+| Filled | Not masking — the agent is running, but no locale is loaded: choose one in the console |
+| Filled, no divider | Not masking — the agent is not answering: start it |
 
-On Linux the same three are **also** green, amber and red, because the panel draws
-what it is handed rather than recolouring it the way macOS does. The colour is added
-to the shape and never replaces it: it is the channel about one man in twelve reads
-differently, and the square is what carries the meaning.
+On Linux they are **also** green, amber and red — red for both states that leave the
+traffic in clear — because the panel draws what it is handed rather than recolouring
+it the way macOS does. The colour is added to the shape and never replaces it: it is
+the channel about one man in twelve reads differently, and the square and the divider
+are what carry the meaning.
 
 Click it and the menu says what is happening — the address, the locales, the
 substitution mode, the version — and offers the few things a menu is the right
@@ -369,8 +340,6 @@ shape for:
 
 Everything you change on that page survives a restart — it goes through the same
 `PUT /policy` as `neverseen mask`, and is stored in `~/.neverseen/policy.json`.
-A credential can never be switched off from either: the detector refuses, so no
-page and no menu can route around it.
 
 It is a **separate process** (`neverseen-tray`) on purpose. An icon living inside
 the proxy would vanish at the exact moment it became useful, since the state most
@@ -453,6 +422,30 @@ not written.
 
 ---
 
+## rtk savings (optional)
+
+[rtk](https://github.com/rtk-ai/rtk) is a separate command-line tool that shortens
+the output of the commands a coding agent runs — tests, `git`, builds, searches —
+before a model reads it. The two tools sit on the same road and do one thing each:
+rtk cuts what says nothing, Neverseen masks what should not leave. Neverseen works
+the same with or without it.
+
+When rtk is installed, the console's **rtk savings** screen shows what it saved, day
+by day, read from `rtk gain --daily` — never from rtk's history, whose rows carry the
+command lines. Without it, the same screen says what rtk is for and how to install
+it.
+
+![The console's rtk savings screen over thirty days: tokens saved, the share of
+command output cut, the number of commands shortened and the best day, a chart of
+tokens saved and handed to the model day by day, a table of the figures, and where
+they come from.](images/console-rtk.png)
+
+rtk is a third party's, and its licence is said here as rtk says it: the
+command-line tool is Apache-2.0; its engine is source-available under BUSL-1.1, free
+for production use, and rtk also publishes an edition that is Apache-2.0 alone.
+
+---
+
 ## Supervision (optional)
 
 The agent is a complete product with no backend at all. Point it at one and it
@@ -474,7 +467,8 @@ sends them to a desk. Details, and what each figure answers, in
 
 Enrolment works the way Wazuh's does: an operator token is presented once and
 traded for a per-agent key, so one workstation can be revoked without touching
-the others.
+the others. It is done on a running agent, from the console's **Neverseen Cloud**
+screen, which also shows the next report as it stands before it is sent.
 
 ---
 
@@ -509,7 +503,10 @@ implementation, and the corpus is what holds it to the same behaviour.
 
 Written down rather than discovered later.
 
-- **Only `fr`, `gb` and `us` exist.** Germany, Spain, Italy and the Netherlands
+- **Beyond `fr`, `gb` and `us`, a country adds its number plates and nothing
+  else.** The other thirty-nine European countries — `de`, `es`, `it`, `nl`, …,
+  all of them under `eu` — find vehicle registrations only; their national
+  identifiers are not detected yet. Germany, Spain, Italy and the Netherlands
   are next.
 - **No UK sort code** — its `12-34-56` shape is a date, so it needs a context
   word in front of it.
